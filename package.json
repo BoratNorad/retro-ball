@@ -1,0 +1,29 @@
+{
+  "name": "triple-draft-football",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "data:import": "python3 tools/import/build_players.py",
+    "data:fit": "python3 tools/import/fit_position_weights.py",
+    "data:report": "tsx tools/report/distribution.ts",
+    "dev:client": "pnpm --filter @tdf/client dev",
+    "dev:dex": "pnpm dlx serve apps/dex",
+    "build": "pnpm --filter @tdf/client build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

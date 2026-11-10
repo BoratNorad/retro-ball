@@ -1,0 +1,6 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": { "rootDir": "..", "outDir": "../node_modules/.tools-dist", "tsBuildInfoFile": "../node_modules/.tools-dist/.tsbuildinfo" },
+  "include": ["report/**/*.ts"],
+  "references": [{ "path": "../packages/shared" }, { "path": "../packages/sim" }]
+}

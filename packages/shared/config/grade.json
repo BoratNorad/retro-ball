@@ -1,0 +1,16 @@
+{
+  "_doc": "Team grade = weighted mean of starter overalls (at their assigned slot) per unit. Letter thresholds on the 0-99 scale. Chemistry adds a few points.",
+  "unitWeights": {
+    "offense": { "QB": 4.0, "RB": 1.2, "FB": 0.5, "WR": 1.4, "TE": 1.0, "LT": 1.3, "LG": 0.9, "C": 1.0, "RG": 0.9, "RT": 1.1 },
+    "defense": { "DE": 1.6, "DT": 1.0, "NT": 1.0, "OLB": 1.2, "MLB": 1.1, "ILB": 1.0, "CB": 1.5, "FS": 1.1, "SS": 1.0 },
+    "special": { "K": 1.0, "P": 0.7, "LS": 0.2, "KR": 0.6 }
+  },
+  "overallUnitWeights": { "offense": 0.47, "defense": 0.43, "special": 0.10 },
+  "letters": [["A+", 90], ["A", 86], ["A-", 83], ["B+", 80], ["B", 77], ["B-", 74], ["C+", 71], ["C", 68], ["C-", 65], ["D+", 62], ["D", 58], ["D-", 55], ["F", 0]],
+  "chemistry": {
+    "typeDiversityPerType": 0.25, "typeDiversityCap": 1.5,
+    "qbWrSharedTypeBonus": 0.3, "qbWrCap": 1.2,
+    "olSameTeamPairBonus": 0.15, "olCap": 1.0,
+    "maxTotal": 3.0
+  }
+}

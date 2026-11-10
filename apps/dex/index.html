@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#d7263d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Gridiron Dex">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <title>Gridiron Dex</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="device">
+    <header class="bezel">
+      <div class="lights">
+        <span class="lens"></span>
+        <span class="led red"></span><span class="led yellow"></span><span class="led green"></span>
+      </div>
+      <h1>GRIDIRON<span>DEX</span></h1>
+      <div class="source" id="source"></div>
+    </header>
+
+    <nav class="teams" id="teams" aria-label="Teams"></nav>
+
+    <div class="tabs" role="tablist">
+      <button role="tab" class="tab active" data-view="dex">DEX</button>
+      <button role="tab" class="tab" data-view="depth">DEPTH CHART</button>
+    </div>
+
+    <main id="view-dex" class="view">
+      <section class="screen list-screen">
+        <div class="filters">
+          <input id="search" type="search" placeholder="SEARCH NAME..." autocomplete="off">
+          <select id="posFilter" aria-label="Position"></select>
+          <select id="sort" aria-label="Sort">
+            <option value="ovr">OVR</option>
+            <option value="dex">DEX NO.</option>
+            <option value="num">JERSEY</option>
+            <option value="name">NAME</option>
+            <option value="depth">DEPTH</option>
+          </select>
+          <label class="toggle small"><input type="checkbox" id="startersOnly"> STARTERS</label>
+        </div>
+        <div class="count" id="count"></div>
+        <ol class="dex-list" id="list"></ol>
+      </section>
+
+      <section class="screen detail-screen" id="detail"></section>
+    </main>
+
+    <main id="view-depth" class="view hidden">
+      <section class="screen depth-screen">
+        <div class="field-head" id="depthHead"></div>
+        <div id="depth"></div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      Ratings: Madden NFL 27 spreadsheet · Headshots &amp; ids:
+      <a href="https://github.com/nflverse/nflverse-data" target="_blank" rel="noopener">nflverse</a>
+      · UP/DOWN: browse · LEFT/RIGHT: switch team · ESC: close
+    </footer>
+  </div>
+
+  <button class="to-list" id="toList" aria-label="Back to list">▲ LIST</button>
+
+  <div class="modal hidden" id="modal" role="dialog" aria-modal="true">
+    <div class="modal-box">
+      <button class="modal-close" id="modalClose" aria-label="Close">✕</button>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/headshots.js"></script>
+  <script src="js/sprites.js"></script>
+  <script src="js/portrait.js"></script>
+  <script src="js/abilities.js"></script>
+  <script src="js/plays.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

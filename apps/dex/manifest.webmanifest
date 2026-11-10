@@ -1,0 +1,16 @@
+{
+  "name": "Gridiron Dex",
+  "short_name": "Gridiron Dex",
+  "description": "Pokédex-style pixel-art browser for Madden 27 ratings",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#12141c",
+  "theme_color": "#d7263d",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

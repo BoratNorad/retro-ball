@@ -1,0 +1,1638 @@
+{
+ "_doc": "Original ability library carried over from Gridiron Dex. kind: P passive, A active (costs momentum bars). tiers = effect size for tier I/II/III, substituted for {a} in desc.",
+ "abilities": [
+  {
+   "id": "field_general",
+   "name": "Field General",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "QB"
+   ],
+   "positions": null,
+   "weights": {
+    "awareness": 2,
+    "throwAccuracyShort": 1
+   },
+   "icon": "eye",
+   "color": "#3d7be0",
+   "demo": "quick_pass",
+   "role": "qb",
+   "mod": null,
+   "fx": "READ!",
+   "tiers": [
+    2,
+    3,
+    5
+   ],
+   "desc": "Pre-snap reads are instant. The first read on every pass play is open by +{a} yds."
+  },
+  {
+   "id": "pocket_poise",
+   "name": "Pocket Poise",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "QB"
+   ],
+   "positions": null,
+   "weights": {
+    "throwUnderPressure": 2,
+    "breakSack": 1
+   },
+   "icon": "shield",
+   "color": "#5c6bd6",
+   "demo": "pass_pro",
+   "role": "qb",
+   "mod": null,
+   "fx": "POISE",
+   "tiers": [
+    25,
+    40,
+    60
+   ],
+   "desc": "Ignores {a}% of the accuracy penalty for throwing with a defender in his face."
+  },
+  {
+   "id": "cannon",
+   "name": "Cannon Arm",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "QB"
+   ],
+   "positions": null,
+   "weights": {
+    "throwPower": 3
+   },
+   "icon": "bolt",
+   "color": "#e0a019",
+   "demo": "deep_pass",
+   "role": "qb",
+   "mod": null,
+   "fx": "ZIP!",
+   "tiers": [
+    3,
+    5,
+    8
+   ],
+   "desc": "Max throw distance +{a} yds, and bullets get to receivers faster."
+  },
+  {
+   "id": "moonshot",
+   "name": "Moonshot",
+   "kind": "A",
+   "cost": 2,
+   "groups": [
+    "QB"
+   ],
+   "positions": null,
+   "weights": {
+    "throwPower": 1,
+    "throwAccuracyDeep": 2
+   },
+   "icon": "arrow",
+   "color": "#e05a2a",
+   "demo": "deep_pass",
+   "role": "qb",
+   "mod": null,
+   "fx": "MOONSHOT!",
+   "tiers": [
+    8,
+    12,
+    16
+   ],
+   "desc": "The next pass becomes a perfect spiral: +{a} Deep Accuracy, and it can't be tipped or batted."
+  },
+  {
+   "id": "dart",
+   "name": "Dart Throw",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "QB"
+   ],
+   "positions": null,
+   "weights": {
+    "throwAccuracyShort": 2,
+    "throwAccuracyMid": 1
+   },
+   "icon": "target",
+   "color": "#d63c3c",
+   "demo": "quick_pass",
+   "role": "qb",
+   "mod": null,
+   "fx": "DART!",
+   "tiers": [
+    6,
+    9,
+    12
+   ],
+   "desc": "The next pass under 20 yds hits the receiver in stride: +{a} Short/Med Accuracy and a YAC head start."
+  },
+  {
+   "id": "escape",
+   "name": "Escape Artist",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "QB"
+   ],
+   "positions": null,
+   "weights": {
+    "speed": 1,
+    "agility": 1,
+    "throwOnTheRun": 2
+   },
+   "icon": "wind",
+   "color": "#2aa889",
+   "demo": "scramble",
+   "role": "qb",
+   "mod": null,
+   "fx": "ESCAPE!",
+   "tiers": [
+    6,
+    9,
+    12
+   ],
+   "desc": "Automatically slips the next sack attempt and rolls out, with +{a} Throw on Run for 3 sec."
+  },
+  {
+   "id": "hard_count",
+   "name": "Hard Count",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "QB"
+   ],
+   "positions": null,
+   "weights": {
+    "awareness": 2,
+    "playAction": 1
+   },
+   "icon": "eye",
+   "color": "#8a5cd6",
+   "demo": "pass_pro",
+   "role": "qb",
+   "mod": null,
+   "fx": "HUT-HUT!",
+   "tiers": [
+    30,
+    45,
+    60
+   ],
+   "desc": "At the snap, the defensive line jumps offside ({a}% chance) or freezes for half a second."
+  },
+  {
+   "id": "vision",
+   "name": "Cutback Vision",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "RB"
+   ],
+   "positions": null,
+   "weights": {
+    "bCVision": 3
+   },
+   "icon": "eye",
+   "color": "#2f9e44",
+   "demo": "speed_burst",
+   "role": "rb",
+   "mod": null,
+   "fx": "LANE!",
+   "tiers": [
+    3,
+    5,
+    8
+   ],
+   "desc": "Running lanes light up a step early: +{a} BC Vision on every carry."
+  },
+  {
+   "id": "ball_security",
+   "name": "Ball Security",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "RB",
+    "WR",
+    "TE"
+   ],
+   "positions": null,
+   "weights": {
+    "carrying": 3
+   },
+   "icon": "lock",
+   "color": "#7a6a52",
+   "demo": "truck",
+   "role": "rb",
+   "mod": null,
+   "fx": "SECURE",
+   "tiers": [
+    30,
+    50,
+    75
+   ],
+   "desc": "Fumble chance on big hits -{a}%."
+  },
+  {
+   "id": "workhorse",
+   "name": "Workhorse",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "RB",
+    "OL",
+    "DL"
+   ],
+   "positions": null,
+   "weights": {
+    "stamina": 2,
+    "toughness": 2
+   },
+   "icon": "heart",
+   "color": "#d6455b",
+   "demo": "truck",
+   "role": "rb",
+   "mod": null,
+   "fx": "WORKHORSE",
+   "tiers": [
+    8,
+    12,
+    16
+   ],
+   "desc": "No fatigue penalty for his first {a} snaps or touches of each half."
+  },
+  {
+   "id": "ankle_breaker",
+   "name": "Ankle Breaker",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "RB",
+    "WR"
+   ],
+   "positions": null,
+   "weights": {
+    "jukeMove": 2,
+    "agility": 1,
+    "changeOfDirection": 1
+   },
+   "icon": "zigzag",
+   "color": "#e0a019",
+   "demo": "juke",
+   "role": "rb",
+   "mod": null,
+   "fx": "JUKE!",
+   "tiers": [
+    0.5,
+    0.8,
+    1.2
+   ],
+   "desc": "The next juke always works. The defender stumbles for {a} sec."
+  },
+  {
+   "id": "cyclone",
+   "name": "Cyclone",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "RB",
+    "WR"
+   ],
+   "positions": null,
+   "weights": {
+    "spinMove": 2,
+    "agility": 1
+   },
+   "icon": "spiral",
+   "color": "#3fa7d6",
+   "demo": "spin",
+   "role": "rb",
+   "mod": null,
+   "fx": "SPIN!",
+   "tiers": [
+    10,
+    15,
+    20
+   ],
+   "desc": "A 360° spin that can't be stopped by arm tackles, and keeps {a}% more speed out of the spin."
+  },
+  {
+   "id": "battering_ram",
+   "name": "Battering Ram",
+   "kind": "A",
+   "cost": 2,
+   "groups": [
+    "RB",
+    "TE"
+   ],
+   "positions": null,
+   "weights": {
+    "trucking": 2,
+    "strength": 1,
+    "breakTackle": 1
+   },
+   "icon": "hammer",
+   "color": "#b0482c",
+   "demo": "truck",
+   "role": "rb",
+   "mod": null,
+   "fx": "TRUCK!",
+   "tiers": [
+    70,
+    80,
+    90
+   ],
+   "desc": "For 3 sec every collision is a truck. Defenders under {a} Strength get flattened."
+  },
+  {
+   "id": "stiff_arm",
+   "name": "Iron Stiff Arm",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "RB",
+    "WR",
+    "TE",
+    "QB"
+   ],
+   "positions": null,
+   "weights": {
+    "stiffArm": 2,
+    "strength": 1
+   },
+   "icon": "fist",
+   "color": "#8f5a2e",
+   "demo": "stiff_arm",
+   "role": "rb",
+   "mod": null,
+   "fx": "SHOVE!",
+   "tiers": [
+    2,
+    3,
+    4
+   ],
+   "desc": "The next stiff arm puts the tackler on the ground, and the carrier gains {a} extra yds of space."
+  },
+  {
+   "id": "afterburner",
+   "name": "Afterburner",
+   "kind": "A",
+   "cost": 2,
+   "groups": [
+    "RB",
+    "WR",
+    "QB"
+   ],
+   "positions": null,
+   "weights": {
+    "speed": 2,
+    "acceleration": 1
+   },
+   "icon": "flame",
+   "color": "#e5532d",
+   "demo": "speed_burst",
+   "role": "rb",
+   "mod": null,
+   "fx": "BURNER!",
+   "tiers": [
+    3,
+    5,
+    7
+   ],
+   "desc": "Once past the line: +{a} Speed for 4 sec, and pursuit angles are misjudged."
+  },
+  {
+   "id": "lead_block",
+   "name": "Lead Blocker",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "RB"
+   ],
+   "positions": [
+    "FB"
+   ],
+   "weights": {
+    "leadBlock": 2,
+    "impactBlocking": 1
+   },
+   "icon": "wall",
+   "color": "#a88f3a",
+   "demo": "block_pancake",
+   "role": "ol",
+   "mod": null,
+   "fx": "LEAD!",
+   "tiers": [
+    1,
+    1.5,
+    2
+   ],
+   "desc": "Explodes through the hole and takes out the first linebacker for {a} sec."
+  },
+  {
+   "id": "sticky_hands",
+   "name": "Sticky Hands",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "WR",
+    "TE",
+    "RB"
+   ],
+   "positions": null,
+   "weights": {
+    "catching": 3
+   },
+   "icon": "glove",
+   "color": "#e6b422",
+   "demo": "quick_pass",
+   "role": "wr",
+   "mod": null,
+   "fx": "SECURED",
+   "tiers": [
+    30,
+    50,
+    70
+   ],
+   "desc": "Drop chance -{a}% on every catchable ball."
+  },
+  {
+   "id": "route_tech",
+   "name": "Route Technician",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "WR",
+    "TE"
+   ],
+   "positions": null,
+   "weights": {
+    "shortRouteRunning": 1,
+    "mediumRouteRunning": 1,
+    "deepRouteRunning": 1
+   },
+   "icon": "zigzag",
+   "color": "#3d7be0",
+   "demo": "quick_pass",
+   "role": "wr",
+   "mod": null,
+   "fx": "OPEN!",
+   "tiers": [
+    1,
+    2,
+    3
+   ],
+   "desc": "Gets +{a} yds of separation out of every break."
+  },
+  {
+   "id": "deep_threat",
+   "name": "Deep Threat",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "WR",
+    "TE"
+   ],
+   "positions": null,
+   "weights": {
+    "speed": 2,
+    "deepRouteRunning": 1
+   },
+   "icon": "arrow",
+   "color": "#5c6bd6",
+   "demo": "deep_pass",
+   "role": "wr",
+   "mod": null,
+   "fx": "TOO FAST",
+   "tiers": [
+    2,
+    4,
+    6
+   ],
+   "desc": "Safeties respect his speed and play {a} yds deeper, which opens the underneath routes."
+  },
+  {
+   "id": "safety_valve",
+   "name": "Safety Valve",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "TE",
+    "RB"
+   ],
+   "positions": null,
+   "weights": {
+    "catching": 1,
+    "awareness": 1,
+    "shortRouteRunning": 1
+   },
+   "icon": "shield",
+   "color": "#2aa889",
+   "demo": "quick_pass",
+   "role": "wr",
+   "mod": null,
+   "fx": "CHECKDOWN",
+   "tiers": [
+    10,
+    20,
+    30
+   ],
+   "desc": "Always comes open when the QB is under pressure. Checkdown throws are {a}% more accurate."
+  },
+  {
+   "id": "skywalker",
+   "name": "Skywalker",
+   "kind": "A",
+   "cost": 2,
+   "groups": [
+    "WR",
+    "TE"
+   ],
+   "positions": null,
+   "weights": {
+    "spectacularCatch": 2,
+    "jumping": 1
+   },
+   "icon": "arrow",
+   "color": "#8a5cd6",
+   "demo": "catch_contested",
+   "role": "wr",
+   "mod": null,
+   "fx": "SKYWALK!",
+   "tiers": [
+    10,
+    15,
+    20
+   ],
+   "desc": "Wins the next contested jump ball: +{a} Spectacular Catch and a higher leap."
+  },
+  {
+   "id": "shake_loose",
+   "name": "Shake Loose",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "WR",
+    "TE"
+   ],
+   "positions": null,
+   "weights": {
+    "release": 2,
+    "shortRouteRunning": 1
+   },
+   "icon": "wind",
+   "color": "#3fa7d6",
+   "demo": "quick_pass",
+   "role": "wr",
+   "mod": null,
+   "fx": "RELEASE!",
+   "tiers": [
+    2,
+    3,
+    4
+   ],
+   "desc": "Beats press coverage at the line instantly and starts the route +{a} yds open."
+  },
+  {
+   "id": "toe_tap",
+   "name": "Toe Tap",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "WR",
+    "TE"
+   ],
+   "positions": null,
+   "weights": {
+    "catchInTraffic": 2,
+    "awareness": 1
+   },
+   "icon": "glove",
+   "color": "#2f9e44",
+   "demo": "catch_contested",
+   "role": "wr",
+   "mod": null,
+   "fx": "TOE TAP!",
+   "tiers": [
+    8,
+    12,
+    16
+   ],
+   "desc": "The next catch in traffic or on the sideline is secured, with +{a} Catch in Traffic."
+  },
+  {
+   "id": "go_route",
+   "name": "Go Route",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "WR"
+   ],
+   "positions": null,
+   "weights": {
+    "speed": 1,
+    "deepRouteRunning": 2
+   },
+   "icon": "flame",
+   "color": "#e5532d",
+   "demo": "deep_pass",
+   "role": "wr",
+   "mod": null,
+   "fx": "GONE!",
+   "tiers": [
+    1,
+    2,
+    3
+   ],
+   "desc": "Reaches top speed instantly on a vertical route. The corner loses {a} step(s)."
+  },
+  {
+   "id": "seal_edge",
+   "name": "Seal the Edge",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "TE"
+   ],
+   "positions": null,
+   "weights": {
+    "runBlock": 2,
+    "impactBlocking": 1
+   },
+   "icon": "wall",
+   "color": "#a88f3a",
+   "demo": "block_pancake",
+   "role": "ol",
+   "mod": null,
+   "fx": "SEALED!",
+   "tiers": [
+    1,
+    1.5,
+    2
+   ],
+   "desc": "Pins the edge defender inside for {a} sec, so outside runs break free."
+  },
+  {
+   "id": "return_man",
+   "name": "Return Man",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "WR",
+    "RB",
+    "DB"
+   ],
+   "positions": null,
+   "weights": {
+    "kickReturn": 3,
+    "speed": 1
+   },
+   "icon": "football",
+   "color": "#e0a019",
+   "demo": "return",
+   "role": "kr",
+   "mod": null,
+   "fx": "TO THE HOUSE",
+   "tiers": [
+    3,
+    5,
+    8
+   ],
+   "desc": "On the next return, blockers hold {a}% longer and the first tackler always misses."
+  },
+  {
+   "id": "anchor",
+   "name": "Anchor",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "OL"
+   ],
+   "positions": null,
+   "weights": {
+    "passBlockPower": 2,
+    "strength": 1
+   },
+   "icon": "wall",
+   "color": "#7a6a52",
+   "demo": "pass_pro",
+   "role": "ol",
+   "mod": null,
+   "fx": "ANCHORED",
+   "tiers": [
+    25,
+    40,
+    60
+   ],
+   "desc": "Bull rushes against him lose {a}% of their push."
+  },
+  {
+   "id": "mirror",
+   "name": "Mirror Feet",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "OL"
+   ],
+   "positions": null,
+   "weights": {
+    "passBlockFinesse": 2,
+    "agility": 1
+   },
+   "icon": "shield",
+   "color": "#5c6bd6",
+   "demo": "pass_pro",
+   "role": "ol",
+   "mod": null,
+   "fx": "MIRROR",
+   "tiers": [
+    20,
+    35,
+    50
+   ],
+   "desc": "Swim, spin and speed moves against him take {a}% longer to finish."
+  },
+  {
+   "id": "road_grader",
+   "name": "Road Grader",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "OL"
+   ],
+   "positions": null,
+   "weights": {
+    "runBlockPower": 2,
+    "impactBlocking": 1
+   },
+   "icon": "hammer",
+   "color": "#b0482c",
+   "demo": "block_pancake",
+   "role": "ol",
+   "mod": null,
+   "fx": "PUSH",
+   "tiers": [
+    1,
+    2,
+    3
+   ],
+   "desc": "Run blocks drive defenders back +{a} yds, so holes open wider."
+  },
+  {
+   "id": "pancake",
+   "name": "Pancake",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "OL",
+    "TE"
+   ],
+   "positions": null,
+   "weights": {
+    "runBlock": 1,
+    "impactBlocking": 2,
+    "strength": 1
+   },
+   "icon": "hammer",
+   "color": "#e0a019",
+   "demo": "block_pancake",
+   "role": "ol",
+   "mod": null,
+   "fx": "PANCAKE!",
+   "tiers": [
+    1,
+    1.5,
+    2
+   ],
+   "desc": "The next block flattens the defender, who stays down for {a} sec."
+  },
+  {
+   "id": "brick_wall",
+   "name": "Brick Wall",
+   "kind": "A",
+   "cost": 2,
+   "groups": [
+    "OL"
+   ],
+   "positions": null,
+   "weights": {
+    "passBlock": 2,
+    "awareness": 1
+   },
+   "icon": "wall",
+   "color": "#d6455b",
+   "demo": "pass_pro",
+   "role": "ol",
+   "mod": null,
+   "fx": "BRICK WALL!",
+   "tiers": [
+    2,
+    3,
+    4
+   ],
+   "desc": "His side of the pocket can't be beaten for {a} sec, by any rush move."
+  },
+  {
+   "id": "pull_lead",
+   "name": "Pull & Kick",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "OL"
+   ],
+   "positions": null,
+   "weights": {
+    "runBlockFinesse": 2,
+    "speed": 1,
+    "agility": 1
+   },
+   "icon": "arrow",
+   "color": "#2aa889",
+   "demo": "block_pancake",
+   "role": "ol",
+   "mod": null,
+   "fx": "PULL!",
+   "tiers": [
+    10,
+    20,
+    30
+   ],
+   "desc": "Pulls on the next run at +{a}% speed and kicks out the edge defender."
+  },
+  {
+   "id": "relentless",
+   "name": "Relentless",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "DL",
+    "LB"
+   ],
+   "positions": null,
+   "weights": {
+    "pursuit": 2,
+    "stamina": 1
+   },
+   "icon": "flame",
+   "color": "#e5532d",
+   "demo": "sack",
+   "role": "dl",
+   "mod": null,
+   "fx": "RELENTLESS",
+   "tiers": [
+    10,
+    20,
+    30
+   ],
+   "desc": "Never stops on a play: second-effort pass rush moves are {a}% faster."
+  },
+  {
+   "id": "run_plug",
+   "name": "Run Plug",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "DL"
+   ],
+   "positions": null,
+   "weights": {
+    "blockShedding": 2,
+    "strength": 1
+   },
+   "icon": "wall",
+   "color": "#7a6a52",
+   "demo": "tackle_hit",
+   "role": "lb",
+   "mod": null,
+   "fx": "PLUGGED",
+   "tiers": [
+    15,
+    25,
+    35
+   ],
+   "desc": "Sheds blocks {a}% faster on run plays."
+  },
+  {
+   "id": "bull_rush",
+   "name": "Bull Rush",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "DL",
+    "LB"
+   ],
+   "positions": null,
+   "weights": {
+    "powerMoves": 2,
+    "strength": 1
+   },
+   "icon": "fist",
+   "color": "#b0482c",
+   "demo": "sack",
+   "role": "dl",
+   "mod": null,
+   "fx": "BULL RUSH!",
+   "tiers": [
+    2,
+    3,
+    4
+   ],
+   "desc": "Drives the blocker {a} yds straight back into the QB's lap."
+  },
+  {
+   "id": "swim",
+   "name": "Swim Move",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "DL",
+    "LB"
+   ],
+   "positions": null,
+   "weights": {
+    "finesseMoves": 2,
+    "agility": 1
+   },
+   "icon": "wave",
+   "color": "#3fa7d6",
+   "demo": "sack",
+   "role": "dl",
+   "mod": null,
+   "fx": "SWIM!",
+   "tiers": [
+    0.3,
+    0.5,
+    0.7
+   ],
+   "desc": "Swims past the blocker {a} sec faster than any normal move."
+  },
+  {
+   "id": "strip_sack",
+   "name": "Strip Sack",
+   "kind": "A",
+   "cost": 2,
+   "groups": [
+    "DL",
+    "LB"
+   ],
+   "positions": null,
+   "weights": {
+    "hitPower": 1,
+    "powerMoves": 1,
+    "finesseMoves": 1
+   },
+   "icon": "football",
+   "color": "#d63c3c",
+   "demo": "sack",
+   "role": "dl",
+   "mod": "fumble",
+   "fx": "STRIP SACK!",
+   "tiers": [
+    50,
+    70,
+    90
+   ],
+   "desc": "The next sack knocks the ball loose ({a}% chance)."
+  },
+  {
+   "id": "radar",
+   "name": "Field Radar",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "LB",
+    "DB"
+   ],
+   "positions": null,
+   "weights": {
+    "playRecognition": 2,
+    "awareness": 1
+   },
+   "icon": "target",
+   "color": "#8a5cd6",
+   "demo": "tackle_hit",
+   "role": "lb",
+   "mod": null,
+   "fx": "READ IT",
+   "tiers": [
+    0.2,
+    0.35,
+    0.5
+   ],
+   "desc": "Reads run or pass {a} sec sooner than anyone else on defense."
+  },
+  {
+   "id": "sure_tackler",
+   "name": "Sure Tackler",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "LB",
+    "DB",
+    "DL"
+   ],
+   "positions": null,
+   "weights": {
+    "tackle": 3
+   },
+   "icon": "lock",
+   "color": "#2f9e44",
+   "demo": "tackle_hit",
+   "role": "lb",
+   "mod": null,
+   "fx": "WRAPPED",
+   "tiers": [
+    25,
+    40,
+    60
+   ],
+   "desc": "Ball carriers break his tackles {a}% less often."
+  },
+  {
+   "id": "blitz",
+   "name": "A-Gap Blitz",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "LB"
+   ],
+   "positions": null,
+   "weights": {
+    "speed": 1,
+    "powerMoves": 1,
+    "finesseMoves": 1
+   },
+   "icon": "bolt",
+   "color": "#e0a019",
+   "demo": "sack",
+   "role": "dl",
+   "mod": null,
+   "fx": "BLITZ!",
+   "tiers": [
+    0.5,
+    0.8,
+    1
+   ],
+   "desc": "Times the snap and shoots the gap unblocked for {a} sec."
+  },
+  {
+   "id": "lights_out",
+   "name": "Lights Out",
+   "kind": "A",
+   "cost": 2,
+   "groups": [
+    "LB",
+    "DB"
+   ],
+   "positions": null,
+   "weights": {
+    "hitPower": 2,
+    "strength": 1
+   },
+   "icon": "star",
+   "color": "#d63c3c",
+   "demo": "tackle_hit",
+   "role": "lb",
+   "mod": "fumble",
+   "fx": "LIGHTS OUT!",
+   "tiers": [
+    40,
+    60,
+    80
+   ],
+   "desc": "The next tackle is a knockout hit with a {a}% chance to force a fumble."
+  },
+  {
+   "id": "zone_drop",
+   "name": "Zone Drop",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "LB"
+   ],
+   "positions": null,
+   "weights": {
+    "zoneCoverage": 2,
+    "playRecognition": 1
+   },
+   "icon": "eye",
+   "color": "#3d7be0",
+   "demo": "interception",
+   "role": "db",
+   "mod": null,
+   "fx": "BAITED!",
+   "tiers": [
+    10,
+    20,
+    30
+   ],
+   "desc": "Pretends to blitz, then drops into the passing lane. {a}% pick chance on throws over the middle."
+  },
+  {
+   "id": "ball_hawk",
+   "name": "Ball Hawk",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "DB"
+   ],
+   "positions": null,
+   "weights": {
+    "catching": 1,
+    "zoneCoverage": 2
+   },
+   "icon": "magnet",
+   "color": "#d63c3c",
+   "demo": "interception",
+   "role": "db",
+   "mod": null,
+   "fx": "HAWK",
+   "tiers": [
+    10,
+    20,
+    30
+   ],
+   "desc": "+{a}% interception chance on any contested throw."
+  },
+  {
+   "id": "shadow",
+   "name": "Shadow",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "DB"
+   ],
+   "positions": null,
+   "weights": {
+    "manCoverage": 2,
+    "speed": 1
+   },
+   "icon": "eye",
+   "color": "#2d2d38",
+   "demo": "lockdown",
+   "role": "db",
+   "mod": null,
+   "fx": "SHADOW",
+   "tiers": [
+    1.5,
+    1,
+    0.5
+   ],
+   "desc": "In man coverage he never trails his receiver by more than {a} yds."
+  },
+  {
+   "id": "closing_speed",
+   "name": "Closing Speed",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "DB",
+    "LB"
+   ],
+   "positions": null,
+   "weights": {
+    "speed": 1,
+    "pursuit": 2
+   },
+   "icon": "wind",
+   "color": "#2aa889",
+   "demo": "tackle_hit",
+   "role": "lb",
+   "mod": null,
+   "fx": "CLOSING",
+   "tiers": [
+    1,
+    2,
+    3
+   ],
+   "desc": "Takes perfect pursuit angles and gains +{a} Speed when closing on the ball."
+  },
+  {
+   "id": "lockdown",
+   "name": "Lockdown",
+   "kind": "A",
+   "cost": 2,
+   "groups": [
+    "DB"
+   ],
+   "positions": null,
+   "weights": {
+    "manCoverage": 2,
+    "press": 1
+   },
+   "icon": "lock",
+   "color": "#5c6bd6",
+   "demo": "lockdown",
+   "role": "db",
+   "mod": null,
+   "fx": "LOCKDOWN!",
+   "tiers": [
+    80,
+    90,
+    99
+   ],
+   "desc": "Erases his receiver for the play. {a}% of throws his way are broken up."
+  },
+  {
+   "id": "pick_six",
+   "name": "Pick Six",
+   "kind": "A",
+   "cost": 2,
+   "groups": [
+    "DB"
+   ],
+   "positions": null,
+   "weights": {
+    "zoneCoverage": 1,
+    "catching": 1,
+    "speed": 1
+   },
+   "icon": "magnet",
+   "color": "#e0a019",
+   "demo": "interception",
+   "role": "db",
+   "mod": null,
+   "fx": "PICK!",
+   "tiers": [
+    10,
+    20,
+    30
+   ],
+   "desc": "Jumps the route on the next throw his way, and gets +{a}% speed on the return."
+  },
+  {
+   "id": "jam",
+   "name": "Jam",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "DB"
+   ],
+   "positions": null,
+   "weights": {
+    "press": 2,
+    "strength": 1
+   },
+   "icon": "fist",
+   "color": "#b0482c",
+   "demo": "lockdown",
+   "role": "db",
+   "mod": null,
+   "fx": "JAMMED!",
+   "tiers": [
+    0.5,
+    0.8,
+    1.1
+   ],
+   "desc": "Reroutes the receiver at the line, throwing off his route timing by {a} sec."
+  },
+  {
+   "id": "missile",
+   "name": "Heat Seeker",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "DB"
+   ],
+   "positions": null,
+   "weights": {
+    "hitPower": 1,
+    "speed": 1,
+    "pursuit": 1
+   },
+   "icon": "bolt",
+   "color": "#e5532d",
+   "demo": "lockdown",
+   "role": "db",
+   "mod": null,
+   "fx": "BOOM!",
+   "tiers": [
+    20,
+    35,
+    50
+   ],
+   "desc": "Arrives with the ball: +{a}% chance to jar it loose on a catch in front of him."
+  },
+  {
+   "id": "ice_veins",
+   "name": "Ice Veins",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "ST"
+   ],
+   "positions": [
+    "K",
+    "P"
+   ],
+   "weights": {
+    "kickAccuracy": 2,
+    "awareness": 1
+   },
+   "icon": "snow",
+   "color": "#3fa7d6",
+   "demo": "kick",
+   "role": "k",
+   "mod": null,
+   "fx": "ICE",
+   "tiers": [
+    50,
+    75,
+    100
+   ],
+   "desc": "Ignores {a}% of the clutch-pressure penalty on game-winning kicks."
+  },
+  {
+   "id": "big_leg",
+   "name": "Big Leg",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "ST"
+   ],
+   "positions": [
+    "K",
+    "P"
+   ],
+   "weights": {
+    "kickPower": 3
+   },
+   "icon": "boot",
+   "color": "#b0482c",
+   "demo": "kick",
+   "role": "k",
+   "mod": null,
+   "fx": "BOOM",
+   "tiers": [
+    3,
+    5,
+    8
+   ],
+   "desc": "Max kick distance +{a} yds."
+  },
+  {
+   "id": "laser_leg",
+   "name": "Laser Leg",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "ST"
+   ],
+   "positions": [
+    "K"
+   ],
+   "weights": {
+    "kickPower": 1,
+    "kickAccuracy": 2
+   },
+   "icon": "target",
+   "color": "#e0a019",
+   "demo": "kick",
+   "role": "k",
+   "mod": null,
+   "fx": "SPLIT 'EM!",
+   "tiers": [
+    20,
+    35,
+    50
+   ],
+   "desc": "The kick meter slows by {a}% for the next field goal or extra point."
+  },
+  {
+   "id": "coffin_corner",
+   "name": "Coffin Corner",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "ST"
+   ],
+   "positions": [
+    "P"
+   ],
+   "weights": {
+    "kickAccuracy": 3
+   },
+   "icon": "target",
+   "color": "#5c6bd6",
+   "demo": "punt",
+   "role": "k",
+   "mod": null,
+   "fx": "PINNED!",
+   "tiers": [
+    10,
+    5,
+    2
+   ],
+   "desc": "The next punt dies inside the {a}-yard line."
+  },
+  {
+   "id": "hang_time",
+   "name": "Hang Time",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "ST"
+   ],
+   "positions": [
+    "P"
+   ],
+   "weights": {
+    "kickPower": 3
+   },
+   "icon": "arrow",
+   "color": "#2aa889",
+   "demo": "punt",
+   "role": "k",
+   "mod": null,
+   "fx": "HANG TIME",
+   "tiers": [
+    0.5,
+    0.8,
+    1.2
+   ],
+   "desc": "+{a} sec of hang time on the next punt. The returner has to fair catch."
+  },
+  {
+   "id": "perfect_snap",
+   "name": "Perfect Snap",
+   "kind": "P",
+   "cost": 0,
+   "groups": [
+    "ST"
+   ],
+   "positions": [
+    "LS"
+   ],
+   "weights": {
+    "awareness": 2,
+    "strength": 1
+   },
+   "icon": "football",
+   "color": "#7a6a52",
+   "demo": "kick",
+   "role": "ls",
+   "mod": null,
+   "fx": "PERFECT",
+   "tiers": [
+    90,
+    95,
+    99
+   ],
+   "desc": "{a}% of his snaps land laces-out, so the kicker loses no accuracy."
+  },
+  {
+   "id": "gunner",
+   "name": "Gunner",
+   "kind": "A",
+   "cost": 1,
+   "groups": [
+    "ST",
+    "DB",
+    "WR"
+   ],
+   "positions": [
+    "LS",
+    "CB",
+    "FS",
+    "SS",
+    "WR"
+   ],
+   "weights": {
+    "speed": 2,
+    "tackle": 1
+   },
+   "icon": "flame",
+   "color": "#d63c3c",
+   "demo": "punt",
+   "role": "gunner",
+   "mod": null,
+   "fx": "DOWNED!",
+   "tiers": [
+    10,
+    20,
+    30
+   ],
+   "desc": "Beats the double team on the next punt and downs the ball {a}% faster."
+  }
+ ],
+ "signatures": {
+  "minOvr": 88,
+  "cost": 3,
+  "icon": "crown",
+  "color": "#e0a019",
+  "byGroup": {
+   "QB": {
+    "nouns": [
+     "Airstrike",
+     "Showtime",
+     "Two-Minute Drill",
+     "Hail Mary",
+     "Air Raid"
+    ],
+    "demo": "deep_pass",
+    "role": "qb",
+    "mod": null,
+    "special": "every receiver gets +3 yds of separation"
+   },
+   "RB": {
+    "nouns": [
+     "Stampede",
+     "Express",
+     "Avalanche",
+     "Juggernaut",
+     "Highlight Reel"
+    ],
+    "demo": "speed_burst",
+    "role": "rb",
+    "mod": null,
+    "special": "the first two tackle attempts automatically miss"
+   },
+   "WR": {
+    "nouns": [
+     "Spotlight",
+     "Mossed",
+     "Supernova",
+     "Burn Notice",
+     "Showcase"
+    ],
+    "demo": "catch_contested",
+    "role": "wr",
+    "mod": null,
+    "special": "any ball within reach is an automatic catch"
+   },
+   "TE": {
+    "nouns": [
+     "Mismatch",
+     "Seam Buster",
+     "Monster Truck",
+     "Red Zone Rex"
+    ],
+    "demo": "catch_contested",
+    "role": "wr",
+    "mod": null,
+    "special": "always wins jump balls over defenders under 6'2\""
+   },
+   "OL": {
+    "nouns": [
+     "Fortress",
+     "Iron Curtain",
+     "Bulldozer",
+     "Great Wall"
+    ],
+    "demo": "pass_pro",
+    "role": "ol",
+    "mod": null,
+    "special": "the whole offensive line becomes a Brick Wall"
+   },
+   "DL": {
+    "nouns": [
+     "Wrecking Ball",
+     "Sack Attack",
+     "Earthquake",
+     "Havoc"
+    ],
+    "demo": "sack",
+    "role": "dl",
+    "mod": "fumble",
+    "special": "reaches the QB in 2.5 sec no matter who blocks him"
+   },
+   "LB": {
+    "nouns": [
+     "Thunderclap",
+     "Headhunter",
+     "Command Center",
+     "Guillotine"
+    ],
+    "demo": "tackle_hit",
+    "role": "lb",
+    "mod": "fumble",
+    "special": "always knows who has the ball"
+   },
+   "DB": {
+    "nouns": [
+     "No Fly Zone",
+     "Island",
+     "Interceptor",
+     "Blackout"
+    ],
+    "demo": "interception",
+    "role": "db",
+    "mod": null,
+    "special": "any throw into his zone has a 50% pick chance"
+   },
+   "ST": {
+    "nouns": [
+     "Money Leg",
+     "Automatic",
+     "Golden Boot"
+    ],
+    "demo": "kick",
+    "role": "k",
+    "mod": null,
+    "special": "the next kick up to 65 yds is automatically good"
+   }
+  }
+ }
+}

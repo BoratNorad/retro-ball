@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.tsbuildinfo
+data/headshot_cache/
+__pycache__/
+.DS_Store
+coverage/

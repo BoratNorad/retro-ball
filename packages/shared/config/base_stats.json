@@ -1,0 +1,11 @@
+{
+  "_doc": "Six base stats (0-99) for the dex radar and type flavour, each a weighted mean of ratings. For mixed stats the player's best related ratings count most (top-n mean).",
+  "stats": {
+    "VIT": { "name": "Vitality", "ratings": ["stamina", "toughness", "injury"], "top": 3 },
+    "POW": { "name": "Power",    "ratings": ["strength", "hitPower", "trucking", "throwPower", "kickPower", "powerMoves", "runBlockPower", "passBlockPower"], "top": 2 },
+    "GRD": { "name": "Guard",    "ratings": ["passBlock", "runBlock", "manCoverage", "zoneCoverage", "blockShedding", "carrying"], "top": 2 },
+    "FOC": { "name": "Focus",    "ratings": ["awareness", "playRecognition", "throwAccuracyShort", "throwAccuracyMid", "kickAccuracy", "catching", "shortRouteRunning"], "top": 3 },
+    "RES": { "name": "Resolve",  "ratings": ["toughness", "throwUnderPressure", "breakTackle", "catchInTraffic", "tackle", "pursuit"], "top": 3 },
+    "SPD": { "name": "Speed",    "ratings": ["speed", "acceleration", "agility", "changeOfDirection"], "top": 4 }
+  }
+}
