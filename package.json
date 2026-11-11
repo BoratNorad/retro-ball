@@ -13,7 +13,9 @@
     "data:report": "tsx tools/report/distribution.ts",
     "dev:client": "pnpm --filter @tdf/client dev",
     "dev:dex": "pnpm dlx serve apps/dex",
-    "build": "pnpm --filter @tdf/client build"
+    "build": "pnpm --filter @tdf/client build",
+    "sim:game": "tsx tools/sim/game.ts",
+    "sim:harness": "tsx tools/sim/harness.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

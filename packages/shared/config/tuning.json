@@ -1,0 +1,180 @@
+{
+  "_doc": "Play-engine tuning. Distances in yards, speeds in yards/second, times in seconds, probabilities in per-mille (out of 1000). Ratings are 0-99. 'per' = change per rating point.",
+  "field": {
+    "width": 53.333,
+    "hashHalfGap": 3.1,
+    "maxPlaySeconds": 15,
+    "endZone": 10
+  },
+  "movement": {
+    "speedBase": 4.6,
+    "speedPer": 0.058,
+    "accelBase": 7.0,
+    "accelPer": 0.07,
+    "carryingSpeedMult": 0.96,
+    "engagedSpeedMult": 0.18,
+    "backpedalMult": 0.78
+  },
+  "blocking": {
+    "engageRange": 1.3,
+    "passHoldBase": 2.3,
+    "passHoldPer": 0.045,
+    "passHoldJitter": 1.2,
+    "runHoldBase": 2.3,
+    "runHoldPer": 0.035,
+    "runHoldJitter": 0.6,
+    "doubleTeamMult": 1.7,
+    "shedStun": 0.35,
+    "pushPer": 0.012
+  },
+  "qb": {
+    "readStartAfterDrop": 0.15,
+    "readWindow": 0.55,
+    "openSepStart": 2.6,
+    "openSepEnd": 1.4,
+    "openSepDeepBonus": 0.8,
+    "pressureRange": 2.6,
+    "throwAwayAwareness": 72,
+    "scrambleSpeedMin": 78,
+    "scrambleAfter": 1.2,
+    "maxHold": 5.0,
+    "dropSpeed": 5.5,
+    "cutCost": 0.35,
+    "evadeAgilityMin": 75,
+    "evadeStep": 0.8,
+    "pressureReactBase": 0.3,
+    "pressureReactPerMissing": 0.012
+  },
+  "throw": {
+    "ballSpeedBase": 17.5,
+    "ballSpeedPer": 0.095,
+    "errBase": 0.35,
+    "errPerMissingAcc": 0.035,
+    "errPerYard": 0.035,
+    "pressureErrMult": 1.6,
+    "onRunErrMult": 1.35,
+    "shortMax": 12,
+    "midMax": 25
+  },
+  "catch": {
+    "reach": 1.5,
+    "contestRange": 1.6,
+    "baseCatch": 640,
+    "catchPer": 3.4,
+    "contestPenalty": 280,
+    "contestSkillPer": 4.0,
+    "intBase": 70,
+    "intPer": 2.8,
+    "deflectBase": 260
+  },
+  "coverage": {
+    "reactBase": 0.35,
+    "reactPerMissing": 0.012,
+    "manCushion": 1.2,
+    "zoneSwitchRange": 3.0,
+    "ballReactBase": 0.3,
+    "ballReactPerMissing": 0.008,
+    "runReadBase": 0.5,
+    "runReadPerMissing": 0.012,
+    "pursuitLead": 1.0,
+    "pursuitMaxTime": 1.2
+  },
+  "tackle": {
+    "range": 1.35,
+    "base": 860,
+    "per": 4.5,
+    "powerPer": 1.5,
+    "gangBonus": 110,
+    "min": 300,
+    "max": 960,
+    "missStun": 0.4,
+    "carrierSlowOnMiss": 0.25,
+    "fumbleBase": 9,
+    "fumblePer": 0.35,
+    "fumbleMin": 2,
+    "fumbleMax": 35,
+    "fumbleOffenseRecover": 560,
+    "sackBase": 820,
+    "sackPer": 5.0,
+    "elusiveMaxWeight": 0.6,
+    "fallForwardPerSpeed": 0.14,
+    "fallForwardMax": 2.2
+  },
+  "carrier": {
+    "lookAhead": 9,
+    "lanePerp": 2.6,
+    "laneAngles": [
+      -75,
+      -55,
+      -35,
+      -18,
+      0,
+      18,
+      35,
+      55,
+      75
+    ],
+    "forwardWeight": 2.2,
+    "sidelineMargin": 2.0,
+    "visionNoisePerMissing": 0.05,
+    "followAimFor": 0.7,
+    "replanTicksBase": 8,
+    "replanPerAgility": 0.05,
+    "sharpTurnSpeedMult": 0.55,
+    "sharpTurnAgilityPer": 0.004
+  },
+  "kicking": {
+    "kickoffBase": 52,
+    "kickoffPer": 0.18,
+    "kickoffJitter": 6,
+    "returnMeanBase": 18,
+    "returnPer": 0.12,
+    "returnJitter": 12,
+    "returnTdPerMille": 6,
+    "puntBase": 34,
+    "puntPer": 0.17,
+    "puntJitter": 7,
+    "puntReturnMean": 7,
+    "puntReturnJitter": 7,
+    "fairCatchPerMille": 380,
+    "fgMakeShort": 985,
+    "fgDropPerYardAfter35": 16,
+    "fgDropPerYardAfter50": 26,
+    "fgAccPer": 4.0,
+    "fgRangeBase": 50,
+    "fgRangePer": 0.14,
+    "patBase": 950,
+    "patPer": 0.5,
+    "kickSeconds": 4,
+    "puntSeconds": 6,
+    "kickoffSeconds": 7
+  },
+  "penalties": {
+    "falseStart": {
+      "perMille": 9,
+      "yards": 5,
+      "awarenessPer": 0.12
+    },
+    "offside": {
+      "perMille": 6,
+      "yards": 5,
+      "awarenessPer": 0.1
+    },
+    "holdingOffense": {
+      "perMille": 26,
+      "yards": 10,
+      "skillPer": 0.4
+    },
+    "holdingDefense": {
+      "perMille": 9,
+      "yards": 5
+    },
+    "passInterference": {
+      "onCloseIncompletePerMille": 170
+    },
+    "roughing": {
+      "perMille": 3,
+      "yards": 15
+    }
+  }
+}

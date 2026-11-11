@@ -1,23 +1,275 @@
 {
-  "_doc": "Offensive plays. pass: routes per role, read = QB progression, drop = dropback depth (yards). run: carrier, aim = [x, y] the back aims at first (x mirrored when flip), block = scheme. weight = how often the AI calls it by default.",
-  "plays": [
-    { "id": "inside_zone", "name": "Inside Zone", "kind": "run", "formations": ["gun_doubles", "singleback"], "carrier": "RB", "aim": [1.5, 2], "block": "zone", "weight": 4, "tags": ["short", "inside"] },
-    { "id": "outside_zone", "name": "Outside Zone", "kind": "run", "formations": ["singleback", "gun_doubles"], "carrier": "RB", "aim": [7, 1], "block": "zone", "weight": 3, "tags": ["outside"] },
-    { "id": "dive", "name": "Dive", "kind": "run", "formations": ["singleback"], "carrier": "RB", "aim": [0.5, 2], "block": "man", "weight": 2, "tags": ["short", "inside", "goalLine"] },
-    { "id": "qb_sneak", "name": "QB Sneak", "kind": "run", "formations": ["singleback"], "carrier": "QB", "aim": [0, 2], "block": "man", "weight": 0, "tags": ["sneak"] },
-    { "id": "slants", "name": "Slants", "kind": "pass", "formations": ["gun_doubles", "singleback"], "drop": 3,
-      "routes": { "X": "slant", "Z": "slant", "SLOT": "flat", "TE": "drag", "RB": "block" }, "read": ["Z", "X", "SLOT", "TE"], "weight": 3, "tags": ["short", "quick"] },
-    { "id": "curl_flat", "name": "Curl Flat", "kind": "pass", "formations": ["gun_doubles", "singleback"], "drop": 5,
-      "routes": { "X": "curl", "Z": "curl", "SLOT": "flat", "TE": "out", "RB": "swing" }, "read": ["X", "SLOT", "Z", "TE", "RB"], "weight": 3, "tags": ["short"] },
-    { "id": "mesh", "name": "Mesh", "kind": "pass", "formations": ["gun_doubles"], "drop": 5,
-      "routes": { "X": "dig", "Z": "corner", "SLOT": "drag", "TE": "drag", "RB": "flat" }, "read": ["SLOT", "TE", "Z", "X", "RB"], "weight": 3, "tags": ["short", "medium"] },
-    { "id": "smash", "name": "Smash", "kind": "pass", "formations": ["gun_doubles", "singleback"], "drop": 5,
-      "routes": { "X": "hitch", "Z": "hitch", "SLOT": "corner", "TE": "seam", "RB": "block" }, "read": ["SLOT", "X", "TE", "Z"], "weight": 2, "tags": ["medium"] },
-    { "id": "y_cross", "name": "Dig Post", "kind": "pass", "formations": ["singleback", "gun_doubles"], "drop": 7,
-      "routes": { "X": "post", "Z": "dig", "SLOT": "seam", "TE": "out", "RB": "block" }, "read": ["Z", "X", "SLOT", "TE"], "weight": 2, "tags": ["medium", "deep"] },
-    { "id": "four_verts", "name": "Four Verts", "kind": "pass", "formations": ["gun_doubles"], "drop": 7,
-      "routes": { "X": "go", "Z": "go", "SLOT": "seam", "TE": "seam", "RB": "block" }, "read": ["SLOT", "TE", "Z", "X"], "weight": 1, "tags": ["deep"] },
-    { "id": "comebacks", "name": "Comebacks", "kind": "pass", "formations": ["gun_doubles"], "drop": 5,
-      "routes": { "X": "comeback", "Z": "comeback", "SLOT": "out", "TE": "curl", "RB": "flat" }, "read": ["Z", "X", "SLOT", "TE", "RB"], "weight": 2, "tags": ["medium", "sideline"] }
-  ]
+ "_doc": "Offensive plays. pass: routes per role, read = QB progression, drop = dropback depth (yards). run: carrier, aim = [x, y] the back aims at first (x mirrored when flip), block = scheme. weight = how often the AI calls it by default.",
+ "plays": [
+  {
+   "id": "inside_zone",
+   "name": "Inside Zone",
+   "kind": "run",
+   "formations": [
+    "gun_doubles",
+    "singleback"
+   ],
+   "carrier": "RB",
+   "aim": [
+    1.5,
+    4
+   ],
+   "block": "zone",
+   "weight": 4,
+   "tags": [
+    "short",
+    "inside"
+   ]
+  },
+  {
+   "id": "outside_zone",
+   "name": "Outside Zone",
+   "kind": "run",
+   "formations": [
+    "singleback",
+    "gun_doubles"
+   ],
+   "carrier": "RB",
+   "aim": [
+    7,
+    2.5
+   ],
+   "block": "zone",
+   "weight": 3,
+   "tags": [
+    "outside"
+   ]
+  },
+  {
+   "id": "dive",
+   "name": "Dive",
+   "kind": "run",
+   "formations": [
+    "singleback"
+   ],
+   "carrier": "RB",
+   "aim": [
+    0.5,
+    4
+   ],
+   "block": "man",
+   "weight": 2,
+   "tags": [
+    "short",
+    "inside",
+    "goalLine"
+   ]
+  },
+  {
+   "id": "qb_sneak",
+   "name": "QB Sneak",
+   "kind": "run",
+   "formations": [
+    "singleback"
+   ],
+   "carrier": "QB",
+   "aim": [
+    0,
+    2
+   ],
+   "block": "man",
+   "weight": 0,
+   "tags": [
+    "sneak"
+   ]
+  },
+  {
+   "id": "slants",
+   "name": "Slants",
+   "kind": "pass",
+   "formations": [
+    "gun_doubles",
+    "singleback"
+   ],
+   "drop": 3,
+   "routes": {
+    "X": "slant",
+    "Z": "slant",
+    "SLOT": "flat",
+    "TE": "drag",
+    "RB": "block"
+   },
+   "read": [
+    "Z",
+    "X",
+    "SLOT",
+    "TE"
+   ],
+   "weight": 3,
+   "tags": [
+    "short",
+    "quick"
+   ]
+  },
+  {
+   "id": "curl_flat",
+   "name": "Curl Flat",
+   "kind": "pass",
+   "formations": [
+    "gun_doubles",
+    "singleback"
+   ],
+   "drop": 5,
+   "routes": {
+    "X": "curl",
+    "Z": "curl",
+    "SLOT": "flat",
+    "TE": "out",
+    "RB": "swing"
+   },
+   "read": [
+    "X",
+    "SLOT",
+    "Z",
+    "TE",
+    "RB"
+   ],
+   "weight": 3,
+   "tags": [
+    "short"
+   ]
+  },
+  {
+   "id": "mesh",
+   "name": "Mesh",
+   "kind": "pass",
+   "formations": [
+    "gun_doubles"
+   ],
+   "drop": 5,
+   "routes": {
+    "X": "dig",
+    "Z": "corner",
+    "SLOT": "drag",
+    "TE": "drag",
+    "RB": "flat"
+   },
+   "read": [
+    "SLOT",
+    "TE",
+    "Z",
+    "X",
+    "RB"
+   ],
+   "weight": 3,
+   "tags": [
+    "short",
+    "medium"
+   ]
+  },
+  {
+   "id": "smash",
+   "name": "Smash",
+   "kind": "pass",
+   "formations": [
+    "gun_doubles",
+    "singleback"
+   ],
+   "drop": 5,
+   "routes": {
+    "X": "hitch",
+    "Z": "hitch",
+    "SLOT": "corner",
+    "TE": "seam",
+    "RB": "block"
+   },
+   "read": [
+    "SLOT",
+    "X",
+    "TE",
+    "Z"
+   ],
+   "weight": 2,
+   "tags": [
+    "medium"
+   ]
+  },
+  {
+   "id": "y_cross",
+   "name": "Dig Post",
+   "kind": "pass",
+   "formations": [
+    "singleback",
+    "gun_doubles"
+   ],
+   "drop": 7,
+   "routes": {
+    "X": "post",
+    "Z": "dig",
+    "SLOT": "seam",
+    "TE": "out",
+    "RB": "block"
+   },
+   "read": [
+    "Z",
+    "X",
+    "SLOT",
+    "TE"
+   ],
+   "weight": 2,
+   "tags": [
+    "medium",
+    "deep"
+   ]
+  },
+  {
+   "id": "four_verts",
+   "name": "Four Verts",
+   "kind": "pass",
+   "formations": [
+    "gun_doubles"
+   ],
+   "drop": 7,
+   "routes": {
+    "X": "go",
+    "Z": "go",
+    "SLOT": "seam",
+    "TE": "seam",
+    "RB": "block"
+   },
+   "read": [
+    "SLOT",
+    "TE",
+    "Z",
+    "X"
+   ],
+   "weight": 1,
+   "tags": [
+    "deep"
+   ]
+  },
+  {
+   "id": "comebacks",
+   "name": "Comebacks",
+   "kind": "pass",
+   "formations": [
+    "gun_doubles"
+   ],
+   "drop": 5,
+   "routes": {
+    "X": "comeback",
+    "Z": "comeback",
+    "SLOT": "out",
+    "TE": "curl",
+    "RB": "flat"
+   },
+   "read": [
+    "Z",
+    "X",
+    "SLOT",
+    "TE",
+    "RB"
+   ],
+   "weight": 2,
+   "tags": [
+    "medium",
+    "sideline"
+   ]
+  }
+ ]
 }

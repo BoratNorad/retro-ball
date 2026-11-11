@@ -4,3 +4,7 @@ export * from "./creatures.js";
 export * from "./grade.js";
 export * from "./rules.js";
 export * from "./roster.js";
+export * from "./coach.js";
+export * from "./game.js";
+export * from "./engine/play.js";
+export * from "./engine/kicks.js";

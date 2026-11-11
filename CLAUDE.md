@@ -15,6 +15,10 @@ decisions and milestone status. Keep it updated.
 | Rebuild pool + balance report | `pnpm data:report` (fails if a draft slot is short on options) |
 | Re-import players from the Madden sheet + nflverse | `pnpm data:import` (Python: pandas, openpyxl; downloads nflverse CSVs) |
 | Re-fit position-overall formulas | `pnpm data:fit` (Python: numpy) |
+| Play one AI-vs-AI game, print box score | `pnpm sim:game BUF KC 42` (add `--pbp` for play-by-play) |
+| Balance harness (all cores) | `pnpm sim:harness --games 1000` (spec target run: `--games 10000`) |
+| Trace one play tick by tick | `pnpm tsx tools/sim/trace.ts four_verts cover3 7` (`ROLES=regex EVERY=n DEBUG_ROLE=FS`) |
+| Summarise one play type over N reps | `pnpm tsx tools/sim/probe.ts slants cover1 300` |
 | Gridiron Dex (legacy browser) | `pnpm dev:dex` |
 
 Data pipeline order after a new ratings week: `data:import` → `data:fit` → `data:report` → commit
@@ -24,8 +28,9 @@ Data pipeline order after a new ratings week: `data:import` → `data:fit` → `
 
 ```
 packages/shared   Zod schemas, data/ (players, teams, types, abilities, icons, pool), config/ (all tuning)
-packages/sim      headless core: seeded RNG, Q16.16 fixed-point maths, creature derivation, team grades
-                  (M2+: rules engine, 30 Hz play engine + AI, draft engine, replay)
+packages/sim      headless core: seeded RNG, Q16.16 fixed-point maths, creature derivation, team grades,
+                  rules.ts (rules engine), roster.ts, engine/play.ts (30 Hz 22-player engine), engine/kicks.ts,
+                  coach.ts (AI play calling + clock management), game.ts (full game loop + box score)
 apps/client       Vite + Phaser 3 + Preact (M3)
 apps/server       Colyseus (M8)
 apps/dex          Gridiron Dex, the original static roster browser (kept working; parts get ported to client)
@@ -99,12 +104,26 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
 - [x] **M1 Skeleton** — monorepo, CI, schemas, seeded RNG, fixed-point maths, real-player pool with
   types, rarity, position overalls, abilities, team grades; balance report passes. 23 tests.
   Stubbed: client, server (READMEs only).
-- [ ] M2 Headless rules + play engine (AI vs AI in terminal, box score, balance harness)
+- [~] **M2 Headless rules + play engine — in progress.** Done: rules engine (22 tests), rosters, playbook
+  data (11 offensive plays, 6 defensive calls), 30 Hz fixed-point play engine (blocking with nearest-pair
+  claims, routes, man/zone coverage with anticipation, QB reads/pressure/scramble/throw-away, catch
+  contests, lane-picking carrier, pursuit angles, tackles/fumbles, sacks, live penalties), kicking models,
+  AI coach, full game loop + box score + CLI, multi-core balance harness, determinism test (52 tests).
+  **Remaining: tuning pass.** Latest harness (400 games): 50.5 pts/team (target 20–31), 14.1 yds/att
+  (6–8), 2.9 yds/rush (3.8–5), sacks 4.3% (5–9), turnovers 0.5 (1–2), penalties 3.2 (4–8). In range:
+  plays/team, pass share, 3rd-down %, punts, all FG buckets, OT rate.
 - [ ] M3 Playable offense vs AI (Bowl camera) — client deployed to Render from here
 - [ ] M4 Full play calling · [ ] M5 Pre-snap layer · [ ] M6 Special teams · [ ] M7 Triple Draft offline
 - [ ] M8 Online (rollback) · [ ] M9 Pro camera + presentation · [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
 
 ## Known issues / todo
+
+- **M2 tuning (next):** yards after catch is the big outlier (deep/seam completions run 30-45 yds
+  after the catch, esp. four_verts / dig-post vs Cover 2/3). Suspects: deep-zone defenders tracking the
+  wrong threat (nearest to landmark, not deepest) and pursuit from equal-speed trailers. Then: run game
+  (backside LB unblocked on zone), interception rate, penalty rates, sack rate. Use probe.ts per
+  play/coverage pair, then the harness.
+- Two-point tries pick a random non-deep play; kickoffs/punts are rating models until M6.
 
 - Gridiron Dex on GitHub Pages showed blank portraits (headshot load or processing failed without
   falling back to the helmet). Fix when porting the portrait pipeline to the client in M3; baking
