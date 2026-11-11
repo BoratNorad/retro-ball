@@ -49,6 +49,7 @@ interface Actor {
   manTarget: number; zone: { at: V2; r: Fx; deep: boolean } | null; reactTicks: number;
   lastTackleTry: number;
   history: V2[];
+  brake: boolean;
 }
 
 interface Ball {
@@ -87,7 +88,7 @@ export function simulatePlay(inp: PlayInput): PlayResult {
       accel: fx(T.movement.accelBase + T.movement.accelPer * g("acceleration")),
       task: "idle", blockTarget: -1, engagedWith: -1, shedTick: 0, stunTil: 0,
       route: [], routeIdx: 0, settle: false, isBlocker: false,
-      manTarget: -1, zone: null, reactTicks: 0, lastTackleTry: -999, history: [],
+      manTarget: -1, zone: null, reactTicks: 0, lastTackleTry: -999, history: [], brake: false,
     };
   };
   const place = (dx: number, dy: number, mirror: number): V2 => ({
@@ -138,7 +139,11 @@ export function simulatePlay(inp: PlayInput): PlayResult {
     const asg = inp.call.roles[d.role]!;
     d.reactTicks = sec(T.coverage.reactBase + T.coverage.reactPerMissing * (99 - R(d, "playRecognition")));
     if (asg === "rush" || asg === "spy") d.task = "rush";
-    else if ("man" in asg) { d.task = "man"; d.manTarget = byRole("O", asg.man).i; }
+    else if ("man" in asg) {
+      d.task = "man"; d.manTarget = byRole("O", asg.man).i;
+      // mirroring a receiver is a man-coverage skill, not general play recognition
+      d.reactTicks = sec(T.coverage.manReactBase + T.coverage.manReactPerMissing * (99 - R(d, "manCoverage")));
+    }
     else {
       const z = data.defense.zones[asg.zone]!;
       d.task = "zone";
@@ -182,6 +187,7 @@ export function simulatePlay(inp: PlayInput): PlayResult {
   let closeIncomplete = false;
   let pressureAtThrow = false;
   let pressureSince = -1;
+  let misreadRolled = false;
   const dropDepth = fx(Math.max(0, (inp.play.drop ?? 0) - (los - qb.pos.y > fx(3) ? 4 : 0)));
   const dropPoint = { x: qb.pos.x, y: qb.pos.y - dropDepth };
   const readStart = sec((inp.play.drop ?? 3) / T.qb.dropSpeed + T.qb.readStartAfterDrop);
@@ -195,6 +201,12 @@ export function simulatePlay(inp: PlayInput): PlayResult {
   function steer(a: Actor, goal: V2, speedMult: Fx = ONE) {
     const to = vsub(goal, a.pos);
     const dist = vlen(to);
+    if (a.brake) {
+      // break down for a cut or a settle point: never arrive faster than you can stop
+      const sp = vlen(a.vel);
+      const stopDist = div(mul(sp, sp), F.max(mul(a.accel, fx(2)), ONE));
+      if (stopDist > dist) speedMult = mul(speedMult, F.max(fx(0.2), div(dist, F.max(stopDist, ONE))));
+    }
     let maxV = mul(a.maxSpeed, speedMult);
     if (a.engagedWith >= 0) maxV = mul(maxV, fx(T.movement.engagedSpeedMult));
     if (ball.state === "held" && ball.holder === a.i) {
@@ -210,7 +222,8 @@ export function simulatePlay(inp: PlayInput): PlayResult {
     const want = dist < fx(0.3) ? { x: 0, y: 0 } : vscale(vnorm(to), dist < ONE ? mul(maxV, dist) : maxV);
     const dv = vsub(want, a.vel);
     const dvl = vlen(dv);
-    const maxDv = mul(a.accel, DT);
+    const carrying = ball.state === "held" && ball.holder === a.i && completion !== null && completion.rec === a; // re-accelerating after a catch
+    const maxDv = mul(carrying ? mul(a.accel, fx(T.movement.carryingAccelMult)) : a.accel, DT);
     a.vel = dvl <= maxDv ? want : vadd(a.vel, vscale(vnorm(dv), maxDv));
   }
   function integrate(a: Actor) {
@@ -261,7 +274,7 @@ export function simulatePlay(inp: PlayInput): PlayResult {
     const p = predictRoute(r, flight);
     let best = fx(30);
     for (const d of D) {
-      const s = vdist(d.pos, p) - mul(mul(d.maxSpeed, flight), fx(0.55));
+      const s = vdist(d.pos, p) - mul(mul(d.maxSpeed, flight), fx(T.qb.closingFactor));
       if (s < best) best = s;
     }
     return best;
@@ -288,6 +301,12 @@ export function simulatePlay(inp: PlayInput): PlayResult {
       const sep = separation(r, flightTo(r.pos));
       const deep = r.pos.y - los > fx(15) ? T.qb.openSepDeepBonus : 0;
       if (!pick && j <= progressed && sep > fx(need + deep)) pick = r;
+      // misread: once per read, a QB may think a covered man is open (lower awareness = more often)
+      else if (!pick && j === progressed && !misreadRolled) {
+        misreadRolled = true;
+        const p = Math.round(1000 * (T.qb.misreadBase + T.qb.misreadPerMissing * (99 - R(qb, "awareness"))));
+        if (rng.int(1000) < p) { pick = r; log.push(`${qb.c.name} misreads the coverage`); }
+      }
       if (sep > bestSep) { bestSep = sep; best = r; }
     }
     if (pick) return throwTo(pick, now, pressure);
@@ -430,24 +449,47 @@ export function simulatePlay(inp: PlayInput): PlayResult {
       const ahead = anticipate(r, d.reactTicks);
       const cushion = fx(T.coverage.manCushion);
       const inside = seen.x > bx ? -fx(0.5) : fx(0.5);
-      let y = ahead.y + cushion;
-      // don't come up toward the line while the receiver is still going vertical: bail and keep depth
+      lastBranch = "man";
+      // vertical stem: bail, staying over the top of where he is heading; never come up toward the line
+      let y = vel.y > fx(1) ? ahead.y + fx(T.coverage.manBailCushion) : ahead.y + cushion;
       if (y < d.pos.y && vel.y > -fx(0.5)) y = d.pos.y;
       return { x: ahead.x + inside, y };
     }
     if (d.task === "zone" && d.zone) {
       const z = d.zone;
       let threat: Actor | null = null, td = z.r + fx(T.coverage.zoneSwitchRange);
-      for (const o of O) {
-        if (o.task !== "route") continue;
-        const dd = vdist(delayedPos(o, d.reactTicks), z.at);
-        if (dd < td) { td = dd; threat = o; }
+      if (z.deep) {
+        // deep zones: the deepest receivers in my horizontal band; with two vertical threats,
+        // split them (sit between) so I can break on either throw
+        const band = O.filter((o) => o.task === "route" && F.abs(delayedPos(o, d.reactTicks).x - z.at.x) <= z.r + fx(2))
+          .sort((p, q) => delayedPos(q, d.reactTicks).y - delayedPos(p, d.reactTicks).y);
+        const a1 = band[0], a2 = band[1];
+        if (a1 && a2 && delayedPos(a2, d.reactTicks).y - los > fx(5)) {
+          const s1 = anticipate(a1, d.reactTicks), s2 = anticipate(a2, d.reactTicks);
+          lastBranch = "zone-split";
+          return { x: idiv(s1.x + s2.x, 2), y: F.max(F.max(s1.y, s2.y) + fx(T.coverage.deepCushion), z.at.y) };
+        }
+        threat = a1 ?? null;
+      } else {
+        for (const o of O) {
+          if (o.task !== "route") continue;
+          const dd = vdist(delayedPos(o, d.reactTicks), z.at);
+          if (dd < td) { td = dd; threat = o; }
+        }
       }
       if (!threat) { lastBranch = "zone-empty"; return z.at; }
       lastBranch = "zone:" + threat.role;
       const seen = anticipate(threat, d.reactTicks);
       // deep zones: stay over the top of the deepest threat (turn and run, no backpedal)
-      if (z.deep) return { x: F.lerp(z.at.x, seen.x, fx(0.75)), y: F.max(seen.y + fx(3.5), z.at.y) };
+      if (z.deep) return { x: F.lerp(z.at.x, seen.x, fx(0.75)), y: F.max(seen.y + fx(T.coverage.deepCushion), z.at.y) };
+      // underneath zones: carry a receiver who runs vertically through my zone (trail just
+      // underneath and inside him) until he is past the zone's depth limit, then hand him off
+      const carryLimit = z.at.y + z.r + fx(3);
+      if (seen.y > d.pos.y - fx(1) && seen.y < carryLimit) {
+        const inside = seen.x > bx ? -fx(0.8) : fx(0.8);
+        return { x: seen.x + inside, y: seen.y - fx(0.8) };
+      }
+      if (seen.y >= carryLimit) return { x: F.lerp(z.at.x, seen.x, fx(0.5)), y: z.at.y + z.r };
       return vadd(seen, vscale(vnorm(vsub(qb.pos, seen)), fx(1.5)));
     }
     return d.pos;
@@ -472,9 +514,15 @@ export function simulatePlay(inp: PlayInput): PlayResult {
       if (completion && c && c.side === "O") return blockerGoalFree(a);  // block downfield after a catch
       if (a.routeIdx < a.route.length) {
         const wp = a.route[a.routeIdx]!;
-        if (vdist(a.pos, wp) < fx(0.9)) a.routeIdx++;
+        if (vdist(a.pos, wp) < fx(0.9)) { a.routeIdx++; a.brake = false; return offenseGoal(a, now); }
+        // brake into the last point of a settle route, or into a hard cut
+        const next = a.route[a.routeIdx + 1];
+        const isLast = a.routeIdx === a.route.length - 1;
+        const sharp = next ? F.vdot(vnorm(vsub(wp, a.pos)), vnorm(vsub(next, wp))) < fx(0.26) : false;
+        a.brake = (isLast && a.settle) || sharp;
         return wp;
       }
+      a.brake = false;
       if (a.settle) return a.pos;
       const last = a.route[a.route.length - 1] ?? a.pos;
       const prev = a.route[a.route.length - 2] ?? { x: last.x, y: last.y - ONE };
@@ -620,6 +668,7 @@ export function simulatePlay(inp: PlayInput): PlayResult {
     const roll = rng.int(1000);
     if (roll < Math.max(0, Math.min(980, pCatch))) {
       ball.state = "held"; ball.holder = r.i;
+      r.vel = vscale(r.vel, fx(T.catch.catchSpeedKeep)); // securing the catch costs speed
       completion = { rec: r, at: r.pos.y };
       log.push(`caught by ${r.c.name}`);
       return;

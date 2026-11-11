@@ -13,14 +13,15 @@
     "accelPer": 0.07,
     "carryingSpeedMult": 0.96,
     "engagedSpeedMult": 0.18,
-    "backpedalMult": 0.78
+    "backpedalMult": 0.78,
+    "carryingAccelMult": 0.75
   },
   "blocking": {
     "engageRange": 1.3,
     "passHoldBase": 2.3,
     "passHoldPer": 0.045,
     "passHoldJitter": 1.2,
-    "runHoldBase": 2.3,
+    "runHoldBase": 3.2,
     "runHoldPer": 0.035,
     "runHoldJitter": 0.6,
     "doubleTeamMult": 1.7,
@@ -32,7 +33,7 @@
     "readWindow": 0.55,
     "openSepStart": 2.6,
     "openSepEnd": 1.4,
-    "openSepDeepBonus": 0.8,
+    "openSepDeepBonus": 1.4,
     "pressureRange": 2.6,
     "throwAwayAwareness": 72,
     "scrambleSpeedMin": 78,
@@ -43,7 +44,10 @@
     "evadeAgilityMin": 75,
     "evadeStep": 0.8,
     "pressureReactBase": 0.3,
-    "pressureReactPerMissing": 0.012
+    "pressureReactPerMissing": 0.012,
+    "closingFactor": 0.75,
+    "misreadBase": 0.02,
+    "misreadPerMissing": 0.004
   },
   "throw": {
     "ballSpeedBase": 17.5,
@@ -63,9 +67,10 @@
     "catchPer": 3.4,
     "contestPenalty": 280,
     "contestSkillPer": 4.0,
-    "intBase": 70,
-    "intPer": 2.8,
-    "deflectBase": 260
+    "intBase": 150,
+    "intPer": 3.5,
+    "deflectBase": 260,
+    "catchSpeedKeep": 0.4
   },
   "coverage": {
     "reactBase": 0.35,
@@ -74,10 +79,14 @@
     "zoneSwitchRange": 3.0,
     "ballReactBase": 0.3,
     "ballReactPerMissing": 0.008,
-    "runReadBase": 0.5,
+    "runReadBase": 0.6,
     "runReadPerMissing": 0.012,
     "pursuitLead": 1.0,
-    "pursuitMaxTime": 1.2
+    "pursuitMaxTime": 1.2,
+    "deepCushion": 6.5,
+    "manReactBase": 0.15,
+    "manReactPerMissing": 0.006,
+    "manBailCushion": 3.0
   },
   "tackle": {
     "range": 1.35,
@@ -89,7 +98,7 @@
     "max": 960,
     "missStun": 0.4,
     "carrierSlowOnMiss": 0.25,
-    "fumbleBase": 9,
+    "fumbleBase": 14,
     "fumblePer": 0.35,
     "fumbleMin": 2,
     "fumbleMax": 35,
@@ -97,8 +106,8 @@
     "sackBase": 820,
     "sackPer": 5.0,
     "elusiveMaxWeight": 0.6,
-    "fallForwardPerSpeed": 0.14,
-    "fallForwardMax": 2.2
+    "fallForwardPerSpeed": 0.2,
+    "fallForwardMax": 2.6
   },
   "carrier": {
     "lookAhead": 9,
@@ -151,22 +160,22 @@
   },
   "penalties": {
     "falseStart": {
-      "perMille": 9,
+      "perMille": 15,
       "yards": 5,
       "awarenessPer": 0.12
     },
     "offside": {
-      "perMille": 6,
+      "perMille": 9,
       "yards": 5,
       "awarenessPer": 0.1
     },
     "holdingOffense": {
-      "perMille": 26,
+      "perMille": 40,
       "yards": 10,
       "skillPer": 0.4
     },
     "holdingDefense": {
-      "perMille": 9,
+      "perMille": 16,
       "yards": 5
     },
     "passInterference": {

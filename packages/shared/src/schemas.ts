@@ -194,12 +194,12 @@ const nums = <K extends string>(...keys: K[]) =>
 const penalty = z.object({ perMille: z.number(), yards: z.number().optional(), awarenessPer: z.number().optional(), skillPer: z.number().optional() });
 export const TuningSchema = z.object({
   field: nums("width", "hashHalfGap", "maxPlaySeconds", "endZone"),
-  movement: nums("speedBase", "speedPer", "accelBase", "accelPer", "carryingSpeedMult", "engagedSpeedMult", "backpedalMult"),
+  movement: nums("speedBase", "speedPer", "accelBase", "accelPer", "carryingSpeedMult", "engagedSpeedMult", "backpedalMult", "carryingAccelMult"),
   blocking: nums("engageRange", "passHoldBase", "passHoldPer", "passHoldJitter", "runHoldBase", "runHoldPer", "runHoldJitter", "doubleTeamMult", "shedStun", "pushPer"),
-  qb: nums("readStartAfterDrop", "readWindow", "openSepStart", "openSepEnd", "openSepDeepBonus", "pressureRange", "throwAwayAwareness", "scrambleSpeedMin", "scrambleAfter", "maxHold", "dropSpeed", "cutCost", "evadeAgilityMin", "evadeStep", "pressureReactBase", "pressureReactPerMissing"),
+  qb: nums("readStartAfterDrop", "readWindow", "openSepStart", "openSepEnd", "openSepDeepBonus", "pressureRange", "throwAwayAwareness", "scrambleSpeedMin", "scrambleAfter", "maxHold", "dropSpeed", "cutCost", "evadeAgilityMin", "evadeStep", "pressureReactBase", "pressureReactPerMissing", "closingFactor", "misreadBase", "misreadPerMissing"),
   throw: nums("ballSpeedBase", "ballSpeedPer", "errBase", "errPerMissingAcc", "errPerYard", "pressureErrMult", "onRunErrMult", "shortMax", "midMax"),
-  catch: nums("reach", "contestRange", "baseCatch", "catchPer", "contestPenalty", "contestSkillPer", "intBase", "intPer", "deflectBase"),
-  coverage: nums("reactBase", "reactPerMissing", "manCushion", "zoneSwitchRange", "ballReactBase", "ballReactPerMissing", "runReadBase", "runReadPerMissing", "pursuitLead", "pursuitMaxTime"),
+  catch: nums("reach", "contestRange", "baseCatch", "catchPer", "contestPenalty", "contestSkillPer", "intBase", "intPer", "deflectBase", "catchSpeedKeep"),
+  coverage: nums("reactBase", "reactPerMissing", "manCushion", "zoneSwitchRange", "ballReactBase", "ballReactPerMissing", "runReadBase", "runReadPerMissing", "pursuitLead", "pursuitMaxTime", "deepCushion", "manReactBase", "manReactPerMissing", "manBailCushion"),
   tackle: nums("range", "base", "per", "powerPer", "gangBonus", "min", "max", "missStun", "carrierSlowOnMiss", "fumbleBase", "fumblePer", "fumbleMin", "fumbleMax", "fumbleOffenseRecover", "sackBase", "sackPer", "elusiveMaxWeight", "fallForwardPerSpeed", "fallForwardMax"),
   carrier: nums("lookAhead", "lanePerp", "forwardWeight", "sidelineMargin", "visionNoisePerMissing", "followAimFor", "replanTicksBase", "replanPerAgility", "sharpTurnSpeedMult", "sharpTurnAgilityPer").extend({ laneAngles: z.array(z.number()).min(3) }),
   kicking: nums("kickoffBase", "kickoffPer", "kickoffJitter", "returnMeanBase", "returnPer", "returnJitter", "returnTdPerMille", "puntBase", "puntPer", "puntJitter",
