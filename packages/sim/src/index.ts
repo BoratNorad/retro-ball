@@ -10,3 +10,4 @@ export * from "./engine/play.js";
 export * from "./engine/kicks.js";
 export * from "./engine/special.js";
 export * from "./draft.js";
+export * from "./engine/abilities.js";

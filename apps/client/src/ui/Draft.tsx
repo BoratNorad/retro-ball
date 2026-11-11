@@ -8,6 +8,7 @@ import {
 } from "@tdf/sim";
 import type { ClientData } from "../data.js";
 import { helmetCanvas } from "../render/sprites.js";
+import { AbilitiesToggle } from "./AbilitiesToggle.js";
 
 // ---------------------------------------------------------------- shared bits
 const PALETTES: [string, string, string][] = [
@@ -123,6 +124,7 @@ export function DraftSetup({ cd, mode, onStart, onBack }: { cd: ClientData; mode
         <button class={`chip ${themed ? "on" : ""}`} onClick={() => setThemed(!themed)}>THEMED ROUNDS</button>
         <button class={`chip ${timer ? "on" : ""}`} onClick={() => setTimer(!timer)}>PICK TIMER {cd.data.draft.pickTimerSec}s</button></div>
       <div class="row"><span class="lbl">QUARTER</span>{[3, 5, 8, 15].map((m) => <button class={`chip ${quarter === m ? "on" : ""}`} onClick={() => setQuarter(m)}>{m} MIN</button>)}</div>
+      <AbilitiesToggle />
       <div class="row">
         <button class="chip" onClick={onBack}>BACK</button>
         <button class="big" onClick={() => onStart({ mode, teams: [t1, mode === "ai" ? { ...t2, info: { ...t2.info, name: `CPU ${PERSONALITIES.find((p) => p.id === ai)!.name}` } } : t2], ai, format, mirror, revealPassed, themed, timer, quarter })}>START DRAFT</button>

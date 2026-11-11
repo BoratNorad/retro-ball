@@ -4,8 +4,9 @@ import type { DefenseCall } from "@tdf/shared";
 import {
   Fx, GameSession, fgDistance, suggestPlays,
   type GameResult, type LivePlay, type PlayCall, type PlaySnapshot, type PlaySummary, type Side, type UserCall, type UserInput,
-  type PreSnapDefense, type PreSnapOffense, type Roster,
+  type PreSnapDefense, type PreSnapOffense, type Roster, type ArmedActive, type ActiveOption,
 } from "@tdf/sim";
+import type { PlayerCard } from "@tdf/shared";
 import type { OffensePlay } from "@tdf/shared";
 import type { ClientData } from "../data.js";
 
@@ -52,12 +53,16 @@ export interface UiState {
   passTo: { team: string; next: "defense" | "offense" } | null;
 }
 
+export type AbilityCtx = "off" | "def" | "kick" | "return";
+
 export interface Settings {
   /** defensive control mode: play one defender (else call-only, Retro Bowl style) */
   controlDefense: boolean;
   /** 5 audible slots per side (play ids / call ids) */
   audiblesOff?: string[];
   audiblesDef?: string[];
+  /** abilities ruleset: passives, armed actives, signature moves, momentum (default on) */
+  abilities?: boolean;
 }
 const SETTINGS_KEY = "tdf.settings";
 export function loadSettings(): Settings {
@@ -90,7 +95,7 @@ export class Controller {
     this.cd = cd;
     this.session = new GameSession({
       data: cd.data, ratings: cd.ratings, teams, seed: opts.seed ?? String(Date.now() % 1e9), userSide: 0, hotseat: opts.hotseat,
-      quarterSeconds: Math.round(quarterMinutes * 60),
+      quarterSeconds: Math.round(quarterMinutes * 60), abilities: loadSettings().abilities !== false,
     });
     this.ui = {
       mode: "result", toast: null, bigToast: null, live: false, userOffense: false, qbCanThrow: false, userCarrier: false,
@@ -98,6 +103,8 @@ export class Controller {
       userDefense: false, userDefender: -1, canKeep: false, preview: null, playClock: 0, lineup: 0, canFairCatch: false, canKneel: false, scramble: false, passTo: null,
     };
     queueMicrotask(() => this.advance());
+    // dev builds: expose the controller for browser debugging / Playwright checks
+    if (import.meta.env?.DEV) (globalThis as { __tdf?: Controller }).__tdf = this;
   }
 
   subscribe(fn: () => void) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
@@ -167,17 +174,18 @@ export class Controller {
   callOffense(call: UserCall, timeout = this.takeTimeout()) {
     if (this.pendingTry === "twoPoint" && call.kind === "play") {
       this.pendingTry = null;
-      this.handle(this.session.snap({ tryChoice: "twoPoint", userCall: call }));
+      this.handle(this.session.snap({ tryChoice: "twoPoint", userCall: call, active: this.takeActive() }));
       return;
     }
-    const hs = this.session.hotseat && this.hsDef?.call ? { defCall: this.hsDef.call, defFront: this.hsDef.front ?? undefined } : {};
-    this.handle(this.session.snap({ userCall: call, timeout, ...hs }));
+    const hs = this.session.hotseat && this.hsDef
+      ? { ...(this.hsDef.call ? { defCall: this.hsDef.call, defFront: this.hsDef.front ?? undefined } : {}), defActive: this.hsDef.active } : {};
+    this.handle(this.session.snap({ userCall: call, timeout, active: this.takeActive(), ...hs }));
   }
   /** what the opponent is lining up for (callST) */
   stKind: "punt" | "fieldGoal" = "punt";
-  kickoff(kind: "kickoff" | "squib" | "onside") { this.handle(this.session.snap({ kickoffKind: kind })); }
-  receiveKick(side: "L" | "M" | "R") { this.handle(this.session.snap({ returnSide: side })); }
-  callST(mode: "block" | "safe" | "normal", side: "L" | "M" | "R" = "M") { this.handle(this.session.snap({ stDefense: mode, returnSide: side, timeout: this.takeTimeout() })); }
+  kickoff(kind: "kickoff" | "squib" | "onside") { this.handle(this.session.snap({ kickoffKind: kind, active: this.takeActive() })); }
+  receiveKick(side: "L" | "M" | "R") { this.handle(this.session.snap({ returnSide: side, active: this.takeActive() })); }
+  callST(mode: "block" | "safe" | "normal", side: "L" | "M" | "R" = "M") { this.handle(this.session.snap({ stDefense: mode, returnSide: side, timeout: this.takeTimeout(), active: this.takeActive() })); }
   /** Your flick: aim (radians, + right), power 0..1, curve -1..1. */
   kickBall(aim: number, power: number, curve: number) {
     if (this.ui.mode !== "kick") return;
@@ -185,12 +193,12 @@ export class Controller {
     this.set({ mode: "live", live: true });
   }
   callTry(choice: "pat" | "twoPoint") {
-    if (choice === "pat") { this.handle(this.session.snap({ tryChoice: "pat" })); return; }
+    if (choice === "pat") { this.handle(this.session.snap({ tryChoice: "pat", active: this.takeActive() })); return; }
     this.pendingTry = "twoPoint";
     this.set({ mode: "callOffense", userOffense: true, fg: null });
   }
   /** hot-seat: the defending player's call, held until the offense snaps */
-  hsDef: { call: DefenseCall | null; front: string | null } | null = null;
+  hsDef: { call: DefenseCall | null; front: string | null; active: ArmedActive | null } | null = null;
   /** hot-seat: the device has been handed over */
   passed() {
     const p = this.ui.passTo;
@@ -200,11 +208,12 @@ export class Controller {
   }
   callDefense(call: DefenseCall | null, front: string | null = null, timeout = this.takeTimeout()) {
     if (this.session.hotseat) {
-      this.hsDef = { call, front };
+      this.hsDef = { call, front, active: this.takeActive() };
       this.set({ mode: "pass", passTo: { team: this.team(this.state.possession).name, next: "offense" } });
       return;
     }
-    this.handle(this.session.snap({ defCall: call ?? undefined, defFront: call ? front ?? undefined : undefined, timeout, controlDefender: this.settings.controlDefense }));
+    this.handle(this.session.snap({ defCall: call ?? undefined, defFront: call ? front ?? undefined : undefined, timeout, controlDefender: this.settings.controlDefense,
+      active: this.takeActive() }));
   }
   callTimeout() {
     // a timeout before the next snap: applied when the play is called
@@ -278,6 +287,39 @@ export class Controller {
     this.set({});
   }
   fastForward() { this.set({ fast: true }); }
+
+  // ---------------------------------------------------------------- abilities
+  /** an active armed on a call sheet, used at the next snap (pre-snap changes go through adjust) */
+  pendingActive: ArmedActive | null = null;
+  private takeActive() { const a = this.pendingActive; this.pendingActive = null; return a; }
+  /** The human's armed active right now. */
+  armed(): ArmedActive | null {
+    if (this.ui.mode === "presnap" && this.live && !this.live.kick) return this.live.actives?.[this.live.userOffense ? "O" : "D"] ?? null;
+    return this.pendingActive;
+  }
+  /** Arm (or clear) an active: in the pre-snap window it re-lines up the play; on a call sheet it waits for the snap. */
+  arm(a: ArmedActive | null, ctx: AbilityCtx) {
+    if (a && !this.session.affordable(this.abilitySide(ctx), a)) { this.set({ toast: "Not enough momentum" }); return; }
+    if (this.ui.mode === "presnap" && this.live && !this.live.kick) { this.adjust({ active: a }); return; }
+    this.pendingActive = a;
+    this.set({});
+  }
+  /** What the human can arm in this situation: players on the field (pre-snap) or the unit's roles (kicks). */
+  /** whose momentum: hot-seat defense calls for the side without the ball */
+  abilitySide(ctx: AbilityCtx): Side { return this.session.hotseat && ctx === "def" ? (this.state.possession === 0 ? 1 : 0) : this.userSide; }
+  abilityChoices(ctx: AbilityCtx): { player: PlayerCard; options: (ActiveOption & { ok: boolean })[] }[] {
+    const R = this.cd.data.coach.abilities.roles;
+    const roles = ctx === "off" ? [...R.pass, ...R.run] : ctx === "def" ? R.defense : ctx === "kick" ? R.kick : R.return;
+    const onField = this.ui.mode === "presnap" && this.cur ? new Set(this.cur.actors.filter((a) => a.side === (ctx === "def" ? "D" : "O")).map((a) => a.id)) : null;
+    const side = this.abilitySide(ctx);
+    const per = this.cd.data.tuning.abilities.pointsPerBar, mom = this.session.momentum[side];
+    return this.session.activeOptions(side)
+      .filter((p) => !onField || onField.has(p.player.id))
+      .map((p) => ({ player: p.player, options: p.options.filter((o) => roles.includes(o.role)).map((o) => ({ ...o, ok: o.cost * per <= mom })) }))
+      .filter((p) => p.options.length);
+  }
+  /** Momentum as bars (fractional), and the max. */
+  momentumBars(side: Side) { const A = this.cd.data.tuning.abilities; return { bars: this.session.momentum[side] / A.pointsPerBar, max: A.momentumMax / A.pointsPerBar }; }
 
   /** Called every animation frame with elapsed ms. Runs whole 30 Hz ticks. */
   frame(dtMs: number) {

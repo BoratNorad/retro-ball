@@ -344,7 +344,7 @@
     80,
     90
    ],
-   "desc": "For 3 sec every collision is a truck. Defenders under {a} Strength get flattened."
+   "desc": "In his first 3 sec with the ball, the first defender under {a} Strength who hits him gets trucked."
   },
   {
    "id": "stiff_arm",
@@ -1534,7 +1534,7 @@
     "demo": "deep_pass",
     "role": "qb",
     "mod": null,
-    "special": "every receiver gets +3 yds of separation"
+    "special": "every receiver gets a step on his defender"
    },
    "RB": {
     "nouns": [
@@ -1547,7 +1547,7 @@
     "demo": "speed_burst",
     "role": "rb",
     "mod": null,
-    "special": "the first two tackle attempts automatically miss"
+    "special": "the first tackle attempt automatically misses"
    },
    "WR": {
     "nouns": [

@@ -4,9 +4,10 @@ import type { DefenseCall, OffensePlay } from "@tdf/shared";
 import { HOT_ROUTES, runRate, situation, type MotionKind, type PlayCall, type Tendencies, type UserInput } from "@tdf/sim";
 type UserInputAction = NonNullable<UserInput["action"]>;
 import { loadClientData, type ClientData } from "../data.js";
-import { Controller, ordinal, spotText, toGoText, type UiState } from "../game/controller.js";
+import { Controller, ordinal, spotText, toGoText, type AbilityCtx, type UiState } from "../game/controller.js";
 import { FieldScene } from "../render/FieldScene.js";
 import { helmetCanvas } from "../render/sprites.js";
+import { AbilitiesToggle } from "./AbilitiesToggle.js";
 import { BoxScore } from "./BoxScore.js";
 import { DraftScreen, DraftSetup, Lineup, PostDraft, type DraftConfigUi } from "./Draft.js";
 import type { Draft, Roster } from "@tdf/sim";
@@ -80,6 +81,7 @@ function Menu({ cd, onStart, onDraft }: { cd: ClientData; onStart: (user: string
         <span class="lbl">QUARTER</span>
         {[3, 5, 8, 15].map((m) => <button class={`chip ${qm === m ? "on" : ""}`} onClick={() => setQm(m)}>{m} MIN</button>)}
       </div>
+      <AbilitiesToggle />
       <div class="row">
         {user && <button class="chip" onClick={() => { setUser(null); setOpp(null); }}>RESET</button>}
         <button class="big" disabled={!user || !opp} onClick={() => onStart(user!, opp!, qm)}>
@@ -90,6 +92,7 @@ function Menu({ cd, onStart, onDraft }: { cd: ClientData; onStart: (user: string
     </div>
   );
 }
+
 
 // ---------------------------------------------------------------- game
 function useUi(ctl: Controller): UiState {
@@ -164,11 +167,54 @@ function ScoreBug({ ctl }: { ctl: Controller }) {
   const dot = (side: 0 | 1) => (s.possession === side && s.phase === "play" ? "●" : "");
   return (
     <div class="bug">
-      <div class="side" style={{ background: t0.c1 }}><b>{t0.abbr}</b><i>{dot(0)}</i><span>{s.score[0]}</span><small>{"▮".repeat(s.timeouts[0])}</small></div>
+      <div class="side" style={{ background: t0.c1 }}><b>{t0.abbr}</b><i>{dot(0)}</i><span>{s.score[0]}</span><small>{"▮".repeat(s.timeouts[0])}</small><Momentum ctl={ctl} side={0} /></div>
       <div class="mid"><div>{clock}</div><div class="dd">{dd}</div></div>
-      <div class="side" style={{ background: t1.c1 }}><span>{s.score[1]}</span><i>{dot(1)}</i><b>{t1.abbr}</b><small>{"▮".repeat(s.timeouts[1])}</small></div>
+      <div class="side" style={{ background: t1.c1 }}><span>{s.score[1]}</span><i>{dot(1)}</i><b>{t1.abbr}</b><small>{"▮".repeat(s.timeouts[1])}</small><Momentum ctl={ctl} side={1} /></div>
     </div>
   );
+}
+
+/** Momentum meter: 3 bars, each filling in quarters. */
+function Momentum({ ctl, side }: { ctl: Controller; side: 0 | 1 }) {
+  if (!ctl.session.abilities) return null;
+  const { bars, max } = ctl.momentumBars(side);
+  return (
+    <em class={`mom ${side ? "r" : ""}`} title={`momentum ${bars.toFixed(2)} / ${max}`}>
+      {Array.from({ length: max }, (_, k) => <b class={bars >= k + 1 ? "full" : ""}><u style={{ width: `${Math.max(0, Math.min(1, bars - k)) * 100}%` }} /></b>)}
+    </em>
+  );
+}
+
+/** Arm one active ability (paid with momentum bars) for the next snap or the play lined up now. */
+function AbilityPicker({ ctl, ctx, inline = false }: { ctl: Controller; ctx: AbilityCtx; inline?: boolean }) {
+  const [open, setOpen] = useState(!inline);
+  if (!ctl.session.abilities) return null;
+  const list = ctl.abilityChoices(ctx);
+  const armed = ctl.armed();
+  const { bars } = ctl.momentumBars(ctl.abilitySide(ctx));
+  const armedName = armed && list.flatMap((p) => p.options.map((o) => ({ p, o }))).find((x) => x.p.player.id === armed.player && x.o.id === armed.ability);
+  const head = (
+    <button class={`chip ${armed ? "set" : ""}`} onClick={() => setOpen(!open)}>
+      ★ {armedName ? `${armedName.o.name.toUpperCase()}` : "ABILITY"} · {Math.floor(bars)} BAR{Math.floor(bars) === 1 ? "" : "S"}
+    </button>
+  );
+  const body = (
+    <div class="scroller abil">
+      {!list.length && <span class="tag">no active abilities in this unit</span>}
+      {armed && <button class="chip" onClick={() => ctl.arm(null, ctx)}>NONE</button>}
+      {list.flatMap(({ player, options }) => options.map((o) => {
+        const on = armed?.player === player.id && armed.ability === o.id;
+        return (
+          <button class={`chip ${on ? "on" : ""} ${o.ok ? "" : "dim"}`} disabled={!o.ok && !on} title={o.text}
+            onClick={() => ctl.arm(on ? null : { player: player.id, ability: o.id }, ctx)}>
+            {player.name.split(" ").slice(-1)[0]!.toUpperCase()} · {o.name}{o.id === "signature" ? " ♛" : ""} <small>{"▮".repeat(o.cost)}</small>
+          </button>
+        );
+      }))}
+    </div>
+  );
+  if (inline) return <>{<div class="tabs">{head}</div>}{open && body}</>;
+  return body;
 }
 
 const formationName = (ctl: Controller, id: string) => ctl.cd.data.formations.offense.find((f) => f.id === id)?.name ?? id;
@@ -239,6 +285,7 @@ function OffenseSheet({ ctl }: { ctl: Controller }) {
         ))}
         {!calls.length && <span class="tag">no plays match</span>}
       </div>
+      {!twoPt && (s.down === 4 || (fg && fg.pct > 0)) && <AbilityPicker ctl={ctl} ctx="kick" inline />}
       {!twoPt && (
         <div class="tabs">
           {s.down === 4 && <button class="chip" onClick={() => ctl.callOffense({ kind: "punt" })}>PUNT</button>}
@@ -331,6 +378,7 @@ function KickoffSheet({ ctl }: { ctl: Controller }) {
   return (
     <div class="sheet">
       <div class="tabs"><span class="tag">KICKOFF</span><WindTag ctl={ctl} /></div>
+      <AbilityPicker ctl={ctl} ctx="kick" inline />
       <div class="plays">
         <button class="play" onClick={() => ctl.kickoff("kickoff")}><b>Deep kick</b><small>touchback or return</small></button>
         <button class="play" onClick={() => ctl.kickoff("squib")}><b>Squib</b><small>low, bouncing, hard to return</small></button>
@@ -343,6 +391,7 @@ function ReturnSheet({ ctl }: { ctl: Controller }) {
   return (
     <div class="sheet">
       <div class="tabs"><span class="tag">KICK RETURN · {ctl.team(ctl.state.possession).abbr} kicks off</span><WindTag ctl={ctl} /></div>
+      <AbilityPicker ctl={ctl} ctx="return" inline />
       <div class="plays">
         <button class="play" onClick={() => ctl.receiveKick("L")}><b>Return left</b><small>wall on the left</small></button>
         <button class="play" onClick={() => ctl.receiveKick("M")}><b>Return middle</b><small>wedge</small></button>
@@ -357,6 +406,7 @@ function StSheet({ ctl }: { ctl: Controller }) {
   return (
     <div class="sheet">
       <div class="tabs"><span class="tag">{ctl.team(ctl.state.possession).abbr} lines up to {punt ? "PUNT" : "KICK A FIELD GOAL"}</span><WindTag ctl={ctl} /></div>
+      {punt && <AbilityPicker ctl={ctl} ctx="return" inline />}
       {punt && (
         <div class="tabs"><span class="lbl">RETURN</span>
           {(["L", "M", "R"] as const).map((x) => <button class={`chip ${side === x ? "on" : ""}`} onClick={() => setSide(x)}>{x === "L" ? "LEFT" : x === "R" ? "RIGHT" : "MIDDLE"}</button>)}
@@ -393,6 +443,7 @@ function TrySheet({ ctl }: { ctl: Controller }) {
   return (
     <div class="sheet">
       <div class="tabs"><span class="tag">TOUCHDOWN — TRY</span></div>
+      <AbilityPicker ctl={ctl} ctx="kick" inline />
       <div class="plays">
         {!ctl.ui.tryForTwo && <button class="play" onClick={() => ctl.callTry("pat")}><b>Extra point</b><small>1 pt</small></button>}
         <button class="play" onClick={() => ctl.callTry("twoPoint")}><b>Go for 2</b><small>pick a play</small></button>
@@ -434,7 +485,7 @@ function LiveControls({ ctl, ui }: { ctl: Controller; ui: UiState }) {
 }
 
 // ---------------------------------------------------------------- pre-snap
-type PTab = "motion" | "shift" | "hot" | "protect" | "audible" | "look" | "cover" | "spy" | "double" | null;
+type PTab = "motion" | "shift" | "hot" | "protect" | "audible" | "look" | "cover" | "spy" | "double" | "ability" | null;
 function Presnap({ ctl, ui }: { ctl: Controller; ui: UiState }) {
   const [tab, setTab] = useState<PTab>(null);
   const [who, setWho] = useState<string | null>(null);
@@ -527,6 +578,7 @@ function Presnap({ ctl, ui }: { ctl: Controller; ui: UiState }) {
           {(cur?.actors ?? []).filter((a) => a.side === "D").map((a) => (
             <button class={`chip ${pd.spy === a.role ? "on" : ""}`} onClick={() => ctl.setPreDef({ spy: a.role })}>{a.role} #{a.num ?? ""}</button>))}
         </div>);
+      case "ability": return <AbilityPicker ctl={ctl} ctx={off ? "off" : "def"} />;
       case "double": return (
         <div class="scroller">
           <button class={`chip ${!pd.double ? "on" : ""}`} onClick={() => ctl.setPreDef({ double: null })}>NONE</button>
@@ -554,6 +606,7 @@ function Presnap({ ctl, ui }: { ctl: Controller; ui: UiState }) {
           {T("look", "FRONT LOOK", Boolean(pd.dl || pd.lb || pd.show))}{T("cover", "SHELL", Boolean(pd.safeties || pd.corners))}{T("spy", "SPY", Boolean(pd.spy))}
           {T("double", "DOUBLE", Boolean(pd.double))}{T("audible", "AUDIBLE")}
         </>}
+        {ctl.session.abilities && T("ability", ctl.armed() ? "★ ARMED" : "★ ABILITY", Boolean(ctl.armed()))}
         <button class="big" onClick={() => ctl.snapBall()}>{off ? "SNAP ▶" : "READY ▶"}</button>
       </div>
       {sub}

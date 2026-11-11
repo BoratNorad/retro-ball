@@ -1,5 +1,5 @@
 {
-  "_doc": "AI play-calling preferences. personnel: weight of each offensive personnel group by situation (normal, short = 3 yards or less to go, goalLine = inside the 5, passing = obvious passing down or two-minute). frontFor: defensive fronts the AI answers each personnel group with (base = the team's base front). Tendencies: the AI tracks the opponent's run/pass mix by down and distance; prior = how many league-average calls it starts from; runBias = how far the observed mix can tilt run-defense calls. paBite = play-action bite multiplier: base + perRunRate x the offense's run rate this game. qbRun: designed QB runs and option keeps are weighted by (speed - speedRef) x speedPer, clamped. presnap: how often the AI uses motion, shows blitz (with a non-blitz call; a real blitz is then disguised), disguises its safety look, presses or bails its corners, shifts its line, checks out of a long-developing pass when it sees a blitz look (per awareness), and hard-counts on 3rd/4th and short; audibles = default 5 audible slots per side. special: onside when trailing by up to onsideMaxDeficit with onsideSeconds or less left in the 4th; squib at the end of the first half (squibSeconds) or squibPerMille of the time; coffin-corner punts (aim for the sideline near the goal line) from coffinFrom yard line; fake punt / fake FG per-mille on 4th and short in the right field zone. styles: base offense (lineup screen) = pass-rate shift (per-mille) and personnel multipliers.",
+  "_doc": "AI play-calling preferences. personnel: weight of each offensive personnel group by situation (normal, short = 3 yards or less to go, goalLine = inside the 5, passing = obvious passing down or two-minute). frontFor: defensive fronts the AI answers each personnel group with (base = the team's base front). Tendencies: the AI tracks the opponent's run/pass mix by down and distance; prior = how many league-average calls it starts from; runBias = how far the observed mix can tilt run-defense calls. paBite = play-action bite multiplier: base + perRunRate x the offense's run rate this game. qbRun: designed QB runs and option keeps are weighted by (speed - speedRef) x speedPer, clamped. presnap: how often the AI uses motion, shows blitz (with a non-blitz call; a real blitz is then disguised), disguises its safety look, presses or bails its corners, shifts its line, checks out of a long-developing pass when it sees a blitz look (per awareness), and hard-counts on 3rd/4th and short; audibles = default 5 audible slots per side. special: onside when trailing by up to onsideMaxDeficit with onsideSeconds or less left in the 4th; squib at the end of the first half (squibSeconds) or squibPerMille of the time; coffin-corner punts (aim for the sideline near the goal line) from coffinFrom yard line; fake punt / fake FG per-mille on 4th and short in the right field zone. styles: base offense (lineup screen) = pass-rate shift (per-mille) and personnel multipliers. abilities: chance the AI arms an affordable, relevant active ability on a normal snap / a key snap (3rd or 4th down, red zone, last 2 minutes of a half); see abilities._doc.",
   "personnel": {
     "normal": {
       "11": 58,
@@ -171,6 +171,35 @@
         "21": 0.2,
         "22": 0.2
       }
+    }
+  },
+  "abilities": {
+    "_doc": "AI use of active abilities: chance per play to arm one (usePerMille; keyPerMille on 3rd/4th down, in the red zone or the last 2 minutes of a half) when it can afford it; which ability roles it considers for each kind of play; prefers the most expensive affordable one (a signature move first).",
+    "usePerMille": 120,
+    "keyPerMille": 500,
+    "roles": {
+      "pass": [
+        "qb",
+        "wr",
+        "ol"
+      ],
+      "run": [
+        "rb",
+        "ol"
+      ],
+      "defense": [
+        "dl",
+        "lb",
+        "db"
+      ],
+      "kick": [
+        "k",
+        "ls",
+        "gunner"
+      ],
+      "return": [
+        "kr"
+      ]
     }
   }
 }

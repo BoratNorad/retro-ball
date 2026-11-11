@@ -21,6 +21,7 @@ decisions and milestone status. Keep it updated.
 | Summarise one play type over N reps | `pnpm tsx tools/sim/probe.ts slants cover1 300` |
 | Play x coverage yardage table | `pnpm tsx tools/sim/matrix.ts 60` (`KIND=run` for runs) |
 | Kicking physics calibration (FG % by distance, punt/kickoff depth) | `pnpm tsx tools/sim/kicks.ts` |
+| Effect of each active ability / signature (armed vs not) | `pnpm tsx tools/sim/abilities.ts` (`ONLY=battering_ram,sig:RB N=70`) |
 | Every play vs AI-chosen fronts/calls | `pnpm tsx tools/sim/plays.ts 60` (`ONLY=regex`, `BY=formation`) |
 | Trace/probe a formation or front | add `FORM=gun_trips FRONT=nickel PERS=11` to `trace.ts` / `probe.ts` |
 | Re-fit team-grade weights to what wins | `RANDOM_ROSTERS=1 FIT_OUT=/tmp/fit.jsonl pnpm sim:harness --games 10000` then `python3 tools/import/fit_grade_weights.py /tmp/fit.jsonl --write` |
@@ -92,6 +93,7 @@ data/raw          source spreadsheet
    for 88+ overall. Spec asks for ~40 passives; Starter-tier+ players get a second passive when they
    stand out. **Actives + momentum are kept as a ruleset (owner said yes), on by default**,
    configurable later; the spec's optional momentum meter is that same meter (3 bars, capped).
+   **Owner: "I want them working in the game"** — they are (decision 17).
 7. **Team chemistry = real-life teammates:** a QB throwing to receivers from his actual NFL team,
    and offensive linemen who play together. Capped (max +2.4 overall).
 8. **Netcode: deterministic rollback (planned for M8).** Both clients run the identical fixed-point
@@ -101,7 +103,8 @@ data/raw          source spreadsheet
    hash during the play-call phase and revealed to both sims at the snap (rollback needs full state);
    pre-snap secrecy (calls, disguises, hot routes) is preserved, but a modded client could read the
    opponent's assignments once the ball is snapped. If that matters for ranked, fall back to the
-   spec's server-authoritative model + local prediction for ranked only. **Confirm with owner before M8.**
+   spec's server-authoritative model + local prediction for ranked only. **Owner confirmed this
+   tradeoff ("That is acceptable") — build M8 this way.**
 9. **Hosting:** free Render (static client; web service for the server, which sleeps when idle —
    slow first connection accepted). SQLite on a persistent disk for v1.
 10. **Data tools stay in Python** (pandas/numpy are the right tools for xlsx import and regression);
@@ -148,6 +151,21 @@ data/raw          source spreadsheet
 16. **Hot-seat** = `GameSession({ hotseat: true })`: the side with the ball is the user; the defending
     player calls the defense first behind a privacy screen (passed in as `defCall`); kick returns and
     defensive play are AI-run in hot-seat.
+17. **Abilities in play** (`packages/sim/src/engine/abilities.ts` + hooks in `play.ts` / `special.ts`).
+    Ruleset `GameSetup.abilities` (default on; menu toggle, off = ratings only). Passives are always on
+    for the player who has them; an **active** is armed for one player per side per play and paid with
+    momentum (ability cost in bars) only if that player was on the field (`PlayResult.activesUsed`);
+    one-shot actives fire once ("the next juke"). **Signature moves** (88+ players, 3 bars): their
+    "+N Rating" boosts apply for the play plus a group special (QB: coverage lag on every receiver;
+    RB: first tackles miss; WR/TE: auto-catch / jump balls; OL: whole line Brick Wall; DL: block
+    can't hold him long + sack bonus; LB: instant read, no PA bite; DB: picks in his zone; K: perfect
+    strike to 65 yds). **Momentum** (`GameSession.momentum`, points; 3 bars x `pointsPerBar`) from
+    first downs, 20+ yd plays, TDs, takeaways, sacks, FGs, stops. Engine units for every effect are in
+    `tuning.json` `abilities`. The AI arms an affordable, play-relevant active (`coach.json`
+    `abilities`: roles per play kind; more often on key snaps). Client: ★ ABILITY pre-snap tab, ability
+    rows on kick / return / try sheets, momentum meter in the score bug, popups over the player
+    (`snapshot.fx`). Big Leg does not touch kickoffs (touchback rates swing hard with kick power).
+    Workhorse has no effect until there is a fatigue model.
 
 ## Balance targets (for the M2 harness)
 
@@ -233,6 +251,15 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   KR / PR choice (used by the return game), base offense (balanced / spread / pro-style / run-heavy /
   air raid: pass-rate shift + personnel preference in `coach.json` styles) and base defense (4-3/3-4),
   then kick off with the drafted rosters (hot-seat: pass-the-device play calling).
+- [x] **Abilities in play** (owner: "I want them working in the game"; decision 17) — 23 passives,
+  33 actives, 125 signature moves and the 3-bar momentum meter all act on the field (engine hooks in
+  plays, kicks and returns); AI arms actives (~6 per team-game); client ABILITY tab, kick-sheet rows,
+  score-bug meter, popups; ruleset toggle on the menu. Probe (`tools/sim/abilities.ts`) caught and
+  fixed: Battering Ram trucked every tackle (+52 yds/run), Field General / QB signature only changed
+  what the QB *saw* (fewer sacks, worse throws), Pancake / Hard Count left rushers unblocked, Big Leg
+  swung touchbacks 9% -> 92%, Sticky Hands erased contested-catch losses. **4,000 real-team games,
+  abilities on: 28/28 metrics in range** — 23.0 pts, 63.4% comp, 7.7 yds/att, 3.9 ypc, 6.2% sacks,
+  1.4 TO, 40.9% 3rd down; grade gap 3–5 wins 77%, 5+ 90%. (Abilities off: 22.4 pts, 7.6 yds/att, 7.0% sacks.)
 - [ ] M8 Online (rollback) · [ ] M9 Pro camera + presentation · [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
 
 ## Known issues / todo
@@ -254,8 +281,7 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
 - Gridiron Dex on GitHub Pages showed blank portraits (headshot load or processing failed without
   falling back to the helmet). Fix when porting the portrait pipeline to the client in M3; baking
   headshots (`tools/import/bake_headshots.py`) avoids it.
-- Spec wants ~40 passive abilities; we have 23. Abilities are still display-only (no on-field effect,
-  no active abilities / momentum in the engine yet) — decide with the owner whether to wire them in
-  before adding more.
+- Spec wants ~40 passive abilities; we have 23 (all now work on the field, except Workhorse: no
+  fatigue model yet). Retune actives with `pnpm tsx tools/sim/abilities.ts` (armed vs unarmed on the same seeds).
 - Draft extras not done: draft card share image, spectator link, daily draft (M10), drag-and-drop
   lineup (tap-tap only), stamina-based auto-sub thresholds (no fatigue model yet).

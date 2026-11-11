@@ -4,7 +4,8 @@
 // GameSession runs a game one play at a time. stepAuto() lets the AI decide everything (that is
 // what playGame and the harness use). snap()/finish() let a human call plays (offense) or
 // coverages (defense) and drive the live play through PlaySim.step().
-import type { DefenseCall, GameData, OffensePlay } from "@tdf/shared";
+import type { DefenseCall, GameData, OffensePlay, PlayerCard } from "@tdf/shared";
+import { activesOf, type ActiveOption, type ArmedActive, type PlayActives } from "./engine/abilities.js";
 import * as F from "./fixed.js";
 import { hashString, Rng } from "./rng.js";
 import {
@@ -13,7 +14,7 @@ import {
 } from "./rules.js";
 import type { Roster } from "./roster.js";
 import {
-  chooseDefense, chooseOffensePlay, aiCheck, type ScrimmageDecision, type PlayCall, type DefCall, chooseScrimmage, chooseTry, emptyTendencies, recordDefense, recordOffense, runRate, tempoFor, timeoutFor,
+  chooseDefense, chooseOffensePlay, aiCheck, type ScrimmageDecision, type PlayCall, type DefCall, chooseScrimmage, chooseTry, chooseActive, keySnap, emptyTendencies, recordDefense, recordOffense, runRate, tempoFor, timeoutFor,
   type Tendencies,
 } from "./coach.js";
 import { createPlay, type PlayResult, type PlaySim, type PreSnapDefense, type PreSnapOffense, type StatEvent, type Stats } from "./engine/play.js";
@@ -41,6 +42,8 @@ export interface TeamBox {
   kickoffs: number; touchbacks: number; krAtt: number; krYds: number; prAtt: number; prYds: number; retTd: number;
   onsideAtt: number; onsideRec: number; blockedKicks: number; fakes: number;
   topTicks: number; sacks: number; defInts: number;
+  /** active abilities used (momentum spent) */
+  actives: number;
 }
 export interface PlayerLine { id: number; name: string; team: Side; pos: string; [k: string]: number | string }
 export interface GameResult {
@@ -55,7 +58,7 @@ const emptyBox = (): TeamBox => ({
   thirdAtt: 0, thirdConv: 0, fourthAtt: 0, fourthConv: 0,
   fgAtt: 0, fgMade: 0, fgByDist: {}, patAtt: 0, patMade: 0, twoAtt: 0, twoMade: 0, punts: 0, puntYds: 0, puntNet: 0,
   kickoffs: 0, touchbacks: 0, krAtt: 0, krYds: 0, prAtt: 0, prYds: 0, retTd: 0, onsideAtt: 0, onsideRec: 0, blockedKicks: 0, fakes: 0,
-  topTicks: 0, sacks: 0, defInts: 0,
+  topTicks: 0, sacks: 0, defInts: 0, actives: 0,
 });
 
 export interface GameSetup {
@@ -72,6 +75,8 @@ export interface GameSetup {
   hotseat?: boolean;
   /** wind in mph (x across, y toward the north end zone); default: random */
   wind?: F.V2;
+  /** abilities ruleset (passives, armed actives, signature moves, momentum); default on */
+  abilities?: boolean;
 }
 
 /** What has to happen next. */
@@ -104,6 +109,10 @@ export interface SnapOptions {
   returnSide?: "L" | "M" | "R";
   /** human defending a punt / FG: block, safe (fake watch), normal */
   stDefense?: "block" | "safe" | "normal";
+  /** the human's armed active ability for this play (scrimmage or kick), paid from momentum if he plays */
+  active?: ArmedActive | null;
+  /** hot-seat: the defending player's armed active */
+  defActive?: ArmedActive | null;
 }
 
 /** A live scrimmage play in progress. */
@@ -117,6 +126,8 @@ export interface LivePlay {
   /** special-teams play */
   kick?: { kind: KickKind; userKick: boolean; userReturn: boolean };
   hardCounted?: boolean;
+  /** armed actives this play (offense / kicking team = O) */
+  actives?: PlayActives;
   /** internal bookkeeping for finish() */
   ctx: { before: GameState; at: GameState };
 }
@@ -145,6 +156,10 @@ export class GameSession {
   private readonly mid: F.Fx;
   private readonly hashGap: F.Fx;
   private readonly seed: number | string;
+  /** abilities ruleset on */
+  readonly abilities: boolean;
+  /** momentum per side, in points (tuning.abilities: pointsPerBar per bar, momentumMax cap) */
+  readonly momentum: [number, number] = [0, 0];
 
   constructor(setup: GameSetup) {
     this.data = setup.data;
@@ -153,6 +168,7 @@ export class GameSession {
     this.fixedUser = setup.userSide ?? null;
     this.hotseat = Boolean(setup.hotseat);
     this.seed = setup.seed;
+    this.abilities = setup.abilities !== false;
     this.cfg = setup.quarterSeconds ? { ...setup.data.rules, quarterSeconds: setup.quarterSeconds } : setup.data.rules;
     this.rng = new Rng(setup.seed);
     this.state = newGame(this.cfg, this.rng.int(2) as Side);
@@ -207,14 +223,16 @@ export class GameSession {
     void C;
     const spot = kind === "kickoff" || kind === "squib" || kind === "onside" ? s.freeKickFrom : s.ballOn;
     const ballX = kind === "kickoff" || kind === "squib" || kind === "onside" ? this.mid : this.ballX;
-    const sim = createKick({
+    const kin = {
       data: this.data, ratings: this.ratings, kicking: this.teams[off], receiving: this.teams[def], kickSide: off, kind, spot, ballX,
       rng: prng, wind: this.windFor(off), pressure: this.pressure(s), userKick, userReturn, userKickTeam: userKick && kind === "onside",
-      returnSide, stDefense,
-    });
+      returnSide, stDefense, abilities: this.abilities, actives: undefined as PlayActives | undefined,
+    };
+    kin.actives = this.armActives(s, seed, userKick, userReturn, opts, "kick");
+    const sim = createKick(kin);
     const play = this.data.offense.plays[0]!, call = this.data.defense.calls[0]!;
     return { sim, offSide: off, userOffense: userKick, userDefense: false, play, call, formation: "", personnel: "", front: "", flip: false,
-      seed, twoPoint: false, kick: { kind, userKick, userReturn }, ctx: { before, at: s } };
+      seed, twoPoint: false, actives: kin.actives, kick: { kind, userKick, userReturn }, ctx: { before, at: s } };
   }
   /** AI kickoff choice: onside when trailing late, squib to end the half, else deep. */
   private chooseKickoffKind(s: GameState): KickKind {
@@ -357,8 +375,9 @@ export class GameSession {
     const seed = this.rng.int(1_000_000_000);
     const preOff = userOff ? opts.preOff : pc.preOff;
     const preDef = !userOff && this.userSide === def ? opts.preDef : dc.preDef;
+    const actives = this.armActives(s, seed, userOff, !userOff && this.userSide === def, opts, pc.play.kind === "run" ? "run" : "pass");
     return this.build({ offSide: off, userOffense: userOff, userDefense, play: pc.play, call: dc.call, formation: pc.formation, personnel: pc.personnel,
-      front: dc.front, flip: pc.flip, preOff, preDef, seed, twoPoint, ctx: { before, at: s } });
+      front: dc.front, flip: pc.flip, preOff, preDef, seed, twoPoint, actives, ctx: { before, at: s } });
   }
   /** Create (or re-create) the play's simulation from its description. */
   private build(l: Omit<LivePlay, "sim">): LivePlay {
@@ -377,13 +396,23 @@ export class GameSession {
       data, ratings, offense: teams[off], defense: teams[def], offSide: off, ballOn: s.ballOn, ballX: this.ballX, toGo: s.toGo,
       play: l.play, formation: l.formation, personnel: l.personnel, call: l.call, front: l.front, flip: l.flip, rng: new Rng(l.seed),
       twoPoint: l.twoPoint, userOffense: l.userOffense, userDefense: l.userDefense, paBiteMult, preOff: l.preOff, preDef: l.preDef,
+      actives: l.actives, abilities: this.abilities,
     });
     return { ...l, sim };
   }
 
   /** Pre-snap changes before the ball is snapped: audible (play/formation/flip), defensive audible,
    *  motion, shifts, hot routes, protection, defensive looks. The play keeps its own random stream. */
-  adjust(live: LivePlay, ch: { play?: OffensePlay; formation?: string; flip?: boolean; call?: DefenseCall; front?: string; preOff?: PreSnapOffense; preDef?: PreSnapDefense }): LivePlay {
+  adjust(live: LivePlay, ch: { play?: OffensePlay; formation?: string; flip?: boolean; call?: DefenseCall; front?: string; preOff?: PreSnapOffense; preDef?: PreSnapDefense;
+    /** (re)arm or disarm the human's active ability ("O" or "D" = whose; defaults to the user's side) */
+    active?: ArmedActive | null; activeFor?: "O" | "D" }): LivePlay {
+    if (live.kick) return live; // kicks are armed before the snap (SnapOptions.active)
+    let actives = live.actives;
+    if (ch.active !== undefined) {
+      const side = ch.activeFor ?? (live.userOffense ? "O" : "D");
+      const team = side === "O" ? live.offSide : other(live.offSide);
+      actives = { ...actives, [side]: this.affordable(team, ch.active) ? ch.active : null };
+    }
     let formation = ch.formation ?? live.formation;
     let personnel = live.personnel;
     const play = ch.play ?? live.play;
@@ -395,7 +424,81 @@ export class GameSession {
       if (!fo.personnel.includes(personnel)) personnel = fo.personnel[0]!;
     }
     return this.build({ ...live, play, formation, personnel, flip: ch.flip ?? live.flip, call: ch.call ?? live.call, front: ch.front ?? live.front,
-      preOff: ch.preOff ?? live.preOff, preDef: ch.preDef ?? live.preDef });
+      preOff: ch.preOff ?? live.preOff, preDef: ch.preDef ?? live.preDef, actives });
+  }
+
+  /** Bars of momentum a side has (whole bars). */
+  bars(side: Side): number { return Math.floor(this.momentum[side] / this.data.tuning.abilities.pointsPerBar); }
+  /** Can this side pay for this active? */
+  affordable(side: Side, a: ArmedActive | null | undefined): boolean {
+    if (!a || !this.abilities) return false;
+    const c = this.cardOf(side, a.player);
+    if (!c) return false;
+    const opt = activesOf(c, this.data).find((x) => x.id === a.ability);
+    return Boolean(opt) && opt!.cost * this.data.tuning.abilities.pointsPerBar <= this.momentum[side];
+  }
+  /** Actives a side can arm right now (its players on the roster), with costs. */
+  activeOptions(side: Side): { player: PlayerCard; options: ActiveOption[] }[] {
+    if (!this.abilities) return [];
+    const out: { player: PlayerCard; options: ActiveOption[] }[] = [];
+    for (const c of this.cardsOf(side)) {
+      const options = activesOf(c, this.data);
+      if (options.length) out.push({ player: c, options });
+    }
+    return out;
+  }
+  private cardsOf(side: Side): PlayerCard[] {
+    const t = this.teams[side];
+    const seen = new Set<number>(), out: PlayerCard[] = [];
+    for (const c of [...Object.values(t.starters), ...Object.values(t.depth), ...t.bench]) if (!seen.has(c.id)) { seen.add(c.id); out.push(c); }
+    return out;
+  }
+  private cardOf(side: Side, id: number): PlayerCard | undefined { return this.cardsOf(side).find((c) => c.id === id); }
+  /** Armed actives for a new play: the human's choice (if affordable) or the AI's. */
+  private armActives(s: GameState, seed: number, userO: boolean, userD: boolean, opts: SnapOptions, kind: "pass" | "run" | "kick"): PlayActives | undefined {
+    if (!this.abilities) return undefined;
+    const off = s.possession, def = other(off);
+    const rng = new Rng(seed ^ 0x6a09e667);
+    const key = keySnap(s, this.cfg);
+    const ai = (side: Side, k: "pass" | "run" | "kick" | "defense" | "return") => {
+      const t = this.teams[side];
+      const cards = k === "kick" ? [t.starters.K, t.starters.P, t.starters.LS, ...t.bench].filter((c): c is PlayerCard => Boolean(c))
+        : k === "return" ? this.cardsOf(side).filter((c) => c.id === (t.kr ?? -1) || c.id === (t.pr ?? -1) || c.group === "WR" || c.group === "RB")
+        : Object.values(t.starters);
+      return chooseActive(cards, k, this.momentum[side], key, this.data, rng);
+    };
+    const hsDef = this.hotseat ? opts.defActive : undefined;
+    const O = userO ? (this.affordable(off, opts.active) ? opts.active! : null) : ai(off, kind);
+    const D = userD ? (this.affordable(def, opts.active) ? opts.active! : null)
+      : this.hotseat && hsDef !== undefined ? (this.affordable(def, hsDef) ? hsDef : null)
+      : ai(def, kind === "kick" ? "return" : "defense");
+    return O || D ? { O, D } : undefined;
+  }
+  /** Momentum after a play: spend for actives that were on the field, gain from what happened. */
+  private momentumAfter(live: LivePlay | null, off: Side, events: GameEvent[], outcome: PlayOutcome, stats: StatEvent[], gained: number, accepted: boolean) {
+    if (!this.abilities) return;
+    const A = this.data.tuning.abilities, m = this.momentum;
+    const used = live ? (live.sim.result() as PlayResult).activesUsed : undefined;
+    if (live?.actives && used) for (const k of ["O", "D"] as const) {
+      const a = live.actives[k];
+      if (!a || !used[k]) continue;
+      const side = k === "O" ? live.offSide : other(live.offSide);
+      const c = this.cardOf(side, a.player);
+      const cost = c ? activesOf(c, this.data).find((x) => x.id === a.ability)?.cost ?? 0 : 0;
+      m[side] = Math.max(0, m[side] - cost * A.pointsPerBar);
+      this.box[side].actives++;
+    }
+    const add = (side: Side | undefined, n: number) => { if (side != null) m[side] = Math.min(A.momentumMax, m[side] + n); };
+    for (const e of events) {
+      if (e.t === "firstDown") add(e.side, A.gainFirstDown);
+      else if (e.t === "touchdown") add(e.side, A.gainTouchdown);
+      else if (e.t === "fieldGoal") add(e.side, A.gainFieldGoal);
+      else if (e.t === "turnover" && e.side != null) add(other(e.side), A.gainTakeaway);
+      else if ((e.t === "downs" || e.t === "punt") && e.side != null) add(other(e.side), A.gainStop);
+      else if (e.t === "safety") add(e.side, A.gainTakeaway);
+    }
+    if (!accepted && gained >= A.bigPlayYards && !outcome.turnover) add(off, A.gainBigPlay);
+    if (!accepted && stats.some((x) => x.k === "sack")) add(other(off), A.gainSack);
   }
 
   /** Hard count: the defense may jump offside (free 5 yards); your own line may false-start. Once per play.
@@ -427,13 +530,13 @@ export class GameSession {
     const off = live.offSide;
     if (live.twoPoint) {
       this.box[off].twoAtt++; if (r.outcome.good) this.box[off].twoMade++;
-      return this.apply(live.ctx.before, s, r.outcome, [], `2-pt: ${live.play.name}`, live.call.name, r.outcome.good ? "converted" : "failed", "try");
+      return this.apply(live.ctx.before, s, r.outcome, [], `2-pt: ${live.play.name}`, live.call.name, r.outcome.good ? "converted" : "failed", "try", live);
     }
     this.ballX = F.clamp(r.endX, this.mid - this.hashGap, this.mid + this.hashGap);
     this.box[off].plays++;
     if (s.down === 3) this.box[off].thirdAtt++;
     if (s.down === 4) this.box[off].fourthAtt++;
-    return this.apply(live.ctx.before, s, r.outcome, r.stats, live.play.name, live.call.name, r.log.slice(-2).join("; "));
+    return this.apply(live.ctx.before, s, r.outcome, r.stats, live.play.name, live.call.name, r.log.slice(-2).join("; "), undefined, live);
   }
 
   private finishKick(live: LivePlay): PlaySummary {
@@ -473,7 +576,7 @@ export class GameSession {
       b.patAtt++; if (r.outcome.good) b.patMade++;
       this.ballX = this.mid;
     }
-    return this.apply(live.ctx.before, s, r.outcome, r.stats, name, "", r.log.slice(-2).join("; "), kind === "pat" ? "try" : kind === "punt" || kind === "fieldGoal" ? "play" : "kickoff");
+    return this.apply(live.ctx.before, s, r.outcome, r.stats, name, "", r.log.slice(-2).join("; "), kind === "pat" ? "try" : kind === "punt" || kind === "fieldGoal" ? "play" : "kickoff", live);
   }
 
   result(): GameResult {
@@ -490,7 +593,7 @@ export class GameSession {
   }
 
   // ---------------------------------------------------------------- bookkeeping
-  private apply(before: GameState, s: GameState, outcome: PlayOutcome, stats: StatEvent[], name: string, defense_: string, resultText: string, kind = before.phase as string): PlaySummary {
+  private apply(before: GameState, s: GameState, outcome: PlayOutcome, stats: StatEvent[], name: string, defense_: string, resultText: string, kind = before.phase as string, live: LivePlay | null = null): PlaySummary {
     const { cfg, box } = this;
     const off = s.possession;
     const wasDown = s.down, wasPhase = s.phase, wasBallOn = s.ballOn;
@@ -528,6 +631,7 @@ export class GameSession {
     const entry = this.entry(before, name, defense_, resultText + (step.events.length ? " [" + step.events.map((e) => e.text ?? e.t).join(", ") + "]" : ""), gained, step.events, kind);
     this.log.push(entry);
     this.state = step.state;
+    this.momentumAfter(live, off, step.events, outcome, stats, gained, accepted);
     return { entry, events: step.events, state: step.state };
   }
 

@@ -1,5 +1,6 @@
 // AI coach: situational decisions for both sides. Deterministic given the Rng.
-import type { DefenseCall, GameData, OffensePlay } from "@tdf/shared";
+import type { DefenseCall, GameData, OffensePlay, PlayerCard } from "@tdf/shared";
+import { activesOf, type ArmedActive } from "./engine/abilities.js";
 import { ONE } from "./fixed.js";
 import type { Rng } from "./rng.js";
 import { other, secondsLeft, type GameState, type Side, type Tempo } from "./rules.js";
@@ -312,4 +313,31 @@ export function chooseTry(s: GameState, options: ("pat" | "twoPoint")[]): "pat" 
   const l = lead(s, s.possession); // already includes the 6 points
   if (s.quarter >= 4 && [-2, -5, -10, 1, 5, -13].includes(l)) return "twoPoint";
   return "pat";
+}
+
+/** AI arming of an active ability for one side this play: candidates are the given players' actives whose
+ *  role suits the play (coach.json abilities.roles), affordable with `budget` momentum points. Prefers the
+ *  most expensive (a signature move first). Null when the AI holds its momentum. */
+export function chooseActive(cards: readonly PlayerCard[], kind: keyof GameData["coach"]["abilities"]["roles"], budget: number, key: boolean,
+  data: GameData, rng: Rng): ArmedActive | null {
+  const C = data.coach.abilities, per = data.tuning.abilities.pointsPerBar;
+  if (rng.int(1000) >= (key ? C.keyPerMille : C.usePerMille)) return null;
+  const roles = C.roles[kind];
+  const opts: { player: number; ability: string; cost: number }[] = [];
+  const seen = new Set<number>();
+  for (const c of cards) {
+    if (seen.has(c.id)) continue;
+    seen.add(c.id);
+    for (const a of activesOf(c, data)) if (roles.includes(a.role) && a.cost * per <= budget) opts.push({ player: c.id, ability: a.id, cost: a.cost });
+  }
+  if (!opts.length) return null;
+  const top = Math.max(...opts.map((o) => o.cost));
+  const best = opts.filter((o) => o.cost === top);
+  const o = best[rng.int(best.length)]!;
+  return { player: o.player, ability: o.ability };
+}
+
+/** A key snap for ability use: 3rd/4th down, the red zone, or the last 2 minutes of a half. */
+export function keySnap(s: GameState, cfg: GameData["rules"]): boolean {
+  return s.down >= 3 || s.ballOn >= 80 * ONE || ((s.quarter === 2 || s.quarter >= 4) && secondsLeft(s, cfg) <= 120);
 }

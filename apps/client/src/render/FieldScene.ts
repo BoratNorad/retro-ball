@@ -26,6 +26,8 @@ export class FieldScene extends Phaser.Scene {
   /** kick flick in progress (screen points) */
   private flick: { x: number; y: number }[] = [];
   private camY = 0;
+  /** ability popups ("ANKLE BREAKER!") over the player who used it */
+  private fxText: Phaser.GameObjects.Text[] = [];
 
   constructor() { super("field"); }
 
@@ -266,6 +268,7 @@ export class FieldScene extends Phaser.Scene {
         this.marks.lineStyle(Math.max(2, this.S * 0.25), 0xffd23e, 1).strokeEllipse(this.wx(u.x), this.wy(u.y) + 1, 2.8 * this.S, 1.4 * this.S);
       }
     });
+    this.drawFx(cur, prev, flip, alpha);
     if (ctl.ui.mode === "presnap") this.drawPresnap(cur, flip);
     if (ctl.ui.mode === "kick" && cur.kick) this.drawKickGuide(cur, flip);
     if (ctl.live?.kick && cur.kick && cur.kick.userPlayer >= 0 && cur.kick.phase === "loose") {
@@ -298,6 +301,26 @@ export class FieldScene extends Phaser.Scene {
     // camera: keep the ball a little below centre when you attack up, above when the AI attacks down
     const target = b.state === "air" ? this.toUser(b.x, b.y, flip).y : ub.y;
     this.follow(target);
+  }
+
+  /** Ability popups: rise and fade over ~1.5 s above the player. */
+  private drawFx(cur: PlaySnapshot, prev: PlaySnapshot, flip: boolean, alpha: number) {
+    const life = 45;
+    const show = (cur.fx ?? []).filter((f) => cur.tick - f.tick < life).slice(-4);
+    while (this.fxText.length < show.length) {
+      this.fxText.push(this.add.text(0, 0, "", { fontFamily: "Press Start 2P, monospace", fontSize: "10px", color: "#ffd23e", stroke: "#14141c", strokeThickness: 3 })
+        .setOrigin(0.5, 1).setDepth(70));
+    }
+    this.fxText.forEach((t, k) => {
+      const f = show[k];
+      if (!f) { t.setVisible(false); return; }
+      const a = cur.actors[f.i], pa = prev.actors[f.i] ?? a;
+      if (!a || !pa) { t.setVisible(false); return; }
+      const age = (cur.tick - f.tick) / life;
+      const u = this.toUser(pa.x + (a.x - pa.x) * alpha, pa.y + (a.y - pa.y) * alpha, flip);
+      t.setText(f.text).setFontSize(Math.max(8, Math.round(this.S * 0.9))).setVisible(true)
+        .setPosition(this.wx(u.x), this.wy(u.y) - (3.2 + age * 2.5) * this.S - k * this.S * 1.1).setAlpha(1 - age * age);
+    });
   }
 
   /** Kick aiming: the accuracy cone from the kick spot (it widens under pressure and for weaker kickers)
@@ -369,7 +392,11 @@ export class FieldScene extends Phaser.Scene {
     cam.setScroll(0, this.camY);
   }
 
-  private hideActors() { for (const s of this.sprites) s.setVisible(false); this.ball.setVisible(false); this.ballShadow.setVisible(false); }
+  private hideActors() {
+    for (const s of this.sprites) s.setVisible(false);
+    for (const t of this.fxText) t.setVisible(false);
+    this.ball.setVisible(false); this.ballShadow.setVisible(false);
+  }
 
   /** LOS and first-down line between plays (from the game state). */
   private drawStateLines(_flip: boolean) {

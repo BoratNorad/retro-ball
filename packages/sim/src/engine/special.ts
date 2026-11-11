@@ -8,9 +8,10 @@
 import type { GameData, PlayerCard, Tuning } from "@tdf/shared";
 import * as F from "../fixed.js";
 import type { Fx, V2 } from "../fixed.js";
-import type { Rng } from "../rng.js";
+import { Rng } from "../rng.js";
 import type { PlayOutcome } from "../rules.js";
 import type { Roster } from "../roster.js";
+import { abilityKit, type AbilityKit, type PlayActives } from "./abilities.js";
 import type { ActorView, KickKind, KickView, PlayResult, PlaySim, PlaySnapshot, StatEvent, Stats, UserInput } from "./play.js";
 
 const { fx, mul, div, idiv, ONE, vsub, vadd, vlen, vnorm, vscale, vdist } = F;
@@ -39,6 +40,9 @@ export interface KickPlayInput {
   /** receiving team's call vs a punt / FG: all-out block, safe (fake watch), or normal */
   stDefense?: "block" | "safe" | "normal";
   record?: boolean;
+  /** armed actives (kicking team = O, receiving = D) and the abilities ruleset */
+  actives?: PlayActives;
+  abilities?: boolean;
 }
 export interface KickMeta {
   kind: KickKind; gross: number; returnYds: number; returner: number | null;
@@ -53,6 +57,7 @@ interface A {
   i: number; c: PlayerCard; st: Stats; side: "O" | "D"; role: string; task: Task;
   pos: V2; vel: V2; maxSpeed: Fx; accel: Fx;
   laneX: Fx; engagedWith: number; shedTick: number; stunTil: number; lastTry: number; target: number;
+  ab: AbilityKit;
 }
 type Ball = {
   state: "held" | "air" | "loose" | "dead";
@@ -202,7 +207,15 @@ export function createKick(inp: KickPlayInput): KickSim {
 
   // ------------------------------------------------------------------ actors
   const actors: A[] = [];
+  const abOn = inp.abilities !== false;
+  const activesUsed = { O: false, D: false };
+  const fxLog: { i: number; text: string; tick: number }[] = [];
+  const pop = (a: A, text: string) => { fxLog.push({ i: a.i, text, tick }); log.push(`* ${a.c.name}: ${text}`); };
   const mk = (c: PlayerCard, side: "O" | "D", role: string, task: Task, x: number, y: Fx): A => {
+    const armedFor = inp.actives?.[side];
+    const armed = armedFor && armedFor.player === c.id ? armedFor.ability : null;
+    if (armed && abOn) activesUsed[side] = true;
+    const ab = abilityKit(c, data, armed, abOn);
     const st = inp.ratings(c.id);
     const g = (k: string) => st[k] ?? 50;
     const a: A = {
@@ -210,7 +223,7 @@ export function createKick(inp: KickPlayInput): KickSim {
       pos: { x: F.clamp(bx + fx(x), fx(1), W - fx(1)), y }, vel: { x: 0, y: 0 },
       maxSpeed: fx(T.movement.speedBase + T.movement.speedPer * g("speed")),
       accel: fx(T.movement.accelBase + T.movement.accelPer * g("acceleration")),
-      laneX: 0, engagedWith: -1, shedTick: 0, stunTil: 0, lastTry: -999, target: -1,
+      laneX: 0, engagedWith: -1, shedTick: 0, stunTil: 0, lastTry: -999, target: -1, ab,
     };
     a.laneX = a.pos.x;
     actors.push(a);
@@ -290,9 +303,28 @@ export function createKick(inp: KickPlayInput): KickSim {
 
   // ------------------------------------------------------------------ ball and kick command
   const kickPoint: V2 = isKickoff ? { x: bx, y: L } : isFg ? { x: bx, y: L - fx(data.rules.spots.fgSnapDepth) } : { x: bx, y: L - fx(14) };
-  const kAcc = R(kickerA, "kickAccuracy"), kPow = R(kickerA, "kickPower");
+  const AB = T.abilities;
+  const kAcc = R(kickerA, "kickAccuracy");
+  // big leg: more distance; the kicker's signature: the next kick up to 65 yards is good (perfect strike)
+  const kSig = kickerA.ab.signature === "ST";
+  // (not on kickoffs: touchback rates are calibrated on kick power alone and swing hard with it)
+  const kPow = R(kickerA, "kickPower") + (isKickoff ? 0 : kickerA.ab.mag("big_leg") * AB.bigLegPowerPer) + (kSig ? 6 : 0);
   const fgDist = Math.round((fx(110) - kickPoint.y) / ONE);
-  const err = kickErrors(data, kAcc, kind, inp.pressure, fgDist);
+  const err = kickErrors(data, kAcc, kind, inp.pressure && !kSig, fgDist);
+  if (inp.pressure) {
+    // ice veins: ignore part of the clutch penalty
+    const iv = kickerA.ab.mag("ice_veins") / 100;
+    if (iv) { const m = S.pressureMult; err.aim *= (1 + (m - 1) * (1 - iv)) / m; err.power *= (1 + (m - 1) * (1 - iv)) / m; }
+  }
+  const ll = kickerA.ab.once("laser_leg"); if (ll) { err.aim *= 1 - ll / 100; err.power *= 1 - ll / 100; }
+  if (kSig && fgDist <= 65) { err.aim = 0; err.power = 0; }
+  // the snap: the long snapper's perfect snaps (else a little accuracy lost)
+  if (!isKickoff && abOn) {
+    const ls = K.find((a) => a.role === "LS");
+    const clean = ls?.ab.mag("perfect_snap") || AB.perfectSnapBase;
+    // its own stream (read from the kick's state without advancing it), so the snap roll doesn't reshuffle the kick's luck
+    if (new Rng((rng.getState()[0] ^ 0x9e3779b9) >>> 0).int(100) >= clean) { err.aim *= AB.badSnapErrMult; log.push("a low snap"); }
+  }
   const ball: Ball = { state: "held", holder: isKickoff ? -1 : actors.find((a) => a.role === "LS")!.i, p: isKickoff ? kickPoint : { x: bx, y: L }, h: isKickoff ? 0 : fx(0.5), v: { x: 0, y: 0 }, vh: 0, rolling: false };
   let phase: KickView["phase"] = inp.userKick ? "setup" : "approach";
   let command: { aim: Fx; power: Fx; curve: Fx } | null = null;
@@ -302,6 +334,11 @@ export function createKick(inp: KickPlayInput): KickSim {
       // coffin corner: aim for the sideline short of the goal line
       const side = rng.int(2) ? 1 : -1;
       target = { x: W / 2 + fx(side * (T.field.width / 2 - 6)), y: fx(data.coach.special.coffinTarget) };
+    }
+    const cc = kind === "punt" ? kickerA.ab.mag("coffin_corner") : 0;
+    if (cc) {
+      const side = rng.int(2) ? 1 : -1;
+      target = { x: W / 2 + fx(side * (T.field.width / 2 - 5)), y: fx(100 - cc) };
     }
     command = aiKick(data, kind, kPow, kickPoint, inp.wind, rng, { target });
   }
@@ -467,7 +504,9 @@ export function createKick(inp: KickPlayInput): KickSim {
         const shed = (R(d, "blockShedding") * 2 + R(d, "strength")) / 3;
         const base = pass ? T.blocking.passHoldBase : b.task === "jam" ? 0.9 : T.blocking.runHoldBase * 0.55;
         const per = pass ? T.blocking.passHoldPer : T.blocking.runHoldPer;
-        const hold = Math.max(0.2, base + per * (blk - shed) + (rng.int(1000) / 1000 - 0.5) * 0.6);
+        let hold = Math.max(0.2, base + per * (blk - shed) + (rng.int(1000) / 1000 - 0.5) * 0.6);
+        if (b.side === "D" && returnBoost) hold *= 1 + returnBoost / 100;
+        if (b.task === "jam" && d.ab.mag("gunner")) { hold *= 1 - d.ab.mag("gunner") / 100; }
         b.engagedWith = d.i; d.engagedWith = b.i;
         b.shedTick = d.shedTick = tick + sec(hold);
         break;
@@ -495,10 +534,14 @@ export function createKick(inp: KickPlayInput): KickSim {
       let bonus = 0;
       if (moveUntil.juke > tick) bonus = T.user.moveBonusBase + T.user.moveBonusPer * (R(c, "jukeMove") - 60);
       else if (moveUntil.spin > tick) bonus = T.user.moveBonusBase + T.user.moveBonusPer * (R(c, "spinMove") - 60);
-      const p = clampPm(T.tackle.base + T.tackle.per * (R(d, "tackle") - elusive) + T.tackle.powerPer * (R(d, "hitPower") - R(c, "strength")) + (near.length - 1) * T.tackle.gangBonus - bonus);
+      if (abOn && c.ab.mag("return_man") && !firstMiss) { firstMiss = true; pop(c, "RETURN MAN!"); d.stunTil = tick + sec(AB.returnBreakStun); continue; }
+      const esc = abOn ? (c.ab.once("ankle_breaker") || c.ab.once("cyclone") || c.ab.once("stiff_arm")) : 0;
+      if (esc) { pop(c, "BROKEN TACKLE!"); d.stunTil = tick + sec(AB.returnBreakStun); continue; }
+      let p = clampPm(T.tackle.base + T.tackle.per * (R(d, "tackle") - elusive) + T.tackle.powerPer * (R(d, "hitPower") - R(c, "strength")) + (near.length - 1) * T.tackle.gangBonus - bonus);
+      const sure = d.ab.mag("sure_tackler"); if (sure) p = Math.round(1000 - (1000 - p) * (1 - sure / 100));
       if (rng.int(1000) < p) {
         stats.push({ k: "tackle", id: d.c.id, team: d.side === "O" ? inp.kickSide : recvSide });
-        const fp = Math.max(T.tackle.fumbleMin, Math.min(T.tackle.fumbleMax, T.tackle.fumbleBase + T.tackle.fumblePer * (R(d, "hitPower") - R(c, "carrying"))));
+        const fp = Math.round(Math.max(T.tackle.fumbleMin, Math.min(T.tackle.fumbleMax, T.tackle.fumbleBase + T.tackle.fumblePer * (R(d, "hitPower") - R(c, "carrying")))) * (1 - c.ab.mag("ball_security") / 100));
         if (rng.int(1000) < fp && rng.int(1000) >= T.tackle.fumbleOffenseRecover) {
           log.push(`FUMBLE by ${c.c.name}, recovered by ${d.c.name}`);
           stats.push({ k: "fumble", id: c.c.id, team: c.side === "D" ? recvSide : inp.kickSide }, { k: "fumbleLost", id: c.c.id, team: c.side === "D" ? recvSide : inp.kickSide });
@@ -525,6 +568,17 @@ export function createKick(inp: KickPlayInput): KickSim {
   }
 
   // ------------------------------------------------------------------ the kick
+  let forcedFair = false, coffinRoll = false, returnBoost = 0, firstMiss = false;
+  /** where this exact launch comes down (wind and curve included) */
+  function predictLaunch(Lh: { v: V2; vh: Fx; curve: V2 }, height: number): { land: V2; hang: number } {
+    const b = { p: kickPoint, h: fx(isFg || isKickoff ? 0.2 : 1.0), v: Lh.v, vh: Lh.vh };
+    const acc = vadd(windAcc, Lh.curve);
+    for (let t = 1; t < hz * 10; t++) {
+      flightStep(b, dragOf(T, kind), acc, fx(S.gravity), DT);
+      if (b.vh < 0 && b.h <= fx(height)) return { land: b.p, hang: t / hz };
+    }
+    return { land: b.p, hang: 10 };
+  }
   function doKick() {
     kickTick = tick;
     phase = "flight";
@@ -552,10 +606,16 @@ export function createKick(inp: KickPlayInput): KickSim {
     const aErr = fx((err.aim * (rng.int(2001) - 1000)) / 1000);
     const pErr = fx((err.power * (rng.int(2001) - 1000)) / 1000);
     const Lh = launch(T, kind, kPow, cmd.aim + aErr, F.clamp(cmd.power + pErr, 0, ONE), cmd.curve);
+    // hang time: a higher punt (the returner has to fair catch)
+    const ht = kind === "punt" ? kickerA.ab.once("hang_time") : 0;
+    if (ht) { Lh.vh += fx(ht * S.gravity / 2); pop(kickerA, "HANG TIME!"); forcedFair = true; }
+    if (kind === "punt" && kickerA.ab.once("coffin_corner")) { pop(kickerA, "COFFIN CORNER!"); coffinRoll = true; }
+    if (kSig) pop(kickerA, kickerA.c.signature?.name ?? "SIGNATURE");
+    if (ll) pop(kickerA, "LASER LEG!");
     curve = Lh.curve;
     ball.state = "air"; ball.holder = -1;
     ball.p = kickPoint; ball.h = fx(isFg || isKickoff ? 0.2 : 1.0); ball.v = Lh.v; ball.vh = Lh.vh;
-    const pr = predictFlight(data, kind, kPow, kickPoint, cmd.aim + aErr, F.clamp(cmd.power + pErr, 0, ONE), cmd.curve, inp.wind, S.catchHeight - 0.4);
+    const pr = predictLaunch(Lh, S.catchHeight - 0.4);
     landing = pr.land; landTick = tick + Math.round(pr.hang * hz);
     meta.gross = Math.round((F.min(pr.land.y, fx(100)) - L) / ONE);
     log.push(`${kickerA.c.name} ${isFg ? "kicks" : kind === "punt" ? "punts" : kind === "onside" ? "onside kick" : kind === "squib" ? "squib kick" : "kicks off"}${isFg ? "" : ` (${Math.round((pr.land.y - kickPoint.y) / ONE)} yds in the air)`}`);
@@ -610,7 +670,7 @@ export function createKick(inp: KickPlayInput): KickSim {
   }
   function looseTick() {
     if (ball.rolling) {
-      const sp = vlen(ball.v), dec = mul(fx(S.rollFriction), DT);
+      const sp = vlen(ball.v), dec = mul(fx(S.rollFriction * (coffinRoll ? AB.coffinRollMult : 1)), DT);
       ball.v = sp <= dec ? { x: 0, y: 0 } : vscale(vnorm(ball.v), sp - dec);
       ball.p = vadd(ball.p, vscale(ball.v, DT));
     } else {
@@ -680,6 +740,7 @@ export function createKick(inp: KickPlayInput): KickSim {
   function caught(a: A) {
     ball.state = "held"; ball.holder = a.i;
     carrier = a; catchY = a.pos.y; catchTick = tick;
+    returnBoost = abOn ? a.ab.mag("return_man") : 0;
     phase = "return";
     meta.returner = a.c.id;
     if (meta.blocked) { log.push(`${a.c.name} scoops it up`); return; }
@@ -696,7 +757,7 @@ export function createKick(inp: KickPlayInput): KickSim {
       // fair catch when the coverage is on top of him
       const k = nearest(K, a.pos)!;
       const eta = div(vdist(k.pos, a.pos), F.max(k.maxSpeed, ONE));
-      if (eta < fx(S.fairCatchEta) || a.pos.y >= fx(95)) { meta.fairCatch = true; log.push(`(fair catch)`); end(a.pos.y, a.pos.x, "fairCatch"); }
+      if (eta < fx(S.fairCatchEta) || a.pos.y >= fx(95) || forcedFair) { meta.fairCatch = true; log.push(`(fair catch)`); end(a.pos.y, a.pos.x, "fairCatch"); }
     }
   }
 
@@ -788,7 +849,7 @@ export function createKick(inp: KickPlayInput): KickSim {
       qbCanThrow: false, carrier: carrier ? carrier.i : -1, userCarrier: Boolean(inp.userReturn && carrier && carrier.side === "D"),
       userDefender: -1, canKeep: false, presnap: phase === "setup", routes: [], assign: [],
       cooldowns: { juke: Math.max(0, moveReady.juke - tick), spin: Math.max(0, moveReady.spin - tick), burst: Math.max(0, moveReady.burst - tick) },
-      log, kick: view,
+      log, kick: view, fx: fxLog,
     };
   }
 
@@ -822,7 +883,7 @@ export function createKick(inp: KickPlayInput): KickSim {
       outcome.blocked = true;
       if (carrier && carrier.side === "D") { outcome.endY = endY; outcome.defenseTd = meta.returnTd; }
     }
-    cached = { outcome, stats, endX: F.clamp(e.endX, fx(1), W - fx(1)), log, meta };
+    cached = { outcome, stats, endX: F.clamp(e.endX, fx(1), W - fx(1)), log, meta, activesUsed };
     return cached;
   }
   return { step, snapshot, result, assignments: () => [] };

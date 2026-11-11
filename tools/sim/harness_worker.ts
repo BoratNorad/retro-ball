@@ -31,7 +31,7 @@ for (let g = from; g < to; g++) {
   };
   const home = process.env.RANDOM_ROSTERS ? randomRoster(i) : env.roster(abbrs[i]!);
   const away = process.env.RANDOM_ROSTERS ? randomRoster(j) : env.roster(abbrs[j]!);
-  const r = playGame({ data: env.data, ratings: env.ratings, teams: [home, away], seed: `${seed}-${g}` });
+  const r = playGame({ data: env.data, ratings: env.ratings, teams: [home, away], seed: `${seed}-${g}`, abilities: process.env.ABILITIES !== "0" });
   add("games", 1);
   for (const pl of r.log) if (pl.kind === "play" && pl.name && !["Punt", "Kneel", "Spike", "—"].includes(pl.name) && !pl.name.includes("field goal")) {
     add(`play:${pl.name}:n`, 1); add(`play:${pl.name}:yds`, pl.yards);

@@ -141,3 +141,11 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 .focus { max-width: 260px; margin: 8px 0; }
 select { background: #000; color: var(--text); border: 2px solid #000; font: inherit; font-size: 16px; }
 @media (max-width: 560px) { .offers { grid-template-columns: 1fr; } .pdcols, .reveal .revrow { grid-template-columns: 1fr; } .slot { min-width: 40px; } .pdlist { columns: 1; } }
+/* momentum meter (abilities) */
+.bug .side .mom { position: absolute; top: 2px; left: 8px; display: flex; gap: 2px; font-style: normal; }
+.bug .side .mom.r { left: auto; right: 8px; }
+.bug .side .mom b { display: block; width: 12px; height: 4px; background: rgba(0,0,0,.55); border: 1px solid #000; position: relative; overflow: hidden; }
+.bug .side .mom b u { position: absolute; left: 0; top: 0; bottom: 0; background: var(--gold); text-decoration: none; }
+.bug .side .mom b.full u { background: #ffe27a; box-shadow: 0 0 4px var(--gold); }
+.chip.dim { opacity: .45; }
+.scroller.abil .chip small { color: var(--gold); letter-spacing: 1px; margin-left: 4px; }

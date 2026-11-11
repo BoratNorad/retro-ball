@@ -70,6 +70,7 @@ const rows: Row[] = [
   ["kickoff touchback %", pct(a.touchbacks ?? 0, a.kickoffs ?? 0), 25, 75],
   ["return TDs / team / game", per("retTd"), 0, 0.08],
   ["blocked kicks / team / game", per("blockedKicks"), 0, 0.08],
+  ["active abilities used / team / game", per("actives"), 0, 99],
   ["onside recovery %", pct(a.onsideRec ?? 0, a.onsideAtt ?? 0), 5, 25],
 ];
 console.log(`\n${a.games} games in ${(ms / 1000).toFixed(1)}s on ${WORKERS} workers (${(ms / a.games!).toFixed(0)} ms/game per core x${WORKERS})\n`);

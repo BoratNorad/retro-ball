@@ -9,6 +9,7 @@ import type { Fx, V2 } from "../fixed.js";
 import { Rng } from "../rng.js";
 import type { Foul, PlayOutcome } from "../rules.js";
 import { slotPlayer, type Roster } from "../roster.js";
+import { abilityKit, type AbilityKit, type PlayActives } from "./abilities.js";
 
 const { fx, mul, div, idiv, ONE, vsub, vadd, vlen, vnorm, vscale, vdist } = F;
 
@@ -73,6 +74,9 @@ export interface PlayInput {
   userDefense?: boolean;
   preOff?: PreSnapOffense;
   preDef?: PreSnapDefense;
+  /** armed active abilities (one per side), and the abilities ruleset (default on) */
+  actives?: PlayActives;
+  abilities?: boolean;
 }
 export interface Frame { t: number; p: number[]; ball: [number, number, number] } // positions as [x,y,...] in Fx
 
@@ -108,6 +112,8 @@ export interface PlaySnapshot {
   kick?: KickView;
   cooldowns: { juke: number; spin: number; burst: number };
   log: string[];
+  /** ability pop-ups so far: actor index, text, tick */
+  fx?: { i: number; text: string; tick: number }[];
 }
 export type KickKind = "fieldGoal" | "pat" | "kickoff" | "squib" | "onside" | "punt";
 export interface KickView {
@@ -132,13 +138,19 @@ export interface PlaySim {
   /** each defender's assignment at the snap: rush, man:<role>, spy, or the zone name */
   assignments(): { role: string; task: string }[];
 }
-export interface PlayResult { outcome: PlayOutcome; stats: StatEvent[]; endX: Fx; frames?: Frame[]; log: string[]; debug?: { tries: number; missed: number; minDist: number } }
+export interface PlayResult { outcome: PlayOutcome; stats: StatEvent[]; endX: Fx; frames?: Frame[]; log: string[]; debug?: { tries: number; missed: number; minDist: number };
+  /** which sides' armed actives were actually on the field (momentum is only spent for those) */
+  activesUsed?: { O: boolean; D: boolean } }
 
 type Task = "block" | "route" | "qb" | "carry" | "rush" | "man" | "zone" | "spy" | "pull" | "lead" | "idle";
 interface Actor {
   i: number; c: PlayerCard; st: Stats; side: "O" | "D"; role: string;
   /** defensive class (DL, EDGE, LB, NB, CB, S); "" on offense */
   cls: string;
+  /** abilities: passives, the armed active, signature boosts */
+  ab: AbilityKit;
+  /** engagements so far (relentless) */
+  engagements: number;
   pos: V2; vel: V2; maxSpeed: Fx; accel: Fx;
   task: Task;
   // blocking
@@ -187,6 +199,10 @@ export function createPlay(inp: PlayInput): PlaySim {
   const W = fx(T.field.width);
   const log: string[] = [];
   const stats: StatEvent[] = [];
+  const fxLog: { i: number; text: string; tick: number }[] = [];
+  const curTickRef = { t: 0 };
+  /** an ability fired: pop-up over the player, and a log line */
+  const pop = (a: { i: number; c: PlayerCard }, text: string) => { fxLog.push({ i: a.i, text, tick: curTickRef.t }); log.push(`* ${a.c.name}: ${text}`); };
   const defSide = (inp.offSide === 0 ? 1 : 0) as 0 | 1;
 
   const off = data.formations.offense.find((f) => f.id === (inp.formation ?? inp.play.formations[0]))
@@ -210,11 +226,19 @@ export function createPlay(inp: PlayInput): PlaySim {
 
   // ------------------------------------------------------------------ actors
   const actors: Actor[] = [];
+  const AB = T.abilities;
+  const abOn = inp.abilities !== false;
+  const activesUsed = { O: false, D: false };
   const mk = (c: PlayerCard, side: "O" | "D", role: string, at: V2, cls = ""): Actor => {
-    const st = inp.ratings(c.id);
+    const armedFor = inp.actives?.[side];
+    const armed = armedFor && armedFor.player === c.id ? armedFor.ability : null;
+    if (armed && abOn) activesUsed[side] = true;
+    const ab = abilityKit(c, data, armed, abOn);
+    const base = inp.ratings(c.id);
+    const st = Object.keys(ab.boosts).length ? { ...base, ...Object.fromEntries(Object.entries(ab.boosts).map(([k, v]) => [k, Math.min(99, (base[k] ?? 50) + v)])) } : base;
     const g = (k: string) => st[k] ?? 50;
     return {
-      i: actors.length, c, st, side, role, cls, pos: at, vel: { x: 0, y: 0 },
+      i: actors.length, c, st, side, role, cls, ab, engagements: 0, pos: at, vel: { x: 0, y: 0 },
       maxSpeed: fx(T.movement.speedBase + T.movement.speedPer * g("speed")),
       accel: fx(T.movement.accelBase + T.movement.accelPer * g("acceleration")),
       task: "idle", blockTarget: -1, engagedWith: -1, shedTick: 0, stunTil: 0,
@@ -380,6 +404,20 @@ export function createPlay(inp: PlayInput): PlaySim {
   let assignmentsAtSnap: { role: string; task: string }[] = [];
   compileCall();
   presnapOverrides();
+  // jam: a defender reroutes the receiver he's on at the line
+  for (const d of D) {
+    const jm = d.ab.mag("jam");
+    if (!jm) continue;
+    const r = d.task === "man" ? actors[d.manTarget]! : nearestTo(O.filter((o) => o.task === "route"), d.pos);
+    if (r && vdist(r.pos, d.pos) < fx(AB.jamRangeYds) && d.ab.once("jam")) { r.jamUntil = Math.max(r.jamUntil, sec(jm)); pop(d, "JAM!"); }
+  }
+  // hard count: the line freezes at the snap
+  const hc = qb.ab.once("hard_count");
+  // (frozen linemen still get blocked: hcFreezeTil marks them for the blocking assignments)
+  // he draws the line offside (a free play: the offense takes the better of the play and 5 yards), or it freezes
+  const hcOffside = hc > 0 && new Rng((rng.getState()[1] ^ 0x85ebca6b) >>> 0).int(100) < hc;
+  const hcFreezeTil = hc && !hcOffside ? sec(AB.hardCountFreeze) : -1;
+  if (hc) { pop(qb, hcOffside ? "OFFSIDE! FREE PLAY" : "HARD COUNT!"); if (!hcOffside) for (const d of D) if (d.cls === "DL" || d.cls === "EDGE") d.stunTil = hcFreezeTil; }
   function presnapOverrides() {
     const pd = inp.preDef;
     if (!pd) return;
@@ -467,12 +505,38 @@ export function createPlay(inp: PlayInput): PlaySim {
     zones.sort((p, q) => data.defense.zones[p]!.at[0] - data.defense.zones[q]!.at[0]);
     left.forEach((d, k) => { d.task = "zone"; d.zone = zoneAt(zones[k]!); d.zoneName = zones[k]!; });
     assignmentsAtSnap = D.map((d) => ({ role: d.role, task: d.task === "man" ? `man:${actors[d.manTarget]!.role}` : d.task === "zone" ? d.zoneName : d.task }));
+    const qbSig = O.find((o) => o.role === "QB" && o.ab.signature === "QB");
+    const fgYds = O.find((o) => o.role === "QB")?.ab.mag("field_general") ?? 0;
+    const firstRead = inp.play.kind !== "run" && inp.play.read?.[0] ? O.find((o) => o.role === inp.play.read![0] && o.task === "route") ?? null : null;
+    const fgZoneMan = firstRead ? nearestTo(D.filter((d) => d.task === "zone"), firstRead.pos) : null;
+    if (qbSig) pop(qbSig, qbSig.c.signature?.name ?? "SIGNATURE");
     for (const d of D) {
       d.reactTicks = sec(T.coverage.reactBase + T.coverage.reactPerMissing * (99 - R(d, "playRecognition")));
       // mirroring a receiver is a man-coverage skill, not general play recognition
       if (d.task === "man") d.reactTicks = sec(T.coverage.manReactBase + T.coverage.manReactPerMissing * (99 - R(d, "manCoverage")));
+      if (abOn) {
+        d.reactTicks = Math.max(0, d.reactTicks - sec(d.ab.mag("radar")));
+        const sh = d.ab.mag("shadow"); if (sh && d.task === "man") d.reactTicks = Math.min(d.reactTicks, sec(sh * AB.coverageLagPerYd * AB.shadowLagMult));
+        const r = d.task === "man" ? actors[d.manTarget] : null;
+        if (r && r.side === "O") {
+          d.reactTicks += sec(r.ab.mag("route_tech") * AB.coverageLagPerYd);
+          const sl = r.ab.once("shake_loose"); if (sl) { r.jamUntil = 0; d.reactTicks += sec(sl * AB.coverageLagPerYd); pop(r, "SHAKE LOOSE!"); }
+          const rid = (inp.play.routes?.[r.role] ?? "").split(":")[0] ?? "";
+          const gr = ["go", "seam", "fade"].includes(rid) ? r.ab.once("go_route") : 0;
+          if (gr) { d.reactTicks += sec(gr * AB.routeLagPerStep); pop(r, "GO ROUTE!"); }
+        }
+        if (d.zone?.deep) {
+          const dt = Math.max(0, ...O.filter((o) => o.task === "route").map((o) => o.ab.mag("deep_threat")));
+          if (dt) d.zone = { ...d.zone, at: { x: d.zone.at.x, y: d.zone.at.y + fx(dt) } };
+        }
+        // QB signature: every receiver gets a few yards on his man / zone defender
+        if (qbSig && d.task !== "rush") d.reactTicks += sec(AB.qbSignatureSepYds * AB.coverageLagPerYd);
+        // field general: his first read gets open (the man on him, or the zone defender nearest him, reacts late)
+        if (fgYds && AB.fieldGeneralLagMult && firstRead && d.task !== "rush" && (d.manTarget === firstRead.i || (d.task === "zone" && d === fgZoneMan))) d.reactTicks += sec(fgYds * AB.coverageLagPerYd * AB.fieldGeneralLagMult);
+        if (d.ab.signature === "LB") d.reactTicks = 0;
+      }
       // play action: second-level defenders step up on the fake; low play recognition bites longer
-      if (inp.play.pa && d.task !== "rush") {
+      if (inp.play.pa && d.task !== "rush" && d.ab.signature !== "LB") {
         const k = (T.pa.biteBase + T.pa.bitePerMissing * (99 - R(d, "playRecognition"))) * (inp.paBiteMult ?? 1) * (d.cls === "CB" ? T.pa.cornerMult : d.cls === "S" ? T.pa.safetyMult : 1);
         d.biteUntil = sec(T.pa.fakeSeconds + k);
       }
@@ -486,7 +550,7 @@ export function createPlay(inp: PlayInput): PlaySim {
   function claimTarget(b: Actor): Actor | null {
     const pp = passSet && !screenOn;
     const box = (d: Actor) => F.abs(d.pos.x - b.pos.x) < fx(pp ? 9 : 7) && d.pos.y - los < fx(pp ? 6 : 8);
-    const cands = D.filter((d) => (pp && !b.stalk ? d.task === "rush" : true) && d !== optionKey && box(d) && d.stunTil <= 0);
+    const cands = D.filter((d) => (pp && !b.stalk ? d.task === "rush" : true) && d !== optionKey && box(d) && (d.stunTil <= 0 || d.stunTil === hcFreezeTil));
     const free = cands.filter((d) => !claimed.has(d.i));
     const pool = free.length ? free : cands;
     let best: Actor | null = null, bd = fx(1e4);
@@ -571,6 +635,17 @@ export function createPlay(inp: PlayInput): PlaySim {
       if (stopDist > dist) speedMult = mul(speedMult, F.max(fx(0.2), div(dist, F.max(stopDist, ONE))));
     }
     let maxV = mul(a.maxSpeed, speedMult);
+    if (abOn) {
+      const holder = ball.state === "held" && ball.holder === a.i;
+      if (holder && a.side === "O" && a.pos.y > los) {
+        const af = a.ab.mag("afterburner");
+        if (af) { if (afterburnerAt < 0) { afterburnerAt = curTick; pop(a, "AFTERBURNER!"); } if (curTick - afterburnerAt < sec(AB.afterburnerSeconds)) maxV += fx(af * T.movement.speedPer); }
+      }
+      if (holder && a === pickSixer) maxV = mul(maxV, fx(1 + a.ab.mag("pick_six") / 100));
+      const c0 = ball.state === "held" ? actors[ball.holder]! : null;
+      if (c0 && c0.side !== a.side && !(c0 === qb && qbHasBall)) maxV += fx(a.ab.mag("closing_speed") * T.movement.speedPer * AB.closingSpeedMult);
+      if (a.task === "pull" && a.ab.mag("pull_lead")) maxV = mul(maxV, fx(1 + a.ab.mag("pull_lead") / 100));
+    }
     if (a === runner && curTick < jetBoostUntil && ball.holder === a.i) maxV = mul(maxV, fx(P5.jetBoost));
     // gap runs: the back is patient while the pullers get there
     if (gapRun && a === runner && curTick - runStart < sec(S.gapPatience)) maxV = mul(maxV, fx(S.gapPatienceMult));
@@ -669,7 +744,26 @@ export function createPlay(inp: PlayInput): PlaySim {
     }
     return best;
   }
-  const flightTo = (p: V2) => div(vdist(qb.pos, p), fx(T.throw.ballSpeedBase + T.throw.ballSpeedPer * R(qb, "throwPower")));
+  const ballSpeed = () => T.throw.ballSpeedBase + T.throw.ballSpeedPer * R(qb, "throwPower") + qb.ab.mag("cannon") * AB.cannonSpeedPerYd;
+  const flightTo = (p: V2) => div(vdist(qb.pos, p), fx(ballSpeed()));
+  /** Throw error radius (yards) with the passer's and target's abilities. */
+  function throwErr(yds: number, pressure: boolean, target: Actor | null): number {
+    const accKey = yds <= T.throw.shortMax ? "throwAccuracyShort" : yds <= T.throw.midMax ? "throwAccuracyMid" : "throwAccuracyDeep";
+    let acc = R(qb, accKey);
+    if (yds > T.throw.midMax) { const m = qb.ab.once("moonshot"); if (m) { acc += m; noTip = true; pop(qb, "MOONSHOT!"); } }
+    else if (yds < AB.dartMaxYds) { const d = qb.ab.once("dart"); if (d) { acc += d; dartCatch = true; pop(qb, "DART!"); } }
+    if (pressure) acc = Math.round((acc + R(qb, "throwUnderPressure")) / 2);
+    let err = T.throw.errBase + T.throw.errPerMissingAcc * (99 - Math.min(99, acc)) * (1 + yds * T.throw.errPerYard);
+    if (pressure) {
+      const poise = qb.ab.mag("pocket_poise") / 100;
+      err *= 1 + (T.throw.pressureErrMult - 1) * (1 - poise);
+      const sv = target?.ab.mag("safety_valve") ?? 0;
+      if (sv) err *= 1 - sv / 100;
+    }
+    if (scramble || boot) err *= (2 - Math.min(99, R(qb, "throwOnTheRun") + (curTickRef.t < escapeUntil ? escapeBonus : 0)) / 99) * (T.throw.onRunErrMult / 1.35);
+    return err;
+  }
+  let noTip = false, dartCatch = false, escapeUntil = -1, escapeBonus = 0;
 
   function tryThrow(now: number) {
     const t = now / hz;
@@ -696,7 +790,7 @@ export function createPlay(inp: PlayInput): PlaySim {
     let pick: Actor | null = null, best: Actor | null = null, bestSep = fx(-99);
     for (let j = 0; j < reads.length; j++) {
       const r = reads[j]!;
-      const sep = separation(r, flightTo(r.pos));
+      let sep = separation(r, flightTo(r.pos));
       const deep = r.pos.y - los > fx(15) ? T.qb.openSepDeepBonus : 0;
       if (!pick && j <= progressed && sep > fx(need + deep)) pick = r;
       // misread: once per read, a QB may think a covered man is open (lower awareness = more often)
@@ -752,12 +846,7 @@ export function createPlay(inp: PlayInput): PlaySim {
     aim = predictRoute(r, flight);
     const dist = vdist(qb.pos, aim);
     const yds = dist / ONE;
-    const accKey = yds <= T.throw.shortMax ? "throwAccuracyShort" : yds <= T.throw.midMax ? "throwAccuracyMid" : "throwAccuracyDeep";
-    let acc = R(qb, accKey);
-    if (pressure) acc = Math.round((acc + R(qb, "throwUnderPressure")) / 2);
-    let err = T.throw.errBase + T.throw.errPerMissingAcc * (99 - acc) * (1 + yds * T.throw.errPerYard);
-    if (pressure) err *= T.throw.pressureErrMult;
-    if (scramble || boot) err *= (2 - R(qb, "throwOnTheRun") / 99) * (T.throw.onRunErrMult / 1.35);
+    const err = throwErr(yds, pressure, r);
     const errFx = mul(fx(err), fx(rng.int(1000) / 1000));
     const angle = fx(((rng.int(360) - 180) * Math.PI) / 180);
     aim = vadd(aim, F.vfromAngle(angle, errFx));
@@ -808,7 +897,7 @@ export function createPlay(inp: PlayInput): PlaySim {
       return { x: bx + fx(ax * flipX), y: los + fx(ay) };
     }
     const look = fx(T.carrier.lookAhead), perpW = fx(T.carrier.lanePerp);
-    const noise = T.carrier.visionNoisePerMissing * (99 - R(a, "bCVision"));
+    const noise = T.carrier.visionNoisePerMissing * Math.max(0, 99 - R(a, "bCVision") - a.ab.mag("vision"));
     let best: V2 = { x: a.pos.x, y: a.pos.y + look * dir }, bestScore = -1e9;
     for (const deg of T.carrier.laneAngles) {
       const d = F.vfromAngle(DEG(90 * dir - deg * dir), ONE);
@@ -1009,6 +1098,7 @@ export function createPlay(inp: PlayInput): PlaySim {
         if (want >= 0 && want !== d.i && !pulling) continue;
         if (pulling && (d.engagedWith >= 0 || d.pos.y < los - fx(1))) continue;
         if (passSet && !b.stalk && !screenOn && d.task !== "rush" && !scramble && !handedOff) continue;
+        if (d.ab.mag("blitz") && now < sec(d.ab.mag("blitz"))) continue;
         const blk = passing ? (R(b, "passBlock") * 2 + R(b, "passBlockPower") + R(b, "passBlockFinesse")) / 4
           : (R(b, "runBlock") * 2 + R(b, "runBlockPower") + R(b, "impactBlocking")) / 4;
         const rush = passing ? (Math.max(R(d, "powerMoves"), R(d, "finesseMoves")) * 2 + R(d, "blockShedding") + R(d, "strength")) / 4
@@ -1017,6 +1107,7 @@ export function createPlay(inp: PlayInput): PlaySim {
         const per = passing ? T.blocking.passHoldPer : T.blocking.runHoldPer;
         const jit = passing ? T.blocking.passHoldJitter : T.blocking.runHoldJitter;
         let hold = base + per * (blk - rush) + (rng.int(1000) / 1000 - 0.5) * 2 * jit;
+        if (abOn) hold = blockAbilities(b, d, hold, passing);
         if (d.engagedWith >= 0) {
           // double team: extend the existing block instead
           const first = actors[d.engagedWith]!;
@@ -1026,6 +1117,11 @@ export function createPlay(inp: PlayInput): PlaySim {
           break;
         }
         hold = Math.max(0.15, hold);
+        d.engagements++;
+        // pancake: the defender goes down instead
+        const pk = b.ab.once("pancake");
+        // (the blocker stays on him: the block holds through the time he is down)
+        if (pk) { pop(b, "PANCAKE!"); d.stunTil = now + sec(pk); hold += pk; }
         if (pulling) { b.task = "block"; b.blockTarget = d.i; claimed.set(d.i, b.i); }
         b.engagedWith = d.i; d.engagedWith = b.i;
         if (inp.record) log.push(`t=${(now / hz).toFixed(2)} engage ${b.role}-${d.role} hold ${hold.toFixed(2)}s`);
@@ -1044,6 +1140,27 @@ export function createPlay(inp: PlayInput): PlaySim {
     }
   }
 
+  /** Abilities on a block: the blocker's (anchor, mirror, road grader, brick wall, seal, lead) and the rusher's. */
+  function blockAbilities(b: Actor, d: Actor, hold: number, passing: boolean): number {
+    const power = R(d, "powerMoves") >= R(d, "finesseMoves");
+    if (passing) {
+      hold *= 1 + AB.passProHoldPer * b.ab.mag(power ? "anchor" : "mirror") / 100;
+      const br = d.ab.once("bull_rush"); if (br) { hold *= Math.max(AB.bullRushMinHold, 1 - br * AB.bullRushPerYd); pop(d, "BULL RUSH!"); }
+      const sw = d.ab.once("swim"); if (sw) { hold = Math.max(AB.swimMinHold, hold - sw); pop(d, "SWIM!"); }
+    } else {
+      hold += b.ab.mag("road_grader") * AB.roadGraderHoldPerYd;
+      hold *= 1 - d.ab.mag("run_plug") / 100;
+      if (b.role === "Y" || b.role === "H") { const se = b.ab.once("seal_edge"); if (se) { hold += se; pop(b, "SEAL!"); } }
+    }
+    if (b === leadBlocker) { const lb = b.ab.once("lead_block"); if (lb) { hold += lb; pop(b, "LEAD BLOCK!"); } }
+    if (d.engagements > 0) hold *= 1 - d.ab.mag("relentless") / 100;
+    const bw = b.ab.mag("brick_wall") || (OL_ROLES.includes(b.role) && olWall ? AB.olSignatureHold : 0);
+    if (bw) hold = Math.max(hold, bw);
+    if (d.ab.signature === "DL") hold = Math.min(hold, AB.dlSignatureHold);
+    return hold;
+  }
+  const olWall = O.some((o) => OL_ROLES.includes(o.role) && o.ab.signature === "OL");
+
   /** a blocker lets go (route release, combo climb, screen release) */
   function disengage(b: Actor) {
     if (b.engagedWith < 0) return;
@@ -1051,6 +1168,20 @@ export function createPlay(inp: PlayInput): PlaySim {
     b.engagedWith = -1;
     if (d.engagedWith === b.i) d.engagedWith = O.find((x) => x.engagedWith === d.i)?.i ?? -1;
   }
+
+  /** Carrier abilities that beat the next tackle: ankle breaker, cyclone, stiff arm, battering ram, RB signature.
+   *  Returns how long the tackler is down (seconds), or 0. */
+  function carrierEscape(c: Actor, d: Actor, now: number): number {
+    if (!abOn) return 0;
+    if (c.ab.signature === "RB" && sigMisses < AB.rbSignatureMisses) { sigMisses++; pop(c, c.c.signature?.name ?? "SIGNATURE"); return AB.rbSignatureStun; }
+    const ak = c.ab.once("ankle_breaker"); if (ak) { pop(c, "ANKLE BREAKER!"); return ak; }
+    const cy = c.ab.once("cyclone"); if (cy) { pop(c, "CYCLONE!"); c.vel = vscale(c.vel, fx(1 + cy / 100)); return AB.cycloneStun; }
+    const sa = c.ab.once("stiff_arm"); if (sa) { pop(c, "STIFF ARM!"); c.vel = vadd(c.vel, vscale(vnorm(vsub(c.pos, d.pos)), fx(sa))); return AB.stiffArmStun; }
+    const br = c.ab.mag("battering_ram");
+    if (br && carryStart >= 0 && now - carryStart < sec(AB.ramSeconds) && ramTrucks < AB.ramMaxTrucks && R(d, "strength") < br) { ramTrucks++; pop(c, "TRUCKED!"); return AB.ramStun; }
+    return 0;
+  }
+  let sigMisses = 0, ramTrucks = 0, carryStart = -1, carryHolder = -1;
 
   function tackles(now: number) {
     const c = carrier();
@@ -1071,10 +1202,20 @@ export function createPlay(inp: PlayInput): PlaySim {
       const strip = d.i === udef && stripUntil > now;
       if (c === qb && qbHasBall) {
         // sack attempt
-        const p = clampPm(T.tackle.sackBase - T.tackle.sackPer * (R(c, "breakSack") - 60) + T.tackle.per * (R(d, "tackle") - 70) / 2);
+        let p = clampPm(T.tackle.sackBase - T.tackle.sackPer * (R(c, "breakSack") - 60) + T.tackle.per * (R(d, "tackle") - 70) / 2);
+        if (d.ab.signature === "DL") p += AB.dlSignatureSack;
+        // escape: the QB slips the next sack and rolls out
+        const es = c.ab.once("escape");
+        if (es) { pop(c, "ESCAPE!"); d.stunTil = now + sec(AB.escapeStun); escapeUntil = now + sec(AB.escapeSeconds); escapeBonus = es; return false; }
         if (rng.int(1000) < p) {
           stats.push({ k: "sack", id: d.c.id, team: defSide }, { k: "tackle", id: d.c.id, team: defSide });
           log.push(`SACK by ${d.c.name}`);
+          const ss = d.ab.once("strip_sack");
+          if (ss && rng.int(100) < ss) {
+            pop(d, "STRIP SACK!");
+            stats.push({ k: "fumble", id: c.c.id, team: inp.offSide });
+            if (rng.int(1000) >= T.tackle.fumbleOffenseRecover) { stats.push({ k: "fumbleLost", id: c.c.id, team: inp.offSide }); turnover = "fumble"; log.push("FUMBLE, recovered by the defense"); }
+          }
           ended = { reason: "sack", y: c.pos.y, x: c.pos.x, sack: true };
           return true;
         }
@@ -1085,18 +1226,25 @@ export function createPlay(inp: PlayInput): PlaySim {
         R(c, "stiffArm") * 0.92, (R(c, "spinMove") + R(c, "agility")) / 2];
       const best = Math.max(...moves), avg = moves.reduce((x, y) => x + y, 0) / moves.length;
       const elusive = best * T.tackle.elusiveMaxWeight + avg * (1 - T.tackle.elusiveMaxWeight);
+      // ability escapes: the next tackle attempt simply misses
+      const autoMiss = carrierEscape(c, d, now);
+      if (autoMiss) { d.stunTil = now + sec(autoMiss); return false; }
       // a well-timed juke or spin (human-controlled carrier) makes this tackle harder
       let moveBonus = 0;
       if (moveUntil.juke > now) moveBonus = T.user.moveBonusBase + T.user.moveBonusPer * (R(c, "jukeMove") - 60);
       else if (moveUntil.spin > now) moveBonus = T.user.moveBonusBase + T.user.moveBonusPer * (R(c, "spinMove") - 60);
-      const p = clampPm(T.tackle.base + T.tackle.per * (R(d, "tackle") - elusive) + T.tackle.powerPer * (R(d, "hitPower") - R(c, "strength")) +
+      let p = clampPm(T.tackle.base + T.tackle.per * (R(d, "tackle") - elusive) + T.tackle.powerPer * (R(d, "hitPower") - R(c, "strength")) +
         gang * T.tackle.gangBonus - moveBonus + bonus - (strip ? U.stripTacklePenalty : 0));
+      const st2 = d.ab.mag("sure_tackler");
+      if (st2) p = Math.round(1000 - (1000 - p) * (1 - st2 / 100));
       dbg.tries++;
       if (rng.int(1000) < p) {
         stats.push({ k: "tackle", id: d.c.id, team: c.side === "O" ? defSide : inp.offSide });
         // fumble?
         let fp = Math.max(T.tackle.fumbleMin, Math.min(T.tackle.fumbleMax, T.tackle.fumbleBase + T.tackle.fumblePer * (R(d, "hitPower") - R(c, "carrying"))));
         if (strip) fp = Math.round(fp * U.stripFumbleMult);
+        const lo = d.ab.once("lights_out"); if (lo) { fp = Math.max(fp, lo * AB.lightsOutFumblePer); pop(d, "LIGHTS OUT!"); }
+        fp = Math.round(fp * (1 - c.ab.mag("ball_security") / 100));
         if (rng.int(1000) < fp) {
           const offenseKeeps = rng.int(1000) < (c.side === "O" ? T.tackle.fumbleOffenseRecover : 1000 - T.tackle.fumbleOffenseRecover);
           stats.push({ k: "fumble", id: c.c.id, team: c.side === "O" ? inp.offSide : defSide });
@@ -1128,6 +1276,8 @@ export function createPlay(inp: PlayInput): PlaySim {
   }
   const clampPm = (p: number) => Math.round(Math.max(T.tackle.min, Math.min(T.tackle.max, p)));
 
+  let pickSixer: Actor | null = null;
+  function nearestTo(list: Actor[], p: V2): Actor | null { let b: Actor | null = null, bd = fx(1e4); for (const a of list) { const d = vdist(a.pos, p); if (d < bd) { bd = d; b = a; } } return b; }
   function resolveCatch(now: number) {
     const L = ball.to;
     if (ball.target < 0 || L.x < 0 || L.x > W) {
@@ -1151,6 +1301,16 @@ export function createPlay(inp: PlayInput): PlaySim {
     if (swat && ud) { def = ud; dd = F.min(vdist(ud.pos, L), contest - 1); }
     const inReach = vdist(r.pos, L) <= reach;
     const att = { k: "pass" as const, id: qb.c.id, team: inp.offSide, att: 1 };
+    // the coverage defender's lockdown: the throw is broken up
+    if (def && !noTip) {
+      const lk = def.manTarget === r.i || def === nearestTo(D, L) ? def.ab.mag("lockdown") : 0;
+      if (lk && rng.int(100) < lk) {
+        pop(def, "LOCKDOWN!");
+        stats.push({ k: "rec", id: r.c.id, team: inp.offSide, target: 1 }, { k: "defended", id: def.c.id, team: defSide }, { ...att, comp: 0, yds: 0 });
+        throwInfo = null; ended = { reason: "incomplete", y: los, x: bx, incomplete: true }; log.push("incomplete");
+        return;
+      }
+    }
     stats.push({ k: "rec", id: r.c.id, team: inp.offSide, target: 1 });
     let pCatch = 0;
     if (inReach) {
@@ -1161,17 +1321,31 @@ export function createPlay(inp: PlayInput): PlaySim {
       const airYds = (L.y - los) / ONE;
       if (airYds > T.catch.deepCatchFrom) pCatch -= (airYds - T.catch.deepCatchFrom) * T.catch.deepCatchPenaltyPerYard * (1.4 - R(r, "spectacularCatch") / 99);
       if (def) {
-        const skill = (R(r, "catchInTraffic") + R(r, "spectacularCatch")) / 2;
+        let skill = (R(r, "catchInTraffic") + R(r, "spectacularCatch")) / 2;
+        const sky = r.ab.once("skywalker"); if (sky) { skill += sky; pop(r, "SKYWALKER!"); }
+        const tt = r.ab.once("toe_tap"); if (tt) { skill += tt; pop(r, "TOE TAP!"); }
         const cov = (Math.max(R(def, "manCoverage"), R(def, "zoneCoverage")) + R(def, "playRecognition")) / 2;
         const closeness = 1 - dd / contest;
         pCatch -= (T.catch.contestPenalty - T.catch.contestSkillPer * (skill - cov)) * closeness;
       }
       if (swat) pCatch -= T.userDefense.swatCatchPenalty;
+      // sticky hands: fewer drops; signature moves: WR = any ball in reach, TE = jump balls over shorter men
+      const sh = r.ab.mag("sticky_hands");
+      if (sh) pCatch = 1000 - (1000 - pCatch) * (1 - AB.stickyHandsMult * sh / 100);
+      if (r.ab.signature === "WR" || (r.ab.signature === "TE" && (!def || def.c.htIn < 74))) { pCatch = 1000; pop(r, r.c.signature?.name ?? "SIGNATURE"); }
     }
     const roll = rng.int(1000);
-    if (roll < Math.max(0, Math.min(980, pCatch))) {
+    if (roll < Math.max(0, Math.min(r.ab.signature ? 1000 : 980, pCatch))) {
+      // a missile from the closest defender can still jar it loose
+      const ms = def && dd < fx(AB.missileRangeYds) ? def.ab.once("missile") : 0;
+      if (ms && rng.int(100) < ms) {
+        pop(def!, "MISSILE!");
+        stats.push({ k: "defended", id: def!.c.id, team: defSide }, { ...att, comp: 0, yds: 0 });
+        throwInfo = null; ended = { reason: "incomplete", y: los, x: bx, incomplete: true }; log.push("incomplete (jarred loose)");
+        return;
+      }
       ball.state = "held"; ball.holder = r.i;
-      r.vel = vscale(r.vel, fx(T.catch.catchSpeedKeep)); // securing the catch costs speed
+      r.vel = vscale(r.vel, fx(dartCatch ? AB.dartCatchSpeedKeep : T.catch.catchSpeedKeep)); // securing the catch costs speed
       completion = { rec: r, at: r.pos.y };
       log.push(`caught by ${r.c.name}`);
       return;
@@ -1180,7 +1354,13 @@ export function createPlay(inp: PlayInput): PlaySim {
       // a defender in the contest window can jump the throw; the closer he is, the likelier
       const closeness = 1 - dd / contest;
       const deepMult = (L.y - los) / ONE > T.catch.deepCatchFrom ? T.catch.deepIntMult : 1;
-      const pInt = (T.catch.intBase + T.catch.intPer * (R(def, "catching") - 50) + (inReach ? 0 : 60)) * (0.35 + 0.65 * closeness) * deepMult + (swat ? T.userDefense.swatIntBonus : 0);
+      let pInt = (T.catch.intBase + T.catch.intPer * (R(def, "catching") - 50) + (inReach ? 0 : 60)) * (0.35 + 0.65 * closeness) * deepMult + (swat ? T.userDefense.swatIntBonus : 0);
+      pInt *= 1 + def.ab.mag("ball_hawk") / 100;
+      const ps = def.ab.once("pick_six"); if (ps) { pInt = Math.max(pInt, AB.pickSixIntBase + ps * AB.pickSixIntPer); pickSixer = def; pop(def, "PICK SIX?"); }
+      const zd = def.task === "zone" && def.zone && !def.zone.deep && F.abs(L.x - bx) < fx(AB.zoneDropRangeYds) ? def.ab.once("zone_drop") : 0;
+      if (zd) pInt = Math.max(pInt, zd * AB.zoneDropIntPer);
+      if (def.ab.signature === "DB" && def.zone && vdist(def.zone.at, L) < def.zone.r) pInt = Math.max(pInt, AB.dbSignatureInt);
+      if (noTip) pInt = 0;
       if (rng.int(1000) < pInt) {
         ball.state = "held"; ball.holder = def.i;
         turnover = "interception";
@@ -1317,15 +1497,12 @@ export function createPlay(inp: PlayInput): PlaySim {
     const raw = rushers().some((d) => d.engagedWith < 0 && vdist(d.pos, qb.pos) < fx(T.qb.pressureRange));
     let aim: V2 = { x: t.x, y: t.y };
     const yds = vdist(qb.pos, aim) / ONE;
-    const accKey = yds <= T.throw.shortMax ? "throwAccuracyShort" : yds <= T.throw.midMax ? "throwAccuracyMid" : "throwAccuracyDeep";
-    let acc = R(qb, accKey);
-    if (raw) acc = Math.round((acc + R(qb, "throwUnderPressure")) / 2);
-    let err = T.throw.errBase + T.throw.errPerMissingAcc * (99 - acc) * (1 + yds * T.throw.errPerYard);
-    if (raw) err *= T.throw.pressureErrMult;
-    if (scramble || boot) err *= (2 - R(qb, "throwOnTheRun") / 99) * (T.throw.onRunErrMult / 1.35);
+    let tgt0: Actor | null = null, bd0 = fx(1e4);
+    for (const o of O) if (o.task === "route") { const dd = vdist(o.pos, aim); if (dd < bd0) { bd0 = dd; tgt0 = o; } }
+    const err = throwErr(yds, raw, tgt0);
     aim = vadd(aim, F.vfromAngle(fx(((rng.int(360) - 180) * Math.PI) / 180), mul(fx(err), fx(rng.int(1000) / 1000))));
     const power = Math.max(0, Math.min(1, t.power));
-    const speed = fx((T.throw.ballSpeedBase + T.throw.ballSpeedPer * R(qb, "throwPower")) * (T.user.lobSpeedMult + (1 - T.user.lobSpeedMult) * power));
+    const speed = fx(ballSpeed() * (T.user.lobSpeedMult + (1 - T.user.lobSpeedMult) * power));
     const ticks = Math.max(3, Math.round(mul(div(vdist(qb.pos, aim), speed), fromIntHz(hz)) / ONE));
     let target = O.find((o) => o.task === "route") ?? qb, bd = fx(1e4);
     for (const o of O) if (o.task === "route") { const dd = vdist(o.pos, aim); if (dd < bd) { bd = dd; target = o; } }
@@ -1336,6 +1513,7 @@ export function createPlay(inp: PlayInput): PlaySim {
     log.push(`${qb.c.name} throws (${Math.round((aim.y - los) / ONE)} air yds${raw ? ", under pressure" : ""})`);
   }
   let ballApex = fx(2.5);
+  let afterburnerAt = -1;
 
   /** The mesh resolves: hand off, keep (read option) or throw (RPO). */
   function handoff(now: number) {
@@ -1436,6 +1614,8 @@ export function createPlay(inp: PlayInput): PlaySim {
       steer(a, goal, mult);
     }
     for (const a of actors) integrate(a);
+    curTickRef.t = tick;
+    { const c0 = ball.state === "held" ? actors[ball.holder]! : null; if (c0 && !(c0 === qb && qbHasBall) && carryHolder !== c0.i) { carryStart = tick; carryHolder = c0.i; } }
     engage(tick);
     if (qbHasBall && !inp.userOffense && !isRpo) tryThrow(tick);
     if (ball.state === "air" && tick >= ball.t1) resolveCatch(tick);
@@ -1485,7 +1665,7 @@ export function createPlay(inp: PlayInput): PlaySim {
       routes: tick === 0 ? O.filter((o) => o.task === "route" && o.route.length).map((o) => ({ i: o.i, pts: o.route })) : [],
       assign: tick === 0 ? D.map((d) => ({ i: d.i, task: d.task === "man" ? "man" : d.task, at: d.zone?.at, r: d.zone?.r, target: d.task === "man" ? d.manTarget : undefined })) : [],
       cooldowns: { juke: Math.max(0, moveReady.juke - tick), spin: Math.max(0, moveReady.spin - tick), burst: Math.max(0, moveReady.burst - tick) },
-      log,
+      log, fx: fxLog,
     };
   }
 
@@ -1536,6 +1716,7 @@ export function createPlay(inp: PlayInput): PlaySim {
   } else if (isPass && (pressureAtThrow || fin.sack) && rng.int(1000) < P.roughing.perMille * 4) {
     foul = { name: "Roughing the passer", on: "D", yards: P.roughing.yards ?? 15, kind: "live", autoFirst: true, addedToEnd: true };
   }
+  if (hcOffside && (!foul || foul.on === "O")) foul = { name: "Offside (hard count)", on: "D", yards: 5, kind: "live" };
   if (inp.twoPoint) foul = null;
 
   const outcome: PlayOutcome = {
@@ -1548,7 +1729,7 @@ export function createPlay(inp: PlayInput): PlaySim {
     elapsedTicks: tick,
     foul,
   };
-  const res: PlayResult = { outcome, stats, endX: F.clamp(fin.x, fx(1), W - fx(1)), log, debug: dbg };
+  const res: PlayResult = { outcome, stats, endX: F.clamp(fin.x, fx(1), W - fx(1)), log, debug: dbg, activesUsed };
   if (inp.record) res.frames = frames;
   cached = res;
   return res;
