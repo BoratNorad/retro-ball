@@ -113,6 +113,13 @@ data/raw          source spreadsheet
 12. **Defense sees personnel before calling.** `GameSession.previewAiOffense()` decides the AI's call
     early; the human defense sees the personnel group, never the play. After the whistle the result
     toast reveals the other side's call.
+13. **Pre-snap = parameters + a short live phase (M5).** Everything the offense/defense changes before
+    the snap (audible, flip, shift, hot routes, protection, defensive looks, spy, double) is a
+    `PreSnapOffense` / `PreSnapDefense` passed to `createPlay`; `GameSession.adjust()` rebuilds the play
+    with the **same per-play seed**, so re-lining up never changes the luck. Only motion runs live: the
+    sim waits in a pre-snap phase (motion man + any man defender following him) until `{snap: true}`
+    (the AI snaps a jet as the man reaches the ball). Disguises move alignment only; assignments stay
+    the call's (spy/double are explicit overrides).
 
 ## Balance targets (for the M2 harness)
 
@@ -162,7 +169,20 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   **10,000 real-team games: 18/18 metrics in range** — 22.1 pts/team, 67 plays, 59% pass, 61.4% comp,
   7.6 yds/att, 3.9 ypc, 7.0% sacks, 1.6 TO, 1.0 INT, 39% 3rd down, 357 yds. Grade weights refitted
   (QB, DE, OLB matter most); grade gap 3–5 wins 74%, 5+ 88%.
-- [ ] M5 Pre-snap layer · [ ] M6 Special teams · [ ] M7 Triple Draft offline
+- [x] **M5 Pre-snap layer** — 10 s play clock (delay of game on expiry). Offense: motion (jet, across,
+  orbit, short, return; man defenders follow it = a real man/zone read), jet sweeps (handoff on the
+  run, speed boost when snapped at speed), shifts (Y other side / Y flex / Z tight), hot routes on any
+  receiver (13 routes), slide protection, keep Y/RB/H in, hard count (offside chance vs DL play
+  recognition, false-start risk, once per play), 5 editable audible slots + flip. Defense: line
+  over/under/pinch/spread, LBs in/out, show blitz, 1-high/2-high safety disguise, press (jam = press
+  vs release; a beaten press corner turns late) or bail, QB spy, double a receiver, 5 audible calls.
+  AI: motion, disguises, press/bail, line shifts, checks out of deep drops vs a blitz look, hard
+  counts on short yardage (`coach.json` presnap). Client: pre-snap panel with route overlay (hot
+  routes red) and, on defense, your assignments (zones, man lines, rush/spy). New plays: Jet Sweep,
+  Jet Fake Boot, Orbit Flat. **10,000 real-team games: 18/18 in range** — 21.6 pts, 61.3% comp,
+  7.5 yds/att, 3.8 ypc (run hold base raised 4.0 → 4.45 to offset shown blitzes and line shifts), 7.0% sacks,
+  1.6 TO, 37.7% 3rd down.
+- [ ] M6 Special teams · [ ] M7 Triple Draft offline
 - [ ] M8 Online (rollback) · [ ] M9 Pro camera + presentation · [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
 
 ## Known issues / todo
@@ -173,7 +193,7 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   and the harness "per play call" table.
 - Play balance (`tools/sim/plays.ts`): option plays (zone read 2, inverted veer 1, QB power 2 yds) and
   WR screens (bubble/smoke/tunnel 1–2 yds) are weak; PA shots (~15 ypp) and TE seams/Four Verts
-  (11–13) are strong, so their AI weights are low. Tune further when M5 motion (jet sweeps) lands.
+  (11–13) are strong, so their AI weights are low. Jet sweep ~5.6 yds; Orbit Flat weak (~1.4).
 - The human read-option window is short (0.5 s mesh): plan KEEP before the snap or tap during the mesh.
 - Client bundle is 1.6 MB (Phaser); code-split later (M12). Portraits not yet in the client.
 - Two-point tries pick a random non-deep play; kickoffs/punts are rating models until M6.

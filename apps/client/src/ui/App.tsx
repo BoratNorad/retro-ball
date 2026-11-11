@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import Phaser from "phaser";
 import type { DefenseCall, OffensePlay } from "@tdf/shared";
-import { runRate, situation, type PlayCall, type Tendencies, type UserInput } from "@tdf/sim";
+import { HOT_ROUTES, runRate, situation, type MotionKind, type PlayCall, type Tendencies, type UserInput } from "@tdf/sim";
 type UserInputAction = NonNullable<UserInput["action"]>;
 import { loadClientData, type ClientData } from "../data.js";
 import { Controller, ordinal, spotText, toGoText, type UiState } from "../game/controller.js";
@@ -93,17 +93,7 @@ function Game({ ctl, onExit }: { ctl: Controller; onExit: () => void }) {
         {ui.mode === "callOffense" && <OffenseSheet ctl={ctl} />}
         {ui.mode === "callDefense" && <DefenseSheet ctl={ctl} />}
         {ui.mode === "callTry" && <TrySheet ctl={ctl} />}
-        {ui.mode === "presnap" && ctl.live && (
-          <div class="bar">
-            <span class="playname">{ui.userOffense
-              ? `${ctl.live.play.name} · ${formationName(ctl, ctl.live.formation)} vs ${frontName(ctl, ctl.live.front)}`
-              : `${ctl.live.call.name} (${frontName(ctl, ctl.live.front)}) vs ${ctl.live.personnel} personnel · drag to move your man`}</span>
-            {ui.userOffense && ctl.live.play.option && (
-              <button class={`chip ${ctl.optionKeep ? "on" : ""}`} onClick={() => ctl.setOptionKeep(!ctl.optionKeep)}>{ctl.optionKeep ? "QB KEEPS" : "HAND OFF"}</button>
-            )}
-            <button class="big" onClick={() => ctl.snapBall()}>{ui.userOffense ? "SNAP ▶" : "READY ▶"}</button>
-          </div>
-        )}
+        {ui.mode === "presnap" && ctl.live && <Presnap ctl={ctl} ui={ui} />}
         {ui.mode === "live" && ui.userOffense && <LiveControls ctl={ctl} ui={ui} />}
         {ui.mode === "live" && !ui.userOffense && ui.userDefense && <DefenseControls ctl={ctl} />}
         {ui.mode === "live" && !ui.userOffense && !ui.userDefense && (
@@ -325,6 +315,134 @@ function LiveControls({ ctl, ui }: { ctl: Controller; ui: UiState }) {
     );
   }
   return <div class="bar"><span class="playname">…</span></div>;
+}
+
+// ---------------------------------------------------------------- pre-snap
+type PTab = "motion" | "shift" | "hot" | "protect" | "audible" | "look" | "cover" | "spy" | "double" | null;
+function Presnap({ ctl, ui }: { ctl: Controller; ui: UiState }) {
+  const [tab, setTab] = useState<PTab>(null);
+  const [who, setWho] = useState<string | null>(null);
+  const live = ctl.live!;
+  const data = ctl.cd.data;
+  const cur = ctl.cur;
+  const num = (side: "O" | "D", role: string) => cur?.actors.find((a) => a.side === side && a.role === role)?.num ?? "";
+  const off = live.userOffense;
+  const po = ctl.preOff, pd = ctl.preDef;
+  const T = (t: PTab, label: string, on = false) => <button class={`chip ${tab === t ? "on" : on ? "set" : ""}`} onClick={() => { setTab(tab === t ? null : t); setWho(null); }}>{label}</button>;
+  const ELIG = ["X", "Y", "Z", "H", "RB"];
+  const routeRoles = ELIG.filter((r) => live.play.routes?.[r] && live.play.kind !== "run");
+  const sub = (() => {
+    switch (tab) {
+      case "motion": return (
+        <div class="scroller">
+          {!who && <>
+            <button class={`chip ${po.motion === null ? "on" : ""}`} onClick={() => ctl.setPreOff({ motion: null })}>NONE</button>
+            {ELIG.map((r) => <button class="chip" onClick={() => setWho(r)}>{r} #{num("O", r)}</button>)}
+          </>}
+          {who && (["jet", "across", "orbit", "short", "return"] as MotionKind[]).map((k) => (
+            <button class="chip" onClick={() => { ctl.setPreOff({ motion: { role: who, kind: k } }); setWho(null); setTab(null); }}>{who} {k.toUpperCase()}</button>
+          ))}
+        </div>);
+      case "shift": return (
+        <div class="scroller">
+          {([[null, "NONE"], ["yOther", "Y OTHER SIDE"], ["yFlex", "Y FLEX"], ["zTight", "Z TIGHT"]] as const).map(([k, l]) => (
+            <button class={`chip ${(po.shift ?? null) === k ? "on" : ""}`} onClick={() => ctl.setPreOff({ shift: k })}>{l}</button>))}
+        </div>);
+      case "hot": return (
+        <div class="scroller">
+          {!routeRoles.length && <span class="tag">run play: no hot routes</span>}
+          {!who && routeRoles.map((r) => <button class={`chip ${po.hot?.[r] ? "set" : ""}`} onClick={() => setWho(r)}>{r} #{num("O", r)} · {(po.hot?.[r] ?? live.play.routes![r]!).split(":")[0]}</button>)}
+          {who && HOT_ROUTES.map((rt) => (
+            <button class="chip" onClick={() => { ctl.setPreOff({ hot: { ...(po.hot ?? {}), [who]: rt } }); setWho(null); }}>{rt.toUpperCase()}</button>))}
+        </div>);
+      case "protect": return (
+        <div class="scroller">
+          {([[null, "NO SLIDE"], ["L", "SLIDE LEFT"], ["R", "SLIDE RIGHT"]] as const).map(([k, l]) => (
+            <button class={`chip ${(po.slide ?? null) === k ? "on" : ""}`} onClick={() => ctl.setPreOff({ slide: k })}>{l}</button>))}
+          {["Y", "RB", "H"].filter((r) => routeRoles.includes(r)).map((r) => {
+            const on = po.keepIn?.includes(r);
+            return <button class={`chip ${on ? "on" : ""}`} onClick={() => ctl.setPreOff({ keepIn: on ? po.keepIn!.filter((x) => x !== r) : [...(po.keepIn ?? []), r] })}>KEEP {r} IN</button>;
+          })}
+        </div>);
+      case "audible": {
+        const side = off ? "off" : "def";
+        const slots = ctl.audibleSlots(side);
+        return (
+          <div class="scroller">
+            {off && <button class={`chip ${live.flip ? "on" : ""}`} onClick={() => ctl.adjust({ flip: !live.flip })}>FLIP ⇆</button>}
+            {slots.map((id, k) => {
+              const name = off ? data.offense.plays.find((p) => p.id === id)?.name : data.defense.calls.find((c) => c.id === id)?.name;
+              return (
+                <span class="slot">
+                  <button class="chip" onClick={() => {
+                    if (off) { const p = data.offense.plays.find((x) => x.id === id); if (p) ctl.audibleOff(p); }
+                    else { const c = data.defense.calls.find((x) => x.id === id); if (c) ctl.adjust({ call: c }); }
+                  }}>{k + 1}. {name ?? id}</button>
+                  <select value={id} onChange={(e) => ctl.setAudibleSlot(side, k, (e.target as HTMLSelectElement).value)}>
+                    {(off ? data.offense.plays.filter((p) => p.weight > 0) : data.defense.calls).map((x) => <option value={x.id}>{x.name}</option>)}
+                  </select>
+                </span>
+              );
+            })}
+          </div>);
+      }
+      case "look": return (
+        <div class="scroller">
+          <span class="lbl">LINE</span>
+          {([[null, "NORMAL"], ["over", "OVER"], ["under", "UNDER"], ["pinch", "PINCH"], ["spread", "SPREAD"]] as const).map(([k, l]) => (
+            <button class={`chip ${(pd.dl ?? null) === k ? "on" : ""}`} onClick={() => ctl.setPreDef({ dl: k })}>{l}</button>))}
+          <span class="lbl">LBS</span>
+          {([[null, "NORMAL"], ["in", "IN"], ["out", "OUT"]] as const).map(([k, l]) => (
+            <button class={`chip ${(pd.lb ?? null) === k ? "on" : ""}`} onClick={() => ctl.setPreDef({ lb: k })}>{l}</button>))}
+          <button class={`chip ${pd.show ? "on" : ""}`} onClick={() => ctl.setPreDef({ show: !pd.show })}>SHOW BLITZ</button>
+        </div>);
+      case "cover": return (
+        <div class="scroller">
+          <span class="lbl">SAFETIES</span>
+          {([[null, "AS CALLED"], ["one", "1-HIGH LOOK"], ["two", "2-HIGH LOOK"]] as const).map(([k, l]) => (
+            <button class={`chip ${(pd.safeties ?? null) === k ? "on" : ""}`} onClick={() => ctl.setPreDef({ safeties: k })}>{l}</button>))}
+          <span class="lbl">CORNERS</span>
+          {([[null, "NORMAL"], ["press", "PRESS"], ["bail", "BAIL"]] as const).map(([k, l]) => (
+            <button class={`chip ${(pd.corners ?? null) === k ? "on" : ""}`} onClick={() => ctl.setPreDef({ corners: k })}>{l}</button>))}
+        </div>);
+      case "spy": return (
+        <div class="scroller">
+          <button class={`chip ${!pd.spy ? "on" : ""}`} onClick={() => ctl.setPreDef({ spy: null })}>NO SPY</button>
+          {(cur?.actors ?? []).filter((a) => a.side === "D").map((a) => (
+            <button class={`chip ${pd.spy === a.role ? "on" : ""}`} onClick={() => ctl.setPreDef({ spy: a.role })}>{a.role} #{a.num ?? ""}</button>))}
+        </div>);
+      case "double": return (
+        <div class="scroller">
+          <button class={`chip ${!pd.double ? "on" : ""}`} onClick={() => ctl.setPreDef({ double: null })}>NONE</button>
+          {ELIG.map((r) => <button class={`chip ${pd.double === r ? "on" : ""}`} onClick={() => ctl.setPreDef({ double: r })}>{r} #{num("O", r)}</button>)}
+        </div>);
+      default: return null;
+    }
+  })();
+  const motionOn = Boolean(cur?.presnap);
+  return (
+    <div class="sheet presnap">
+      <div class="tabs">
+        <span class={`clock ${ui.playClock < 4 ? "low" : ""}`}>{Math.ceil(ui.playClock)}</span>
+        <span class="playname">{off
+          ? `${live.play.name} · ${formationName(ctl, live.formation)}${live.flip ? " (flip)" : ""} vs ${frontName(ctl, live.front)}`
+          : `${live.call.name} (${frontName(ctl, live.front)}) vs ${live.personnel} personnel`}</span>
+      </div>
+      <div class="tabs">
+        {off ? <>
+          {T("motion", motionOn ? "MOTION ▶" : "MOTION", Boolean(po.motion))}{T("shift", "SHIFT", Boolean(po.shift))}{T("hot", "HOT ROUTE", Boolean(po.hot && Object.keys(po.hot).length))}
+          {T("protect", "PROTECT", Boolean(po.slide || po.keepIn?.length))}{T("audible", "AUDIBLE")}
+          {!live.hardCounted && !live.twoPoint && <button class="chip" onClick={() => ctl.hardCount()}>HARD COUNT</button>}
+          {live.play.option && <button class={`chip ${ctl.optionKeep ? "on" : ""}`} onClick={() => ctl.setOptionKeep(!ctl.optionKeep)}>{ctl.optionKeep ? "QB KEEPS" : "HAND OFF"}</button>}
+        </> : <>
+          {T("look", "FRONT LOOK", Boolean(pd.dl || pd.lb || pd.show))}{T("cover", "SHELL", Boolean(pd.safeties || pd.corners))}{T("spy", "SPY", Boolean(pd.spy))}
+          {T("double", "DOUBLE", Boolean(pd.double))}{T("audible", "AUDIBLE")}
+        </>}
+        <button class="big" onClick={() => ctl.snapBall()}>{off ? "SNAP ▶" : "READY ▶"}</button>
+      </div>
+      {sub}
+    </div>
+  );
 }
 
 function DefenseControls({ ctl }: { ctl: Controller }) {

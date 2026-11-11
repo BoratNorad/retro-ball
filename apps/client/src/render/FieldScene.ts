@@ -226,6 +226,7 @@ export class FieldScene extends Phaser.Scene {
         this.marks.lineStyle(Math.max(2, this.S * 0.25), 0xffd23e, 1).strokeEllipse(this.wx(u.x), this.wy(u.y) + 1, 2.8 * this.S, 1.4 * this.S);
       }
     });
+    if (ctl.ui.mode === "presnap") this.drawPresnap(cur, flip);
     // ball
     const b = cur.ball, pb = prev.ball;
     const bx = pb.x + (b.x - pb.x) * alpha, by = pb.y + (b.y - pb.y) * alpha, bh = (pb.h + (b.h - pb.h) * alpha) / 65536;
@@ -250,6 +251,40 @@ export class FieldScene extends Phaser.Scene {
     // camera: keep the ball a little below centre when you attack up, above when the AI attacks down
     const target = b.state === "air" ? this.toUser(b.x, b.y, flip).y : ub.y;
     this.follow(target);
+  }
+
+  /** Pre-snap overlay: your routes (offense) or your assignments (defense). Never the opponent's. */
+  private drawPresnap(cur: PlaySnapshot, flip: boolean) {
+    const g = this.guide, S = this.S, live = this.ctl.live!;
+    const P = (x: number, y: number) => { const u = this.toUser(x, y, flip); return { x: this.wx(u.x), y: this.wy(u.y) }; };
+    if (live.userOffense) {
+      for (const r of cur.routes) {
+        const a = cur.actors[r.i]!;
+        const hot = Boolean(this.ctl.preOff.hot?.[a.role]);
+        g.lineStyle(Math.max(2, S * 0.22), hot ? 0xff5a4e : 0xffd23e, 0.85);
+        let p0 = P(a.x, a.y);
+        for (const pt of r.pts) { const p1 = P(pt.x, pt.y); g.lineBetween(p0.x, p0.y, p1.x, p1.y); p0 = p1; }
+        g.fillStyle(hot ? 0xff5a4e : 0xffd23e, 1).fillCircle(p0.x, p0.y, S * 0.35);
+      }
+      return;
+    }
+    const qb = cur.actors.find((a) => a.side === "O" && a.role === "QB")!;
+    for (const as of cur.assign) {
+      const a = cur.actors[as.i]!;
+      const p0 = P(a.x, a.y);
+      if (as.task === "zone" && as.at && as.r) {
+        const c = P(as.at.x, as.at.y);
+        g.lineStyle(Math.max(1, S * 0.15), 0x4fa8ff, 0.7).strokeCircle(c.x, c.y, (as.r / 65536) * S * 0.55);
+        g.lineStyle(Math.max(1, S * 0.12), 0x4fa8ff, 0.5).lineBetween(p0.x, p0.y, c.x, c.y);
+      } else if (as.task === "man" && as.target != null) {
+        const t = cur.actors[as.target]!, p1 = P(t.x, t.y);
+        g.lineStyle(Math.max(1, S * 0.15), 0xff5a4e, 0.8).lineBetween(p0.x, p0.y, p1.x, p1.y);
+      } else if (as.task === "rush" || as.task === "spy") {
+        const p1 = P(qb.x, qb.y);
+        const k = as.task === "spy" ? 0.5 : 0.35;
+        g.lineStyle(Math.max(1, S * 0.18), as.task === "spy" ? 0xb07cff : 0xffd23e, 0.8).lineBetween(p0.x, p0.y, p0.x + (p1.x - p0.x) * k, p0.y + (p1.y - p0.y) * k);
+      }
+    }
   }
 
   private follow(targetUy: number) {

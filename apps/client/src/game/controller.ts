@@ -4,7 +4,9 @@ import type { DefenseCall } from "@tdf/shared";
 import {
   Fx, GameSession, fgDistance, fgMakePerMille, suggestPlays,
   type GameResult, type LivePlay, type PlayCall, type PlaySnapshot, type PlaySummary, type Side, type UserCall, type UserInput,
+  type PreSnapDefense, type PreSnapOffense,
 } from "@tdf/sim";
+import type { OffensePlay } from "@tdf/shared";
 import type { ClientData } from "../data.js";
 
 export type Mode =
@@ -35,11 +37,18 @@ export interface UiState {
   canKeep: boolean;
   /** the AI offense's personnel group, visible before the defense calls */
   preview: { personnel: string } | null;
+  /** seconds left on the play clock (pre-snap) */
+  playClock: number;
+  /** bumps whenever the pre-snap lineup changes (forces a redraw of the panel) */
+  lineup: number;
 }
 
 export interface Settings {
   /** defensive control mode: play one defender (else call-only, Retro Bowl style) */
   controlDefense: boolean;
+  /** 5 audible slots per side (play ids / call ids) */
+  audiblesOff?: string[];
+  audiblesDef?: string[];
 }
 const SETTINGS_KEY = "tdf.settings";
 export function loadSettings(): Settings {
@@ -77,7 +86,7 @@ export class Controller {
     this.ui = {
       mode: "result", toast: null, bigToast: null, live: false, userOffense: false, qbCanThrow: false, userCarrier: false,
       cooldowns: { juke: 0, spin: 0, burst: 0 }, fg: null, tryForTwo: false, fast: false,
-      userDefense: false, userDefender: -1, canKeep: false, preview: null,
+      userDefense: false, userDefender: -1, canKeep: false, preview: null, playClock: 0, lineup: 0,
     };
     queueMicrotask(() => this.advance());
   }
@@ -160,17 +169,60 @@ export class Controller {
     this.input = {};
     this.optionKeep = false;
     const snap0 = r.live.sim.snapshot();
-    const common = { toast: null, preview: null, userDefense: r.live.userDefense, userDefender: snap0.userDefender, canKeep: snap0.canKeep };
-    if (r.live.userOffense) this.set({ mode: "presnap", live: false, userOffense: true, ...common });
-    else if (r.live.userDefense) this.set({ mode: "presnap", live: false, userOffense: false, fast: false, ...common });
-    else this.set({ mode: "live", live: true, userOffense: false, fast: false, ...common });
+    const common = { toast: null, preview: null, userDefense: r.live.userDefense, userDefender: snap0.userDefender, canKeep: snap0.canKeep,
+      playClock: this.cd.data.tuning.presnap.playClock, lineup: this.ui.lineup + 1 };
+    // both sides get a pre-snap window (offense: motion, audibles...; defense: looks, audibles)
+    this.set({ mode: "presnap", live: false, userOffense: r.live.userOffense, fast: false, ...common });
   }
 
-  snapBall() { if (this.ui.mode === "presnap") this.set({ mode: "live", live: true }); }
+  snapBall() {
+    if (this.ui.mode !== "presnap" || !this.live) return;
+    // offense in motion: the snap is an input to the running pre-snap phase
+    if (this.live.userOffense && this.cur?.presnap) this.input.snap = true;
+    this.set({ mode: "live", live: true });
+  }
+
+  // ---------------------------------------------------------------- pre-snap
+  get preOff(): PreSnapOffense { return this.live?.preOff ?? {}; }
+  get preDef(): PreSnapDefense { return this.live?.preDef ?? {}; }
+  /** Re-line up with changes (audible, motion, hot route, looks...). */
+  adjust(ch: Parameters<GameSession["adjust"]>[1]) {
+    if (!this.live || this.ui.mode !== "presnap") return;
+    this.live = this.session.adjust(this.live, ch);
+    this.prev = this.cur = this.live.sim.snapshot();
+    this.acc = 0;
+    this.input = {};
+    this.set({ lineup: this.ui.lineup + 1, canKeep: this.cur.canKeep, userDefender: this.cur.userDefender });
+  }
+  setPreOff(p: Partial<PreSnapOffense>) { this.adjust({ preOff: { ...this.preOff, ...p } }); }
+  setPreDef(p: Partial<PreSnapDefense>) { this.adjust({ preDef: { ...this.preDef, ...p } }); }
+  audibleOff(play: OffensePlay) {
+    // a new play brings its own motion (if any) and drops the old hot routes
+    const { motion: _m, hot: _h, ...rest } = this.preOff;
+    this.adjust({ play, preOff: rest });
+  }
+  hardCount() {
+    if (!this.live || !this.live.userOffense) return;
+    const r = this.session.hardCount(this.live);
+    if (r) { this.live = null; this.showResult(r, "hard count"); }
+    else this.set({ toast: "Nobody bit on the hard count" });
+  }
+  audibleSlots(side: "off" | "def"): string[] {
+    const d = this.cd.data.coach.presnap.audibles;
+    return (side === "off" ? this.settings.audiblesOff : this.settings.audiblesDef) ?? (side === "off" ? d.offense : d.defense);
+  }
+  setAudibleSlot(side: "off" | "def", k: number, id: string) {
+    const slots = [...this.audibleSlots(side)];
+    slots[k] = id;
+    this.settings = side === "off" ? { ...this.settings, audiblesOff: slots } : { ...this.settings, audiblesDef: slots };
+    saveSettings(this.settings);
+    this.set({});
+  }
   fastForward() { this.set({ fast: true }); }
 
   /** Called every animation frame with elapsed ms. Runs whole 30 Hz ticks. */
   frame(dtMs: number) {
+    if (this.ui.mode === "presnap" && this.live) { this.presnapFrame(dtMs); return; }
     if (this.ui.mode !== "live" || !this.live) return;
     const sim = this.live.sim;
     this.acc += Math.min(dtMs, 100) * (this.ui.fast ? 4 : 1);
@@ -192,6 +244,27 @@ export class Controller {
     if (c.qbCanThrow !== this.ui.qbCanThrow || c.userCarrier !== this.ui.userCarrier || c.canKeep !== this.ui.canKeep ||
         c.userDefender !== this.ui.userDefender || c.cooldowns.juke !== this.ui.cooldowns.juke || c.cooldowns.burst !== this.ui.cooldowns.burst) {
       this.set({ qbCanThrow: c.qbCanThrow, userCarrier: c.userCarrier, cooldowns: c.cooldowns, canKeep: c.canKeep, userDefender: c.userDefender });
+    }
+  }
+
+  /** Pre-snap: run the play clock; let motion run (the sim waits in its pre-snap phase). */
+  private presnapFrame(dtMs: number) {
+    const live = this.live!;
+    const left = Math.max(0, this.ui.playClock - dtMs / 1000);
+    if (Math.ceil(left) !== Math.ceil(this.ui.playClock)) this.set({ playClock: left }); else this.ui.playClock = left;
+    if (left <= 0) {
+      if (live.userOffense) { this.live = null; this.showResult(this.session.delayOfGame(live), "play clock"); }
+      else this.snapBall();
+      return;
+    }
+    if (live.userOffense && this.cur?.presnap) {
+      this.acc += Math.min(dtMs, 100);
+      while (this.acc >= TICK_MS) {
+        this.acc -= TICK_MS;
+        this.prev = this.cur;
+        live.sim.step({});
+        this.cur = live.sim.snapshot();
+      }
     }
   }
 
@@ -223,7 +296,9 @@ function describe(sum: PlaySummary, c: Controller): string {
   const evs = sum.events.map((x) => x.t);
   const yards = e.yards;
   let head = e.name;
-  if (e.result.includes("INTERCEPTED")) head = "Intercepted!";
+  const res0 = e.result.split(" [")[0]!;
+  if (["False start", "Offside", "Delay of game", "Offside (hard count)"].includes(res0)) head = res0;
+  else if (e.result.includes("INTERCEPTED")) head = "Intercepted!";
   else if (e.result.includes("FUMBLE")) head = "Fumble!";
   else if (e.result.includes("SACK")) head = `Sacked, ${yards} yds`;
   else if (e.result.includes("incomplete") || e.result.includes("throws it away")) head = "Incomplete";

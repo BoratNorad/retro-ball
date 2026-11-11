@@ -75,3 +75,40 @@ describe("play calling (M4)", () => {
     for (const c of [...short, ...long]) expect(c.play.formations).toContain(c.formation);
   });
 });
+
+describe("pre-snap (M5)", () => {
+  const mk = (seed: string) => new GameSession({ data, ratings, teams: [nflRoster("BUF", pool, data), nflRoster("KC", pool, data)], seed, userSide: 0 });
+  const toUserSnap = (s: GameSession) => {
+    for (let i = 0; i < 200; i++) {
+      if (s.pending().kind === "scrimmage" && s.isUserOffense()) return;
+      const r = s.snap({});
+      if ("live" in r) { while (!r.live.sim.step()); s.finish(r.live); }
+    }
+  };
+  it("adjust() re-lines up with the same luck: the same adjustments replay the same play", () => {
+    const s = mk("adj");
+    toUserSnap(s);
+    const r = s.snap({ userCall: { kind: "play", play: data.offense.plays.find((p) => p.id === "slants")!, flip: false } });
+    if (!("live" in r)) return;
+    const a = s.adjust(r.live, { preOff: { hot: { X: "go" } } });
+    const b = s.adjust(r.live, { preOff: { hot: { X: "go" } } });
+    while (!a.sim.step()); while (!b.sim.step());
+    expect(JSON.stringify(a.sim.result().outcome)).toBe(JSON.stringify(b.sim.result().outcome));
+    const aud = s.adjust(r.live, { play: data.offense.plays.find((p) => p.id === "inside_zone")! });
+    expect(aud.play.id).toBe("inside_zone");
+    expect(aud.personnel).toBe(r.live.personnel);
+  });
+  it("delay of game costs 5 yards; a hard count is once per play", () => {
+    const s = mk("dog");
+    toUserSnap(s);
+    const before = s.state.ballOn;
+    const r = s.snap({ userCall: { kind: "play", play: data.offense.plays[0]!, flip: false } });
+    if (!("live" in r)) return;
+    const hc = s.hardCount(r.live);
+    expect(s.hardCount(r.live)).toBeNull();
+    if (hc) return; // somebody jumped: that play is over
+    const d = s.delayOfGame(r.live);
+    expect(d.entry.result.split(" [")[0]).toBe("Delay of game");
+    expect(s.state.ballOn).toBe(before - fromInt(5));
+  });
+});

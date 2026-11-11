@@ -69,3 +69,10 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 .scout { background: #000a; border: 2px solid #000; padding: 6px 8px; margin: 4px 0; font-size: 17px; color: var(--dim); }
 .scout b { font-family: var(--pixel); font-size: 8px; color: var(--gold); }
 .act.alt { background: #2d5fa8; width: 62px; height: 62px; font-size: 7px; }
+.presnap { max-height: 46vh; }
+.presnap .big { margin-left: auto; }
+.chip.set { outline: 2px solid var(--gold); }
+.clock { font-family: var(--pixel); font-size: 14px; background: #000; border: 3px solid #000; color: var(--gold); padding: 4px 8px; min-width: 40px; text-align: center; }
+.clock.low { color: var(--red); }
+.slot { display: inline-flex; flex: none; gap: 2px; align-items: center; }
+.slot select { background: #000; color: var(--dim); border: 2px solid #000; font: inherit; font-size: 15px; max-width: 26px; }
