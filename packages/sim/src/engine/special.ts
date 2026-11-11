@@ -224,7 +224,9 @@ export function createKick(inp: KickPlayInput): KickSim {
   const protScore = (c: PlayerCard) => RC(c, "passBlock") * 0.5 + RC(c, "strength") * 0.3 + RC(c, "speed") * 0.2;
   const rushScore = (c: PlayerCard) => RC(c, "blockShedding") * 0.4 + RC(c, "strength") * 0.3 + RC(c, "speed") * 0.3;
   // the returner: the best kick returner (bench counts)
-  const krCard = [...Object.values(inp.receiving.starters), ...inp.receiving.bench].filter((c) => !["K", "P", "QB"].includes(c.pos))
+  const recvAll = [...Object.values(inp.receiving.starters), ...Object.values(inp.receiving.depth ?? {}), ...inp.receiving.bench];
+  const chosen = kind === "punt" ? inp.receiving.pr ?? inp.receiving.kr : inp.receiving.kr;
+  const krCard = recvAll.find((c) => c.id === chosen) ?? recvAll.filter((c) => !["K", "P", "QB"].includes(c.pos))
     .reduce((b, c) => ((c.overallAt.KR ?? 0) > (b.overallAt.KR ?? 0) ? c : b));
   takenR.add(krCard.id);
   let returner: A;

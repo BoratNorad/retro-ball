@@ -1,5 +1,5 @@
 {
-  "_doc": "Triple Draft settings (engine arrives in M7). viability is used by the dataset report now.",
+  "_doc": "Triple Draft settings. Offers: each tier gets tierWeights share of the draws (uniform inside a tier); a player who fits an open slot (overall there >= viability.minOverallAtSlot) is needWeight x likelier; one who fits nothing open (and no bench slot is open) is uselessWeight x as likely. From lateOpenSlots open slots down, all offers must fit an open slot. Themed rounds (setting) every themedEvery rounds: all options from one NFL team, one division, or rookies/young players (age <= rookieMaxAge); a theme needs themeMinPool candidates. Backups (Quick Draft): undrafted players natural at the position with overall <= backupMaxOvr, drawn from the best backupTopN. Spread prediction: simulate spreadSims games. AI drafters: rerollBelow = reroll when the best option is worse than this at its best open slot; stackerBonus = chemistry bonus per real teammate.",
   "optionsPerRound": 3,
   "quick": {
     "rounds": 24,
@@ -42,5 +42,32 @@
     "minViablePerSlot": 40,
     "minEpicPlusPerSlot": 4
   },
-  "eliteCapPerTeam": 3
+  "eliteCapPerTeam": 3,
+  "tierWeights": {
+    "ELITE": 6,
+    "PRO_BOWL": 22,
+    "STARTER": 44,
+    "DEPTH": 28
+  },
+  "needWeight": 5,
+  "uselessWeight": 0.05,
+  "lateOpenSlots": 4,
+  "themedEvery": 6,
+  "rookieMaxAge": 23,
+  "themeMinPool": 8,
+  "backupMaxOvr": 72,
+  "backupTopN": 6,
+  "spreadSims": 12,
+  "ai": {
+    "rerollBelow": 68,
+    "stackerBonus": 1.5
+  },
+  "personalities": [
+    "best",
+    "need",
+    "stacker",
+    "chaos"
+  ],
+  "mirrorDefault": false,
+  "revealPassedDefault": false
 }

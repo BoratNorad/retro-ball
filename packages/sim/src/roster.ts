@@ -24,6 +24,49 @@ export interface Roster {
   bench: PlayerCard[];
   /** base defensive front (base43 / base34); default from config/coach.json */
   baseFront?: string;
+  /** base offense (affects AI play calling and the Suggested list) */
+  style?: OffenseStyle;
+  /** chosen kick / punt returners (player ids); default: the best KR on the roster */
+  kr?: number; pr?: number;
+}
+export type OffenseStyle = "balanced" | "spread" | "pro" | "run" | "air";
+
+/** A roster from an explicit lineup (a draft): sub-package and long-snapper spots come from the bench
+ *  (best fit), the rest stay on the bench. */
+export function rosterFromLineup(info: TeamInfo, starters: Record<string, PlayerCard>, bench: readonly PlayerCard[], data: GameData): Roster {
+  const left = new Set(bench);
+  const st = { ...starters };
+  const take = (slot: string) => {
+    const pos = slotPos(slot);
+    let best: PlayerCard | null = null, bv = -1;
+    for (const c of left) { const v = slotOverall(c, pos, data); if (v > bv || (v === bv && best && c.id < best.id)) { bv = v; best = c; } }
+    if (best) left.delete(best);
+    return best;
+  };
+  if (!st.LS) { const ls = take("LS"); if (ls) st.LS = ls; }
+  const depth: Record<string, PlayerCard> = {};
+  for (const slot of PACKAGE_SLOTS) { const c = take(slot); if (c) depth[slot] = c; }
+  const startIds = new Set(Object.values(st).map((c) => c.id));
+  return { info, starters: st, depth, bench: bench.filter((c) => !startIds.has(c.id)).sort((a, b) => b.ovr - a.ovr || a.id - b.id) };
+}
+
+/** Swap two lineup spots (starter or package slot names). */
+export function swapSlots(ro: Roster, a: string, b: string): Roster {
+  const get = (s: string) => ro.starters[s] ?? ro.depth[s];
+  const ca = get(a), cb = get(b);
+  const starters = { ...ro.starters }, depth = { ...ro.depth };
+  const put = (s: string, c: PlayerCard | undefined) => { if (!c) return; if (s in ro.starters) starters[s] = c; else depth[s] = c; };
+  put(a, cb); put(b, ca);
+  return { ...ro, starters, depth };
+}
+/** Put a bench player into a spot (the man there goes to the bench). */
+export function benchIn(ro: Roster, slot: string, c: PlayerCard): Roster {
+  const starters = { ...ro.starters }, depth = { ...ro.depth };
+  const out = starters[slot] ?? depth[slot];
+  if (slot in starters || !(slot in depth) && ALL_SLOTS.includes(slot as never)) starters[slot] = c; else depth[slot] = c;
+  const bench = ro.bench.filter((x) => x.id !== c.id);
+  if (out) bench.push(out);
+  return { ...ro, starters, depth, bench };
 }
 
 /** Who plays a slot: the starter, else the sub-package player, else the best fit among starters

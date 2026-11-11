@@ -131,7 +131,14 @@ export const DraftConfigSchema = z.object({
   rerollsPerDraft: z.number().int(),
   pickTimerSec: z.number(), pickWarningSec: z.number(),
   viability: z.object({ minOverallAtSlot: z.number(), minViablePerSlot: z.number().int(), minEpicPlusPerSlot: z.number().int() }),
-});
+  tierWeights: z.record(z.string(), z.number().nonnegative()),
+  needWeight: z.number(), uselessWeight: z.number(), lateOpenSlots: z.number().int(),
+  themedEvery: z.number().int(), rookieMaxAge: z.number().int(), themeMinPool: z.number().int(),
+  backupMaxOvr: z.number(), backupTopN: z.number().int(), spreadSims: z.number().int(),
+  ai: z.object({ rerollBelow: z.number(), stackerBonus: z.number() }),
+  personalities: z.array(z.string()),
+  mirrorDefault: z.boolean(), revealPassedDefault: z.boolean(),
+}).passthrough();
 export type DraftConfig = z.infer<typeof DraftConfigSchema>;
 
 export const RulesConfigSchema = z.object({
@@ -292,6 +299,7 @@ export const CoachConfigSchema = z.object({
   tendency: z.object({ prior: z.number(), runBiasMax: z.number(), paBiteBase: z.number(), paBitePerRunRate: z.number() }),
   qbRun: z.object({ speedRef: z.number(), speedPer: z.number(), min: z.number(), max: z.number() }),
   hailMary: z.object({ maxSeconds: z.number(), minBallOn: z.number(), maxBallOn: z.number() }),
+  styles: z.record(z.string(), z.object({ pass: z.number(), personnel: z.record(z.string(), z.number()) })),
   special: z.object({ onsideMaxDeficit: z.number(), onsideSeconds: z.number(), squibSeconds: z.number(), squibPerMille: z.number(),
     coffinFrom: z.number(), coffinTarget: z.number(), fakePuntPerMille: z.number(), fakeFgPerMille: z.number() }),
   presnap: z.object({

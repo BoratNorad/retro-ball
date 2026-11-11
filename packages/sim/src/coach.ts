@@ -83,7 +83,7 @@ function weightedPick<T extends { weight: number }>(items: T[], rng: Rng): T {
 }
 
 /** Pass probability (per mille) by situation. */
-function passRate(s: GameState, data: GameData): number {
+function passRate(s: GameState, data: GameData, style?: string): number {
   const d = s.down, togo = yds(s.toGo), t = secondsLeft(s, data.rules), l = lead(s, s.possession);
   let p = 560;
   if (d === 1) p = 500;
@@ -91,6 +91,7 @@ function passRate(s: GameState, data: GameData): number {
   if (d >= 3) p = togo >= 5 ? 880 : togo <= 2 ? 330 : 680;
   if (s.quarter >= 4 && t <= 300) p += l < 0 ? 250 : l > 0 ? -320 : 0;
   if (s.quarter === 2 && t <= 120) p += 200;
+  p += data.coach.styles[style ?? "balanced"]?.pass ?? 0;
   return Math.max(100, Math.min(970, p));
 }
 
@@ -163,7 +164,7 @@ export function chooseOffensePlay(s: GameState, offense: Roster, data: GameData,
     const hm = all.find((p) => p.tags.includes("hailMary"));
     if (hm) return withFormation(hm, "passing");
   }
-  const pass = rng.int(1000) < passRate(s, data);
+  const pass = rng.int(1000) < passRate(s, data, offense.style);
   const short = togo <= 2;
   const qbSpeed = ratings(offense.starters.QB!.id).speed ?? 60;
   const qbRun = Math.max(C.qbRun.min, Math.min(C.qbRun.max, 1 + (qbSpeed - C.qbRun.speedRef) * C.qbRun.speedPer));
@@ -195,7 +196,7 @@ export function chooseOffensePlay(s: GameState, offense: Roster, data: GameData,
     for (const fid of play.formations) {
       const f = data.formations.offense.find((x) => x.id === fid);
       if (!f) continue;
-      for (const p of f.personnel) opts.push({ f: fid, p, weight: (pref[p] ?? 0.5) / 10 });
+      for (const p of f.personnel) opts.push({ f: fid, p, weight: ((pref[p] ?? 0.5) * (C.styles[offense.style ?? "balanced"]?.personnel[p] ?? 1)) / 10 });
     }
     const o = weightedPick(opts, rng);
     return { play, formation: o.f, personnel: o.p, flip: rng.int(2) === 1, preOff: aiMotion(play, data, rng) };
@@ -207,7 +208,7 @@ export function chooseOffensePlay(s: GameState, offense: Roster, data: GameData,
 export function suggestPlays(s: GameState, offense: Roster, data: GameData, ratings: (id: number) => Stats, oppDefense?: Tendencies, n = 8): PlayCall[] {
   const ballOn = yds(s.ballOn), togo = yds(s.toGo), t = secondsLeft(s, data.rules);
   const C = data.coach;
-  const pr = passRate(s, data) / 1000;
+  const pr = passRate(s, data, offense.style) / 1000;
   const qbSpeed = ratings(offense.starters.QB!.id).speed ?? 60;
   const qbRun = Math.max(C.qbRun.min, Math.min(C.qbRun.max, 1 + (qbSpeed - C.qbRun.speedRef) * C.qbRun.speedPer));
   const blitzy = oppDefense && oppDefense.defSnaps >= 6 ? oppDefense.blitz / oppDefense.defSnaps : 0.2;
@@ -232,7 +233,7 @@ export function suggestPlays(s: GameState, offense: Roster, data: GameData, rati
     for (const fid of p.formations) {
       const f = data.formations.offense.find((x) => x.id === fid);
       if (!f) continue;
-      for (const per of f.personnel) { const w = pref[per] ?? 0; if (w > best.w) best = { f: fid, per, w }; }
+      for (const per of f.personnel) { const w = (pref[per] ?? 0) * (C.styles[offense.style ?? "balanced"]?.personnel[per] ?? 1); if (w > best.w) best = { f: fid, per, w }; }
     }
     return { play: p, formation: best.f, personnel: best.per || data.formations.offense.find((x) => x.id === best.f)!.personnel[0]!, flip: false };
   });

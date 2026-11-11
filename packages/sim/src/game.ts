@@ -68,6 +68,8 @@ export interface GameSetup {
   userSide?: Side | null;
   /** override quarter length (game seconds), e.g. for short games */
   quarterSeconds?: number;
+  /** two humans share the device (hot-seat): the side with the ball is the user; SnapOptions.defCall is the other's call */
+  hotseat?: boolean;
   /** wind in mph (x across, y toward the north end zone); default: random */
   wind?: F.V2;
 }
@@ -124,7 +126,11 @@ export type SnapResult = { live: LivePlay } | { done: PlaySummary };
 export class GameSession {
   readonly data: GameData;
   readonly teams: [Roster, Roster];
-  readonly userSide: Side | null;
+  private readonly fixedUser: Side | null;
+  /** hot-seat: two humans on one device; whoever has the ball plays it, the other calls the defense */
+  readonly hotseat: boolean;
+  /** the side a human is controlling right now */
+  get userSide(): Side | null { return this.hotseat ? this.state.possession : this.fixedUser; }
   state: GameState;
   readonly box: [TeamBox, TeamBox] = [emptyBox(), emptyBox()];
   readonly log: PlayLog[] = [];
@@ -144,7 +150,8 @@ export class GameSession {
     this.data = setup.data;
     this.teams = setup.teams;
     this.ratings = setup.ratings;
-    this.userSide = setup.userSide ?? null;
+    this.fixedUser = setup.userSide ?? null;
+    this.hotseat = Boolean(setup.hotseat);
     this.seed = setup.seed;
     this.cfg = setup.quarterSeconds ? { ...setup.data.rules, quarterSeconds: setup.quarterSeconds } : setup.data.rules;
     this.rng = new Rng(setup.seed);
@@ -265,7 +272,7 @@ export class GameSession {
       let pc = { play: p0, formation: p0.formations[0]!, personnel: data.formations.offense.find((f) => f.id === p0.formations[0])!.personnel[0]!, flip: rng.int(2) === 1 };
       if (userOff && opts.userCall?.kind === "play") pc = this.userPlayCall(opts.userCall);
       let dc = chooseDefense(s, data, rng, pc.personnel, defense, this.tend[off]);
-      if (!userOff && this.userSide !== null && opts.defCall) dc = { call: opts.defCall, front: opts.defFront ?? dc.front };
+      if ((!userOff || this.hotseat) && this.userSide !== null && opts.defCall) dc = { call: opts.defCall, front: opts.defFront ?? dc.front };
       return { live: this.start(s, before, pc, dc, opts, true) };
     }
 
@@ -288,7 +295,7 @@ export class GameSession {
         : opts.userCall)
       : this.preview ?? chooseScrimmage(s, offense, defense, data, ratings, rng, this.tend[off], this.tend[def], (b) => this.kickChanceFor("fieldGoal", b));
     this.preview = null;
-    if (dec.kind === "play" && !userOff && this.userSide !== null && opts.defCall) dec = { ...dec, call: opts.defCall, front: opts.defFront ?? dec.front };
+    if (dec.kind === "play" && (!userOff || this.hotseat) && this.userSide !== null && opts.defCall) dec = { ...dec, call: opts.defCall, front: opts.defFront ?? dec.front };
     if (dec.kind === "punt" || dec.kind === "fieldGoal") return { live: this.startKick(s, before, dec.kind, opts) };
     if (dec.kind === "fake") {
       // the fake comes out of the kicking unit; the defense lined up for the kick it expected
