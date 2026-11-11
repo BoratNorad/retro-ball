@@ -9,6 +9,7 @@ import {
 import type { ClientData } from "../data.js";
 import { helmetCanvas } from "../render/sprites.js";
 import { AbilitiesToggle } from "./AbilitiesToggle.js";
+import { audio } from "../audio/audio.js";
 
 // ---------------------------------------------------------------- shared bits
 export const PALETTES: [string, string, string][] = [
@@ -54,7 +55,7 @@ export function PlayerCardView({ cd, c, ovr, slotLabel, selected, onClick, small
     : ["DL", "LB"].includes(c.group) ? [["BSH", "blockShedding"], ["TAK", "tackle"], ["SPD", "speed"]]
     : [["SPD", "speed"], ["MCV", "manCoverage"], ["ZCV", "zoneCoverage"]];
   return (
-    <button class={`card ${selected ? "sel" : ""} ${small ? "small" : ""}`} style={{ borderColor: TIER_COLOR[c.tier] }} onClick={onClick}>
+    <button class={`card ${selected ? "sel" : ""} ${small ? "small" : ""}`} style={{ borderColor: TIER_COLOR[c.tier] }} onClick={onClick && (() => { audio.play("card"); onClick(); })}>
       <div class="ctop"><Helmet cd={cd} abbr={c.team} /><span class="cpos">{c.pos}</span><span class="covr">{ovr ?? c.ovr}</span></div>
       <b class="cname">{c.name}</b>
       <small class="ctier" style={{ color: TIER_COLOR[c.tier] }}>{TIER_NAME[c.tier] ?? c.tier} · {c.team} #{c.num ?? "-"}</small>
@@ -266,6 +267,7 @@ export function DraftScreen({ cd, cfg, onDone }: { cd: ClientData; cfg: DraftCon
 }
 
 export function Reveal({ cd, d, rev, cfg, onNext }: { cd: ClientData; d: Draft; rev: RoundReveal; cfg: DraftConfigUi; onNext: () => void }) {
+  useEffect(() => { audio.play("reveal"); }, [rev.round]);
   const one = (p: DraftPick) => {
     const t = cfg.teams[p.side];
     const delta = p.gradeAfter - p.gradeBefore;

@@ -13,3 +13,4 @@ export * from "./draft.js";
 export * from "./engine/abilities.js";
 export * from "./online.js";
 export * from "./net.js";
+export * from "./replay.js";

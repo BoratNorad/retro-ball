@@ -40,7 +40,41 @@ const runLegs = (map: string[]) => {
   m[21] = "...........kkk..";
   return m;
 };
-const MAPS = { back: [PLAYER_BACK, runLegs(PLAYER_BACK)], front: [PLAYER_FRONT, runLegs(PLAYER_FRONT)] };
+/** Side profile, facing right (the Pro camera; flipped for players facing left). */
+const PLAYER_SIDE = [
+  "................",
+  "......kkkkk.....",
+  "....kkHHHHHk....",
+  "...kHHHSSSHHk...",
+  "...kHHHHHHHMMk..",
+  "...kHHHHHHHMVk..",
+  "...kHHHHHHHMMk..",
+  "....kkHHHHkkk...",
+  "....kkJJJJk.....",
+  "...kJJJJJJJk....",
+  "...kTJJJJJJJk...",
+  "...kTJJJJJJGk...",
+  "...kTJJJJJJkGk..",
+  "...kJJJJJJJk.k..",
+  "...kJJJJJJJk....",
+  "....kPPPPPk.....",
+  "....kPPPPPk.....",
+  "....kPPkPPk.....",
+  "....kOOkOOk.....",
+  "....kOOkOOk.....",
+  "...kBBBkBBBk....",
+  "...kkkk.kkkk....",
+];
+const sideRun = (map: string[]) => {
+  const m = map.slice();
+  m[17] = "...kPPk.kPPk....";
+  m[18] = "..kOOk...kOOk...";
+  m[19] = ".kOOk.....kOOk..";
+  m[20] = ".kBBBk....kBBBk.";
+  m[21] = "..kkk......kkk..";
+  return m;
+};
+const MAPS = { back: [PLAYER_BACK, runLegs(PLAYER_BACK)], front: [PLAYER_FRONT, runLegs(PLAYER_FRONT)], side: [PLAYER_SIDE, sideRun(PLAYER_SIDE)] };
 const HELMET = [
   "...kkkkk....", "..kHHHHHkk..", ".kHHSSSHHHk.", "kHHHHHHHHHHk", "kHHHHHHHkkHk",
   "kHHHHHHkMMMk", "kHHHHHHkMkMk", ".kHHHHHkMMMk", "..kkkkkk.kk.",
@@ -78,7 +112,8 @@ function paint(ctx: CanvasRenderingContext2D, map: string[], pal: Record<string,
 }
 
 /** 16x22 player sprite canvas. */
-export function playerCanvas(t: TeamColors, num: number | null, facing: "back" | "front", frame: 0 | 1): HTMLCanvasElement {
+export type Facing = "back" | "front" | "side";
+export function playerCanvas(t: TeamColors, num: number | null, facing: Facing, frame: 0 | 1): HTMLCanvasElement {
   const cv = document.createElement("canvas");
   cv.width = SPRITE_W; cv.height = SPRITE_H;
   const ctx = cv.getContext("2d")!;
@@ -86,7 +121,7 @@ export function playerCanvas(t: TeamColors, num: number | null, facing: "back" |
   paint(ctx, MAPS[facing][frame]!, pal);
   if (num != null) {
     const str = String(num);
-    let cx = Math.round((16 - (str.length * 4 - 1)) / 2);
+    let cx = facing === "side" ? 4 : Math.round((16 - (str.length * 4 - 1)) / 2);
     ctx.fillStyle = pal.N!;
     for (const ch of str) {
       const g = DIGITS[ch]!;
@@ -104,5 +139,24 @@ export function helmetCanvas(t: TeamColors, scale = 3): HTMLCanvasElement {
   const ctx = cv.getContext("2d")!;
   ctx.scale(scale, scale);
   paint(ctx, HELMET, palette(t));
+  return cv;
+}
+
+/** A tileable patch of crowd in the stands (Pro camera backdrop): seat rows and fans in both teams' colours. */
+export function crowdCanvas(colors: string[]): HTMLCanvasElement {
+  const cv = document.createElement("canvas");
+  cv.width = 96; cv.height = 48;
+  const ctx = cv.getContext("2d")!;
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let y = 0; y < 48; y += 6) { ctx.fillStyle = (y / 6) % 2 ? "#23252f" : "#2b2e3a"; ctx.fillRect(0, y, 96, 6); }
+  const skin = ["#f1c9a5", "#c68e63", "#8d5a3b", "#5c3a24"];
+  for (let y = 1; y < 48; y += 6) for (let x = 1; x < 96; x += 3) {
+    if (rnd() < 0.18) continue;
+    ctx.fillStyle = colors[Math.floor(rnd() * colors.length)]!;
+    ctx.fillRect(x, y + 2, 2, 3);
+    ctx.fillStyle = skin[Math.floor(rnd() * skin.length)]!;
+    ctx.fillRect(x, y, 2, 2);
+  }
   return cv;
 }

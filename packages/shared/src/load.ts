@@ -3,7 +3,7 @@
 import {
   AbilitiesFileSchema, DraftConfigSchema, GradeConfigSchema,
   IconsFileSchema, MaddenAbilitiesFileSchema, PlayersFileSchema, PositionsConfigSchema, PositionWeightsSchema,
-  TiersConfigSchema, RulesConfigSchema, TuningSchema, FormationsFileSchema, RoutesFileSchema, OffenseFileSchema, DefenseFileSchema, StatGroupsFileSchema, TeamsFileSchema, CoachConfigSchema, OnlineConfigSchema,
+  TiersConfigSchema, RulesConfigSchema, TuningSchema, FormationsFileSchema, RoutesFileSchema, OffenseFileSchema, DefenseFileSchema, StatGroupsFileSchema, TeamsFileSchema, CoachConfigSchema, OnlineConfigSchema, PresentationConfigSchema,
 } from "./schemas.js";
 
 /** File names, relative to packages/shared/. */
@@ -23,6 +23,7 @@ export const DATA_FILES = {
   tuning: "config/tuning.json",
   coach: "config/coach.json",
   online: "config/online.json",
+  presentation: "config/presentation.json",
   formations: "data/playbook/formations.json",
   routes: "data/playbook/routes.json",
   offense: "data/playbook/offense.json",
@@ -39,6 +40,7 @@ const SCHEMAS = {
   tuning: TuningSchema,
   coach: CoachConfigSchema,
   online: OnlineConfigSchema,
+  presentation: PresentationConfigSchema,
   formations: FormationsFileSchema, routes: RoutesFileSchema, offense: OffenseFileSchema, defense: DefenseFileSchema,
 } as const;
 

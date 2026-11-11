@@ -5,7 +5,7 @@
 // what was predicted the play is re-simulated from tick 0 (cheap: a play is a few hundred ticks).
 import type { DefenseCall } from "@tdf/shared";
 import {
-  wireInput,
+  unpackInputs, wireInput,
   type DefensePart, type GameSession, type LivePlay, type MatchAction, type MatchWait, type OffensePart, type PlaySim,
   type PlaySnapshot, type PlaySummary, type Side, type UserCall, type UserInput, type WireAdjust, type WireCall,
 } from "@tdf/sim";
@@ -58,6 +58,7 @@ export class NetController extends Controller implements MatchListener {
     if (DEBUG) console.log("[net] action", a.t, summary ? "summary" : "", this.m.live ? "live" : "");
     if (a.t === "play") {
       const reveal = this.revealText();
+      if (this.live && summary) this.record(this.live, unpackInputs(a.runs, a.ticks), summary);
       this.stopLive();
       this.live = null;
       if (summary) this.showResult(summary, reveal);

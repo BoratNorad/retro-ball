@@ -2,7 +2,7 @@
 // and exposes a small observable UI state for Preact.
 import type { DefenseCall } from "@tdf/shared";
 import {
-  Fx, GameSession, fgDistance, suggestPlays,
+  Fx, GameSession, fgDistance, highlightOf, replayFrames, suggestPlays, type HighlightKind, type TickInput,
   type GameResult, type LivePlay, type PlayCall, type PlaySnapshot, type PlaySummary, type Side, type UserCall, type UserInput,
   type PreSnapDefense, type PreSnapOffense, type Roster, type ArmedActive, type ActiveOption,
 } from "@tdf/sim";
@@ -52,6 +52,10 @@ export interface UiState {
   canFairCatch: boolean; canKneel: boolean; scramble: boolean;
   /** hot-seat privacy screen: who takes the device, and for what */
   passTo: { team: string; next: "defense" | "offense" } | null;
+  /** halftime / end of game summary overlay is up */
+  halftime: boolean;
+  /** a replay is on screen */
+  replaying: boolean;
   /** online match: no fast-forward, waiting states, server clock */
   online: boolean;
   /** online: what we are waiting for (opponent calling, etc.), and the server timer in seconds */
@@ -61,6 +65,14 @@ export interface UiState {
 
 export type AbilityCtx = "off" | "def" | "kick" | "return";
 
+/** A play that ran live: re-simulated from its seed and inputs for replays. */
+export interface PlayRecord {
+  n: number; live: LivePlay; inputs: TickInput[];
+  /** drawn turned around (the other team had the ball) */
+  flip: boolean; offSide: Side;
+  label: string; result: string; highlight: HighlightKind | null;
+}
+
 export interface Settings {
   /** defensive control mode: play one defender (else call-only, Retro Bowl style) */
   controlDefense: boolean;
@@ -69,6 +81,16 @@ export interface Settings {
   audiblesDef?: string[];
   /** abilities ruleset: passives, armed actives, signature moves, momentum (default on) */
   abilities?: boolean;
+  /** camera: auto = Bowl on narrow (phone) screens, Pro on wide ones */
+  camera?: "auto" | "bowl" | "pro";
+  sound?: boolean;
+  music?: boolean;
+  /** master volume 0..1 */
+  volume?: number;
+  /** no screen shake, slow motion or confetti */
+  reducedMotion?: boolean;
+  /** vibrate on big hits (phones) */
+  haptics?: boolean;
 }
 const SETTINGS_KEY = "tdf.settings";
 export function loadSettings(): Settings {
@@ -109,7 +131,7 @@ export class Controller {
       mode: "result", toast: null, bigToast: null, live: false, userOffense: false, qbCanThrow: false, userCarrier: false,
       cooldowns: { juke: 0, spin: 0, burst: 0 }, fg: null, tryForTwo: false, fast: false,
       userDefense: false, userDefender: -1, canKeep: false, preview: null, playClock: 0, lineup: 0, canFairCatch: false, canKneel: false, scramble: false, passTo: null,
-      online: Boolean(opts.session), waitText: null, netClock: null,
+      online: Boolean(opts.session), waitText: null, netClock: null, halftime: false, replaying: false,
     };
     if (!opts.session) queueMicrotask(() => this.advance());
     // dev builds: expose the controller for browser debugging / Playwright checks
@@ -235,6 +257,7 @@ export class Controller {
   protected handle(r: ReturnType<GameSession["snap"]>) {
     if ("done" in r) { this.showResult(r.done); return; }
     this.live = r.live;
+    this.rec = [];
     this.prev = this.cur = r.live.sim.snapshot();
     this.acc = 0;
     this.input = {};
@@ -266,6 +289,7 @@ export class Controller {
   adjust(ch: Parameters<GameSession["adjust"]>[1]) {
     if (!this.live || this.ui.mode !== "presnap") return;
     this.live = this.session.adjust(this.live, ch);
+    this.rec = [];
     this.prev = this.cur = this.live.sim.snapshot();
     this.acc = 0;
     this.input = {};
@@ -330,6 +354,43 @@ export class Controller {
   /** Momentum as bars (fractional), and the max. */
   momentumBars(side: Side) { const A = this.cd.data.tuning.abilities; return { bars: this.session.momentum[side] / A.pointsPerBar, max: A.momentumMax / A.pointsPerBar }; }
 
+  // ---------------------------------------------------------------- replays & highlights
+  /** inputs fed to the current live play, tick by tick */
+  protected rec: TickInput[] = [];
+  /** every play of the game that ran live, replayable from its seed + inputs */
+  readonly plays: PlayRecord[] = [];
+  replay: { rec: PlayRecord; frames: PlaySnapshot[]; pos: number; playing: boolean; speed: number } | null = null;
+  protected record(live: LivePlay, inputs: TickInput[], sum: PlaySummary) {
+    const hl = highlightOf(sum, this.cd.data.tuning.abilities.bigPlayYards);
+    const e = sum.entry;
+    this.plays.push({
+      n: this.plays.length + 1, live, inputs: inputs.slice(), flip: live.offSide !== this.userSide, offSide: live.offSide,
+      label: `Q${Math.min(e.q, 5) > 4 ? "OT" : e.q} ${this.team(live.offSide).abbr} · ${e.name}`, result: describe(sum, this).split(" · ")[0]!, highlight: hl,
+    });
+  }
+  get highlights() { return this.plays.filter((p) => p.highlight); }
+  openReplay(rec: PlayRecord | undefined = this.plays[this.plays.length - 1]) {
+    if (!rec) return;
+    this.replay = { rec, frames: replayFrames(rec.live.remake, rec.inputs), pos: 0, playing: true, speed: 1 };
+    this.set({ replaying: true });
+  }
+  closeReplay() { this.replay = null; this.set({ replaying: false }); }
+  /** advance a running replay (called by the renderer every frame) */
+  replayFrame(dtMs: number) {
+    const r = this.replay;
+    if (!r || !r.playing) return;
+    r.pos = Math.min(r.frames.length - 1, r.pos + (Math.min(dtMs, 100) / TICK_MS) * r.speed);
+    if (r.pos >= r.frames.length - 1) { r.playing = false; this.emit(); }
+  }
+  seekReplay(pos: number) { if (this.replay) { this.replay.pos = Math.max(0, Math.min(this.replay.frames.length - 1, pos)); this.emit(); } }
+  dismissHalftime() { this.set({ halftime: false }); }
+  /** Camera for this screen: the setting, or Bowl on narrow screens and Pro on wide ones. */
+  cameraFor(width: number, height: number): "bowl" | "pro" {
+    const c = this.settings.camera ?? "auto";
+    return c === "auto" ? (width > height * 1.1 ? "pro" : "bowl") : c;
+  }
+  setCamera(c: "auto" | "bowl" | "pro") { this.settings = { ...this.settings, camera: c }; saveSettings(this.settings); this.set({}); }
+
   /** Called every animation frame with elapsed ms. Runs whole 30 Hz ticks. */
   frame(dtMs: number) {
     if (this.ui.mode === "presnap" && this.live) { this.presnapFrame(dtMs); return; }
@@ -346,6 +407,7 @@ export class Controller {
       const inp = this.live.userOffense ? this.input
         : flippedHuman ? { ...this.input, move: mv ? { x: -mv.x, y: -mv.y } : null } : null;
       const done = sim.step(inp);
+      this.rec.push([inp, undefined]);
       // one-shot inputs are consumed by the tick
       this.input = { move: this.input.move ?? null };
       void 0;
@@ -379,6 +441,7 @@ export class Controller {
         this.acc -= TICK_MS;
         this.prev = this.cur;
         live.sim.step({});
+        this.rec.push([{}, undefined]);
         this.cur = live.sim.snapshot();
       }
     }
@@ -387,12 +450,14 @@ export class Controller {
   protected endLive() {
     const live = this.live!;
     const sum = this.session.finish(live);
+    this.record(live, this.rec, sum);
     // after the whistle you get to see what the other side was in
     this.showResult(sum, live.kick ? undefined : live.userOffense ? `vs ${live.call.name}` : `${this.team(live.offSide).abbr} ran ${live.play.name}`);
   }
 
   protected showResult(sum: PlaySummary, reveal?: string) {
     this.lastSummary = sum;
+    if (sum.events.some((e) => e.t === "halftime" || e.t === "final")) this.set({ halftime: sum.events.some((e) => e.t === "halftime") });
     const big = bigCallout(sum, this.userSide);
     const text = describe(sum, this) + (reveal ? ` · ${reveal}` : "");
     this.set({ mode: "result", live: false, toast: text, bigToast: big, qbCanThrow: false, userCarrier: false, canKeep: false, userDefense: false, userDefender: -1,

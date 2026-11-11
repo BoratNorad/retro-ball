@@ -8,9 +8,10 @@ import { Controller, ordinal, spotText, toGoText, type AbilityCtx, type UiState 
 import { FieldScene } from "../render/FieldScene.js";
 import { helmetCanvas } from "../render/sprites.js";
 import { AbilitiesToggle } from "./AbilitiesToggle.js";
-import { BoxScore } from "./BoxScore.js";
 import { DraftScreen, DraftSetup, Lineup, PostDraft, type DraftConfigUi } from "./Draft.js";
 import { OnlineScreen } from "./Online.js";
+import { applyAudioSettings, GameSummary, ReplayBar, SettingsPanel } from "./Presentation.js";
+import { audio } from "../audio/audio.js";
 import { hasOnlineSeat } from "../net/client.js";
 import type { Draft, Roster } from "@tdf/sim";
 
@@ -24,8 +25,20 @@ export function App() {
   const [cd, setCd] = useState<ClientData | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: "loading" });
   useEffect(() => {
-    loadClientData().then((d) => { setCd(d); setScreen(hasOnlineSeat() ? { kind: "online" } : { kind: "menu" }); }).catch((e) => setScreen({ kind: "error", msg: String(e) }));
+    loadClientData().then((d) => { setCd(d); applyAudioSettings(d); setScreen(hasOnlineSeat() ? { kind: "online" } : { kind: "menu" }); }).catch((e) => setScreen({ kind: "error", msg: String(e) }));
   }, []);
+  // music: menus and setup get the menu loop, drafts the draft loop, games the crowd
+  useEffect(() => {
+    const unlock = () => audio.unlock();
+    document.addEventListener("pointerdown", unlock);
+    document.addEventListener("keydown", unlock);
+    return () => { document.removeEventListener("pointerdown", unlock); document.removeEventListener("keydown", unlock); };
+  }, []);
+  useEffect(() => {
+    if (screen.kind === "draft") audio.music("draft");
+    else if (screen.kind === "game" || screen.kind === "loading") audio.music(null);
+    else if (screen.kind !== "online") audio.music("menu");
+  }, [screen.kind]);
   if (screen.kind === "loading") return <div class="center"><div class="title">LOADING…</div></div>;
   if (screen.kind === "error") return <div class="center"><div class="title">ERROR</div><p>{screen.msg}</p></div>;
   const c = cd!;
@@ -58,6 +71,7 @@ function Helmet({ team, scale = 3 }: { team: { abbr: string; c1: string; c2: str
 }
 
 function Menu({ cd, onStart, onDraft, onOnline }: { cd: ClientData; onStart: (user: string, opp: string, quarterMinutes: number) => void; onDraft: (mode: "ai" | "hotseat") => void; onOnline: () => void }) {
+  const [settings, setSettings] = useState(false);
   const teams = [...cd.data.teams.teams].sort((a, b) => a.name.localeCompare(b.name));
   const [user, setUser] = useState<string | null>(null);
   const [opp, setOpp] = useState<string | null>(null);
@@ -66,6 +80,8 @@ function Menu({ cd, onStart, onDraft, onOnline }: { cd: ClientData; onStart: (us
   return (
     <div class="menu">
       <h1>TRIPLE DRAFT <span>FOOTBALL</span></h1>
+      <button class="chip gear" onClick={() => setSettings(true)}>⚙ SETTINGS</button>
+      {settings && <SettingsPanel cd={cd} onClose={() => setSettings(false)} />}
       <div class="plays modes">
         <button class="play online" onClick={onOnline}><b>ONLINE TRIPLE DRAFT</b><small>quick match or a private room · draft head to head, then play</small></button>
         <button class="play" onClick={() => onDraft("ai")}><b>TRIPLE DRAFT vs AI</b><small>draft 24 real players, then play</small></button>
@@ -123,14 +139,33 @@ export function Game({ ctl, onExit, exitLabel = "PLAY AGAIN", extra, banner }: {
     return () => game.destroy(true);
   }, [ctl]);
   useKeyboard(ctl);
+  useEffect(() => { audio.crowd(0.45); return () => audio.crowd(0); }, [ctl]);
+  const [settings, setSettings] = useState(false);
+  const betweenPlays = !ui.replaying && !ui.halftime && ui.mode !== "live" && ui.mode !== "kick" && ui.mode !== "final";
+  const cam = ctl.cameraFor(window.innerWidth, window.innerHeight);
   return (
     <div class="game">
       <div class="stage" ref={host} />
       <ScoreBug ctl={ctl} />
+      {betweenPlays && (
+        <div class="hudbtns">
+          <button class="chip" title="camera" onClick={() => ctl.setCamera(cam === "pro" ? "bowl" : "pro")}>{cam === "pro" ? "PRO" : "BOWL"} CAM</button>
+          {ctl.plays.length > 0 && <button class="chip" onClick={() => ctl.openReplay()}>↺ REPLAY</button>}
+          <button class="chip" onClick={() => setSettings(true)}>⚙</button>
+        </div>
+      )}
+      {settings && <SettingsPanel cd={ctl.cd} ctl={ctl} onClose={() => setSettings(false)} />}
+      {ui.replaying && <ReplayBar ctl={ctl} />}
+      {ui.halftime && !ui.replaying && ui.mode !== "final" && (
+        <div class="overlay">
+          <GameSummary ctl={ctl} title="HALFTIME" onReplay={(p) => ctl.openReplay(p)} />
+          <button class="big" onClick={() => ctl.dismissHalftime()}>SECOND HALF ▶</button>
+        </div>
+      )}
       {banner && <div class="netbanner">{banner}</div>}
       {ui.toast && ui.mode === "result" && <div class="toast">{ui.toast}</div>}
       {ui.bigToast && <div class="bigtoast">{ui.bigToast}</div>}
-      <div class="bottom">
+      <div class={`bottom ${ui.replaying ? "hidden" : ""}`}>
         {ui.mode === "waiting" && <div class="bar"><span class="playname">{ui.waitText ?? "WAITING…"}</span>{ui.netClock != null && <span class="clock">{Math.ceil(ui.netClock)}</span>}</div>}
         {ui.mode === "callOffense" && <OffenseSheet ctl={ctl} />}
         {ui.mode === "callDefense" && <DefenseSheet ctl={ctl} />}
@@ -157,9 +192,9 @@ export function Game({ ctl, onExit, exitLabel = "PLAY AGAIN", extra, banner }: {
             {!ui.online && <button class="chip" onClick={() => ctl.fastForward()}>SKIP ▶▶</button>}</div>
         )}
       </div>
-      {ui.mode === "final" && (
+      {ui.mode === "final" && !ui.replaying && (
         <div class="overlay">
-          <BoxScore r={ctl.result()} />
+          <GameSummary ctl={ctl} title="FINAL" onReplay={(p) => ctl.openReplay(p)} />
           <button class="big" onClick={onExit}>{exitLabel}</button>
           {extra}
         </div>
@@ -649,12 +684,15 @@ function useKeyboard(ctl: Controller) {
       if (keys.has("ArrowRight") || keys.has("d")) x += 1;
       if (keys.has("ArrowUp") || keys.has("w")) y += 1;
       if (keys.has("ArrowDown") || keys.has("s")) y -= 1;
+      // the Pro camera looks from the sideline: right = downfield, up = toward the far sideline
+      if (ctl.cameraFor(window.innerWidth, window.innerHeight) === "pro") [x, y] = [-y, x];
       if (x || y) ctl.input.move = { x: x * 65536, y: y * 65536 };
       else if (ctl.input.move && [...keys].length === 0) ctl.input.move = null;
     };
     const down = (e: KeyboardEvent) => {
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       if (k === "Enter") { ctl.snapBall(); return; }
+      if (k === "v" && ctl.ui.mode !== "live") { ctl.setCamera(ctl.cameraFor(window.innerWidth, window.innerHeight) === "pro" ? "bowl" : "pro"); return; }
       if (ctl.live?.userDefense) {
         // defense: Space dive, E swat, Q strip, Tab/C switch
         const m: Record<string, UserInputAction> = { " ": "dive", e: "swat", q: "strip", Tab: "switch", c: "switch" };

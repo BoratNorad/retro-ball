@@ -1,0 +1,39 @@
+{
+  "_doc": "Presentation (M9), client only, never affects outcomes. bowl: top-down camera (anchor = where the ball sits on screen, 0 top .. 1 bottom, when you attack up / when the opponent does; follow = camera easing per frame). pro: All-22 broadcast view from the near sideline, your team attacks to the right: visibleYards across the screen, tilt = vertical squash of the field depth, farScale = size of the far sideline relative to the near one, heightLift = how much a ball's height lifts it on screen, carrierZoom = zoom on the ball carrier after a catch, centerY = where the field's middle sits on screen (0 top .. 1 bottom), playerSize = sprite width in yards, zoomEase/follow = easing per frame. juice: screen shake (ms, intensity) on sacks / big hits / turnovers, slow motion on clutch catches (scale, ms; offline only), confetti pieces on a touchdown, popupMs = on-field pixel callouts. audio: master/music/sfx/crowd volumes 0..1, crowdSwellMs.",
+  "bowl": {
+    "anchorUp": 0.62,
+    "anchorDown": 0.4,
+    "follow": 0.12
+  },
+  "pro": {
+    "visibleYards": 56,
+    "tilt": 0.42,
+    "farScale": 0.74,
+    "heightLift": 0.55,
+    "carrierZoom": 1.2,
+    "zoomEase": 0.05,
+    "follow": 0.1,
+    "playerSize": 2.2,
+    "centerY": 0.44
+  },
+  "juice": {
+    "shakeSackMs": 260,
+    "shakeSack": 0.012,
+    "shakeHitMs": 140,
+    "shakeHit": 0.005,
+    "shakeTurnoverMs": 320,
+    "shakeTurnover": 0.014,
+    "slowmoScale": 0.35,
+    "slowmoMs": 900,
+    "clutchAirYards": 25,
+    "confetti": 140,
+    "popupMs": 1300
+  },
+  "audio": {
+    "master": 0.7,
+    "music": 0.35,
+    "sfx": 0.8,
+    "crowd": 0.35,
+    "crowdSwellMs": 2500
+  }
+}

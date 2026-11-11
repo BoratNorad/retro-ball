@@ -1,6 +1,6 @@
 import type { GameResult } from "@tdf/sim";
 
-export function BoxScore({ r }: { r: GameResult }) {
+export function BoxScore({ r, title = "FINAL" }: { r: GameResult; title?: string | null }) {
   const [a, b] = r.names;
   const [ta, tb] = r.teams;
   const q = Math.max(ta.byQuarter.length, tb.byQuarter.length, 4);
@@ -17,7 +17,7 @@ export function BoxScore({ r }: { r: GameResult }) {
   const top = (k: string, n: number) => r.players.filter((p) => ((p[k] as number) ?? 0) > 0).sort((x, y) => ((y[k] as number) ?? 0) - ((x[k] as number) ?? 0)).slice(0, n);
   return (
     <div class="box">
-      <div class="title">FINAL</div>
+      {title && <div class="title">{title}</div>}
       <table>
         <thead><tr><th></th>{Array.from({ length: q }, (_, i) => <th>{i < 4 ? `Q${i + 1}` : "OT"}</th>)}<th>F</th></tr></thead>
         <tbody>

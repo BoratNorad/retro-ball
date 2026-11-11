@@ -43,11 +43,14 @@ packages/sim      headless core: seeded RNG, Q16.16 fixed-point maths, cards.ts 
                   (30 Hz kicks + returns), engine/kicks.ts (FG distance helper, legacy rating models),
                   coach.ts (AI play calling + clock management), game.ts (full game loop + box score),
                   draft.ts (Triple Draft engine, AI drafters, spread prediction),
-                  online.ts (match/draft action logs, OnlineMatch, wire rosters/inputs), net.ts (client/server messages)
+                  online.ts (match/draft action logs, OnlineMatch, wire rosters/inputs), net.ts (client/server messages),
+                  replay.ts (replay frames from seed + inputs, highlights, drive chart)
 apps/client       Vite + Phaser 3 + Preact: src/game/controller.ts (GameSession + 30 Hz live loop + UI state),
                   src/game/netcontroller.ts (online match: decisions -> server, rollback), src/net/client.ts (socket + replicas),
                   src/ui/Online.tsx (lobby, room, online draft, lineup, match),
-                  src/render/FieldScene.ts (Bowl camera, sprites, slingshot aim, steer-to-finger), src/ui/*.tsx (menus, HUD),
+                  src/render/FieldScene.ts (both cameras, sprites, slingshot aim, steer-to-finger, replays, juice),
+                  src/render/view.ts (Bowl / Pro projections), src/audio/audio.ts (generated SFX, music, crowd),
+                  src/ui/Presentation.tsx (settings, replay bar, halftime/final summary), src/ui/*.tsx (menus, HUD),
                   src/ui/Draft.tsx (draft setup / board / reveal / post-draft / lineup builder)
 apps/server       online game server (M8): ws rooms, timers, referee (src/room.ts), sockets/codes/quick match (src/server.ts)
 apps/dex          Gridiron Dex, the original static roster browser (kept working; parts get ported to client)
@@ -191,6 +194,22 @@ data/raw          source spreadsheet
     Colyseus** (the spec allows a custom room layer; Colyseus's state sync is the wrong model for a
     lockstep action log). Timers and netcode numbers: `config/online.json`.
 
+19. **Presentation (M9) is client-only and never feeds back into outcomes.** One projection layer
+    (`render/view.ts`) serves both cameras: Bowl (top-down, you attack up) and Pro (All-22 broadcast from
+    the near sideline, you attack to the right, far sideline drawn smaller; zooms on the ball carrier
+    after a catch or on a return; stands behind the far sideline). Default per screen shape (Auto:
+    Bowl when taller than wide, Pro when wider), switchable between plays (CAM button, V key).
+    Touch input, kick flicks (in "downfield" coordinates) and arrow keys go through the same projection.
+    **Replays** re-simulate a play from its `LivePlay.remake` + the recorded per-tick inputs
+    (`replayFrames`); no positions are stored. Every play is kept (`Controller.plays`), highlights are
+    tagged by `highlightOf` (TD, pick, fumble, sack, blocked kick, 50+ FG, 20+ yd play). Halftime and
+    final screens: box score, drive chart (`drives`), highlight reel. **Juice**: shake on sacks / hits /
+    turnovers, slow-mo on clutch catches (offline only: online play runs on the server's clock),
+    confetti + crowd swell on TDs, pixel callouts (PICK!, SACK!, FUMBLE!), haptics option; "reduced
+    motion" turns the motion effects off. **Audio** is all generated with WebAudio (original chiptune
+    loops for menu/draft, jsfxr-style SFX, filtered-noise crowd); `public/audio/manifest.json` maps any
+    sound id to a file to replace it. Numbers in `config/presentation.json`.
+
 ## Balance targets (for the M2 harness)
 
 Per team per game, arcade-realistic: 20–31 pts avg, 55–75 offensive plays, run/pass 42/58 ±8,
@@ -300,7 +319,19 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   checksums 0 mismatches, room codes, version mismatch). Two real browsers (Playwright,
   `tools/e2e/online_two_browsers.cjs`): draft in ~11 s, then plays in lockstep including a reload.
   Render Blueprint now has the `tdf-server` web service (the static client gets its host via `fromService`).
-- [ ] M9 Pro camera + presentation · [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
+- [x] **M9 Pro camera + presentation** (decision 19) — Pro All-22 sideline camera with perspective,
+  side-profile sprites, stands, carrier zoom; Bowl camera kept; Auto by screen shape, CAM toggle / V key,
+  inputs through the projection (steer, slingshot throw, kick flick, arrow keys). Replays of any play
+  from the seed + input log with play/pause, scrub, 0.25x/0.5x/1x (offline and online), highlight reel,
+  halftime and final summary (box score, drive chart, highlights). Juice: screen shake, slow-mo on
+  clutch catches, TD confetti, on-field callouts, haptics. Audio: generated menu/draft music, SFX
+  (snap, hits, catch, throw, kick, whistle, card flip, reveal, TD, pick, fumble, FG), reactive crowd,
+  replaceable via the audio manifest. Settings panel (camera, SFX, music, volume, reduced motion,
+  haptics). Tests: replay determinism (a recorded play's replay ends in the identical state, kicks
+  included), drives add up. Checked with Playwright on desktop (Pro) and iPhone 13 (Bowl), and the
+  two-browser online run still in lockstep. Fixed on the way: the pixel font family wasn't quoted, so
+  every Phaser text fell back to a tiny default font.
+- [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
 
 ## Known issues / todo
 
@@ -328,5 +359,9 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   rollback re-simulates the whole play (fine at ~1 ms a play; snapshot/restore if plays get heavier);
   online two-point tries and onside recoveries are human-vs-human but untested by the browser script;
   no rematch side swap; rooms live in memory (a server restart ends games; SQLite later for accounts).
+- **Presentation follow-ups:** spec's pre-snap matchup arrows (toggle) and Tutorial coverage-read
+  hints not done; a forced Pro camera on a portrait phone is small (Auto picks Bowl there); sprites
+  are placeholders (side profile in Pro, back/front in Bowl); replays don't auto-play after highlights
+  (open them with REPLAY or from the summary); highlights aren't saved across games yet.
 - Draft extras not done: draft card share image, spectator link, daily draft (M10), drag-and-drop
   lineup (tap-tap only), stamina-based auto-sub thresholds (no fatigue model yet).

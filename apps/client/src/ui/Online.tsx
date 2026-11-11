@@ -6,6 +6,7 @@ import { rosterFromWire, rosterToWire, slotBasePos, type RoomSettings, type Roun
 import type { ClientData } from "../data.js";
 import { NetClient } from "../net/client.js";
 import { NetController } from "../game/netcontroller.js";
+import { audio } from "../audio/audio.js";
 import { Game } from "./App.js";
 import { GradeChips, Icon, Lineup, PALETTES, PlayerCardView, PostDraft, Reveal, SlotBoard, TeamEditor, type DraftConfigUi, type TeamSetup } from "./Draft.js";
 
@@ -32,6 +33,7 @@ export function OnlineScreen({ cd, onExit }: { cd: ClientData; onExit: () => voi
   useEffect(() => () => net.close(), [net]);
   useNet(net);
   const room = net.room;
+  useEffect(() => { audio.music(room?.phase === "draft" ? "draft" : room?.phase === "match" || room?.phase === "results" ? null : "menu"); }, [room?.phase]);
   const conn = net.status !== "open" ? (net.status === "connecting" ? "CONNECTING TO THE SERVER…" : "CONNECTION LOST · RECONNECTING…") : null;
   const leave = () => { net.leave(); onExit(); };
   if (!room) return <Lobby cd={cd} net={net} conn={conn} onBack={() => { net.leave(); onExit(); }} />;

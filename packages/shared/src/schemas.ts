@@ -345,3 +345,15 @@ export const OnlineConfigSchema = z.object({
   kickSeconds: z.number(), aiAfterSeconds: z.number(), forfeitSeconds: z.number(), aiPresnapSeconds: z.number(), presnapExtraSeconds: z.number(),
   inputDelayTicks: z.number().int(), maxPredictTicks: z.number().int(), fillMs: z.number(), codeLength: z.number().int(), maxMsgsPerSecond: z.number(),
 });
+
+// ---------------------------------------------------------------- presentation (M9, client only)
+export const PresentationConfigSchema = z.object({
+  _doc: z.string().optional(),
+  bowl: z.object({ anchorUp: z.number(), anchorDown: z.number(), follow: z.number() }),
+  pro: z.object({ visibleYards: z.number(), tilt: z.number(), farScale: z.number(), heightLift: z.number(), carrierZoom: z.number(), zoomEase: z.number(), follow: z.number(), playerSize: z.number(), centerY: z.number() }),
+  juice: z.object({
+    shakeSackMs: z.number(), shakeSack: z.number(), shakeHitMs: z.number(), shakeHit: z.number(), shakeTurnoverMs: z.number(), shakeTurnover: z.number(),
+    slowmoScale: z.number(), slowmoMs: z.number(), clutchAirYards: z.number(), confetti: z.number(), popupMs: z.number(),
+  }),
+  audio: z.object({ master: z.number(), music: z.number(), sfx: z.number(), crowd: z.number(), crowdSwellMs: z.number() }),
+});

@@ -1,0 +1,5 @@
+{
+  "_doc": "Replace any generated placeholder sound with a file: put it in public/audio/ and map its id to the path (relative to the site root). Empty = the built-in generated sound. sfx ids: snap hit bigHit catch throw whistle kick card reveal touchdown pick fumble click error fieldGoal miss. music ids: menu draft.",
+  "sfx": {},
+  "music": {}
+}
