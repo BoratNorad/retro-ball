@@ -161,7 +161,7 @@ export function SlotBoard({ d, side, card, onSlot }: { d: Draft; side: 0 | 1; ca
     return (
       <button class={`slot ${open ? "open" : ""} ${v != null ? (nat ? "nat" : v >= cd_min(d) ? "ok" : "bad") : ""}`} disabled={!open || !card} onClick={() => onSlot(k)}>
         <small>{slotBasePos(k)}</small>
-        {p ? <><b>{shortName(p.name)}</b><i>{d.overallIn(p, k)}</i></> : v != null ? <i class="pv">{v}</i> : <i>—</i>}
+        {p ? <><b>{shortName(p.name)}</b><i>{d.overallIn(p, k)}</i></> : v != null ? <i class="pv">{nat ? "✓" : v >= cd_min(d) ? "~" : "✗"} {v}</i> : <i>—</i>}
       </button>
     );
   };

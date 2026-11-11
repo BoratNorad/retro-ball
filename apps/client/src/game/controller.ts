@@ -91,6 +91,20 @@ export interface Settings {
   reducedMotion?: boolean;
   /** vibrate on big hits (phones) */
   haptics?: boolean;
+  /** UI text scale (accessibility) */
+  textSize?: number;
+  /** remapped keys (action -> key) */
+  keys?: Partial<Record<KeyAction, string>>;
+}
+/** Remappable keyboard actions (arrows / WASD always steer). */
+export type KeyAction = "snap" | "camera" | "juke" | "spin" | "burst" | "scramble" | "dive" | "swat" | "strip" | "switch";
+export const DEFAULT_KEYS: Record<KeyAction, string> = {
+  snap: "Enter", camera: "v", juke: " ", spin: "e", burst: "Shift", scramble: "r", dive: " ", swat: "e", strip: "q", switch: "Tab",
+};
+export const keysOf = (s: Settings): Record<KeyAction, string> => ({ ...DEFAULT_KEYS, ...(s.keys ?? {}) });
+/** Apply the UI text scale. */
+export function applyTextSize(s: Settings = loadSettings()) {
+  try { document.documentElement.style.setProperty("--ts", String(s.textSize ?? 1)); } catch { /* no DOM */ }
 }
 const SETTINGS_KEY = "tdf.settings";
 export function loadSettings(): Settings {
@@ -189,7 +203,7 @@ export class Controller {
       this.set({ mode: "callST", live: false, userOffense: false, toast: null });
       return;
     }
-    if (dec && dec.kind !== "play") { this.handle(this.session.snap({})); return; }  // kneel, spike
+    if (dec && dec.kind !== "play") { this.handle(this.session.snap({ ...this.snapExtras() })); return; }  // kneel, spike
     this.set({ mode: "callDefense", live: false, userOffense: false, preview: dec ? { personnel: dec.personnel } : null });
   }
 
@@ -206,18 +220,18 @@ export class Controller {
   callOffense(call: UserCall, timeout = this.takeTimeout()) {
     if (this.pendingTry === "twoPoint" && call.kind === "play") {
       this.pendingTry = null;
-      this.handle(this.session.snap({ tryChoice: "twoPoint", userCall: call, active: this.takeActive() }));
+      this.handle(this.session.snap({ ...this.snapExtras(), tryChoice: "twoPoint", userCall: call, active: this.takeActive() }));
       return;
     }
     const hs = this.session.hotseat && this.hsDef
       ? { ...(this.hsDef.call ? { defCall: this.hsDef.call, defFront: this.hsDef.front ?? undefined } : {}), defActive: this.hsDef.active } : {};
-    this.handle(this.session.snap({ userCall: call, timeout, active: this.takeActive(), ...hs }));
+    this.handle(this.session.snap({ ...this.snapExtras(), userCall: call, timeout, active: this.takeActive(), ...hs }));
   }
   /** what the opponent is lining up for (callST) */
   stKind: "punt" | "fieldGoal" = "punt";
-  kickoff(kind: "kickoff" | "squib" | "onside") { this.handle(this.session.snap({ kickoffKind: kind, active: this.takeActive() })); }
-  receiveKick(side: "L" | "M" | "R") { this.handle(this.session.snap({ returnSide: side, active: this.takeActive() })); }
-  callST(mode: "block" | "safe" | "normal", side: "L" | "M" | "R" = "M") { this.handle(this.session.snap({ stDefense: mode, returnSide: side, timeout: this.takeTimeout(), active: this.takeActive() })); }
+  kickoff(kind: "kickoff" | "squib" | "onside") { this.handle(this.session.snap({ ...this.snapExtras(), kickoffKind: kind, active: this.takeActive() })); }
+  receiveKick(side: "L" | "M" | "R") { this.handle(this.session.snap({ ...this.snapExtras(), returnSide: side, active: this.takeActive() })); }
+  callST(mode: "block" | "safe" | "normal", side: "L" | "M" | "R" = "M") { this.handle(this.session.snap({ ...this.snapExtras(), stDefense: mode, returnSide: side, timeout: this.takeTimeout(), active: this.takeActive() })); }
   /** Your flick: aim (radians, + right), power 0..1, curve -1..1. */
   kickBall(aim: number, power: number, curve: number) {
     if (this.ui.mode !== "kick") return;
@@ -225,7 +239,7 @@ export class Controller {
     this.set({ mode: "live", live: true });
   }
   callTry(choice: "pat" | "twoPoint") {
-    if (choice === "pat") { this.handle(this.session.snap({ tryChoice: "pat", active: this.takeActive() })); return; }
+    if (choice === "pat") { this.handle(this.session.snap({ ...this.snapExtras(), tryChoice: "pat", active: this.takeActive() })); return; }
     this.pendingTry = "twoPoint";
     this.set({ mode: "callOffense", userOffense: true, fg: null });
   }
@@ -244,7 +258,7 @@ export class Controller {
       this.set({ mode: "pass", passTo: { team: this.team(this.state.possession).name, next: "offense" } });
       return;
     }
-    this.handle(this.session.snap({ defCall: call ?? undefined, defFront: call ? front ?? undefined : undefined, timeout, controlDefender: this.settings.controlDefense,
+    this.handle(this.session.snap({ ...this.snapExtras(), defCall: call ?? undefined, defFront: call ? front ?? undefined : undefined, timeout, controlDefender: this.settings.controlDefense,
       active: this.takeActive() }));
   }
   callTimeout() {
@@ -358,6 +372,10 @@ export class Controller {
   // ---------------------------------------------------------------- replays & highlights
   /** the dotted throw path while aiming (off in ranked online games) */
   aimGuide = true;
+  /** practice: show the defense's assignments to the offense before the snap (coverage reads) */
+  coverageHints = false;
+  /** extra options on every snap (practice drills force the defense's look) */
+  protected snapExtras(): Partial<import("@tdf/sim").SnapOptions> { return {}; }
   /** inputs fed to the current live play, tick by tick */
   protected rec: TickInput[] = [];
   /** every play of the game that ran live, replayable from its seed + inputs */

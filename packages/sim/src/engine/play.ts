@@ -1108,7 +1108,9 @@ export function createPlay(inp: PlayInput): PlaySim {
         const base = passing ? T.blocking.passHoldBase : T.blocking.runHoldBase;
         const per = passing ? T.blocking.passHoldPer : T.blocking.runHoldPer;
         const jit = passing ? T.blocking.passHoldJitter : T.blocking.runHoldJitter;
-        let hold = base + per * (blk - rush) + (rng.int(1000) / 1000 - 0.5) * 2 * jit;
+        // the rating gap counts only up to a point: a star rusher wins fast, not instantly, every snap
+        const gapMax = passing ? T.blocking.passGapMax : T.blocking.runGapMax;
+        let hold = base + per * Math.max(-gapMax, Math.min(gapMax, blk - rush)) + (rng.int(1000) / 1000 - 0.5) * 2 * jit;
         if (abOn) hold = blockAbilities(b, d, hold, passing);
         if (d.engagedWith >= 0) {
           // double team: extend the existing block instead
@@ -1241,7 +1243,10 @@ export function createPlay(inp: PlayInput): PlaySim {
       if (st2) p = Math.round(1000 - (1000 - p) * (1 - st2 / 100));
       dbg.tries++;
       if (rng.int(1000) < p) {
-        stats.push({ k: "tackle", id: d.c.id, team: c.side === "O" ? defSide : inp.offSide });
+        // the credit goes to one of the men converging on him (assisted tackles), not always the first one there
+        const near = (c.side === "O" ? D : O).filter((x) => x !== c && vdist(x.pos, c.pos) <= fx(T.tackle.assistRange));
+        const by = near.length > 1 && rng.int(1000) < T.tackle.assistShare * 1000 ? near[rng.int(near.length)]! : d;
+        stats.push({ k: "tackle", id: by.c.id, team: c.side === "O" ? defSide : inp.offSide });
         // fumble?
         let fp = Math.max(T.tackle.fumbleMin, Math.min(T.tackle.fumbleMax, T.tackle.fumbleBase + T.tackle.fumblePer * (R(d, "hitPower") - R(c, "carrying"))));
         if (strip) fp = Math.round(fp * U.stripFumbleMult);

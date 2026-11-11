@@ -171,12 +171,12 @@ const penalty = z.object({ perMille: z.number(), yards: z.number().optional(), a
 export const TuningSchema = z.object({
   field: nums("width", "hashHalfGap", "maxPlaySeconds", "endZone"),
   movement: nums("speedBase", "speedPer", "accelBase", "accelPer", "carryingSpeedMult", "engagedSpeedMult", "backpedalMult", "carryingAccelMult", "receiverCarrySpeedMult"),
-  blocking: nums("engageRange", "passHoldBase", "passHoldPer", "passHoldJitter", "runHoldBase", "runHoldPer", "runHoldJitter", "doubleTeamMult", "shedStun", "pushPer"),
+  blocking: nums("engageRange", "passHoldBase", "passHoldPer", "passHoldJitter", "runHoldBase", "runHoldPer", "runHoldJitter", "doubleTeamMult", "shedStun", "pushPer", "passGapMax", "runGapMax"),
   qb: nums("readStartAfterDrop", "readWindow", "openSepStart", "openSepEnd", "openSepDeepBonus", "pressureRange", "throwAwayAwareness", "scrambleSpeedMin", "scrambleAfter", "maxHold", "dropSpeed", "cutCost", "evadeAgilityMin", "evadeStep", "pressureReactBase", "pressureReactPerMissing", "closingFactor", "misreadBase", "misreadPerMissing", "windowPerAwareness"),
   throw: nums("ballSpeedBase", "ballSpeedPer", "errBase", "errPerMissingAcc", "errPerYard", "pressureErrMult", "onRunErrMult", "shortMax", "midMax"),
   catch: nums("reach", "contestRange", "baseCatch", "catchPer", "contestPenalty", "contestSkillPer", "intBase", "intPer", "deflectBase", "catchSpeedKeep", "deepCatchPenaltyPerYard", "deepCatchFrom", "deepIntMult", "placementPenalty"),
   coverage: nums("reactBase", "reactPerMissing", "manCushion", "zoneSwitchRange", "ballReactBase", "ballReactPerMissing", "runReadBase", "runReadPerMissing", "pursuitLead", "pursuitMaxTime", "deepCushion", "manReactBase", "manReactPerMissing", "manBailCushion", "zoneDriftStep"),
-  tackle: nums("range", "base", "per", "powerPer", "gangBonus", "min", "max", "missStun", "carrierSlowOnMiss", "fumbleBase", "fumblePer", "fumbleMin", "fumbleMax", "fumbleOffenseRecover", "sackBase", "sackPer", "elusiveMaxWeight", "fallForwardPerSpeed", "fallForwardMax", "fallForwardBase", "afterContactPowerPer", "fallForwardReceiverMult"),
+  tackle: nums("range", "base", "per", "powerPer", "gangBonus", "min", "max", "missStun", "carrierSlowOnMiss", "fumbleBase", "fumblePer", "fumbleMin", "fumbleMax", "fumbleOffenseRecover", "sackBase", "sackPer", "elusiveMaxWeight", "fallForwardPerSpeed", "fallForwardMax", "fallForwardBase", "afterContactPowerPer", "fallForwardReceiverMult", "assistRange", "assistShare"),
   carrier: nums("lookAhead", "lanePerp", "forwardWeight", "sidelineMargin", "visionNoisePerMissing", "followAimFor", "replanTicksBase", "replanPerAgility", "sharpTurnSpeedMult", "sharpTurnAgilityPer").extend({ laneAngles: z.array(z.number()).min(3) }),
   kicking: nums("kickoffBase", "kickoffPer", "kickoffJitter", "returnMeanBase", "returnPer", "returnJitter", "returnTdPerMille", "puntBase", "puntPer", "puntJitter",
     "puntReturnMean", "puntReturnJitter", "fairCatchPerMille", "fgMakeShort", "fgDropPerYardAfter35", "fgDropPerYardAfter50", "fgAccPer", "fgRangeBase", "fgRangePer",
@@ -404,4 +404,15 @@ export const FranchiseConfigSchema = z.object({
   awards: z.object({ mvpWeights: z.record(z.string(), z.number()), dpoyWeights: z.record(z.string(), z.number()), hofCareerScore: z.number() }),
   names: z.object({ _doc: z.string().optional(), first: z.array(z.string()).min(4), last: z.array(z.string()).min(4) }),
   news: z.record(z.string(), z.array(z.string()).min(1)),
+});
+
+// ---------------------------------------------------------------- practice / tutorial (M12)
+export const TutorialFileSchema = z.object({
+  _doc: z.string().optional(),
+  drills: z.array(z.object({
+    id: z.string(), title: z.string(), summary: z.string(),
+    setup: z.object({ offense: z.boolean(), ballOn: z.number(), down: z.number().int(), toGo: z.number(), play: z.string().optional(), call: z.string().optional(), front: z.string().optional(), kick: z.literal("fieldGoal").optional() }),
+    goal: z.enum(["complete", "gain", "fieldGoal", "stop", "motion"]), n: z.number(), reps: z.number().int(), hints: z.boolean().optional(), steps: z.array(z.string()),
+  })),
+  coverage: z.record(z.string(), z.string()),
 });

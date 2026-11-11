@@ -119,3 +119,21 @@ describe("pre-snap (M5)", () => {
     expect(s.state.ballOn).toBe(before - fromInt(5));
   });
 });
+
+describe("practice drills (M12)", () => {
+  it("practiceDefense forces the AI's call and front on every snap", () => {
+    const call = data.defense.calls.find((c) => c.id === "cover2")!;
+    const s = new GameSession({ data, ratings, teams: [nflRoster("BUF", pool, data), nflRoster("KC", pool, data)], seed: "drill", userSide: 0 });
+    let checked = 0;
+    for (let i = 0; i < 200 && checked < 4 && s.pending().kind !== "final"; i++) {
+      const p = s.pending();
+      const user = s.isUserOffense() && p.kind === "scrimmage";
+      const r = s.snap(user ? { userCall: { kind: "play", play: data.offense.plays[0]!, flip: false }, practiceDefense: { call, front: "nickel" } } : {});
+      if ("live" in r) {
+        if (user) { expect(r.live.call.id).toBe("cover2"); expect(r.live.front).toBe("nickel"); checked++; }
+        runOut(r.live); s.finish(r.live);
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+});

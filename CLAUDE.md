@@ -23,6 +23,7 @@ decisions and milestone status. Keep it updated.
 | Kicking physics calibration (FG % by distance, punt/kickoff depth) | `pnpm tsx tools/sim/kicks.ts` |
 | Effect of each active ability / signature (armed vs not) | `pnpm tsx tools/sim/abilities.ts` (`ONLY=battering_ram,sig:RB N=70`) |
 | Boss Gauntlet difficulty (drafted team vs bosses by strength) | `pnpm tsx tools/sim/gauntlet.ts 30` |
+| Per-game individual stars (top sacks / tackles per game) | `pnpm tsx tools/sim/stars.ts 80` |
 | Every play vs AI-chosen fronts/calls | `pnpm tsx tools/sim/plays.ts 60` (`ONLY=regex`, `BY=formation`) |
 | Trace/probe a formation or front | add `FORM=gun_trips FRONT=nickel PERS=11` to `trace.ts` / `probe.ts` |
 | Re-fit team-grade weights to what wins | `RANDOM_ROSTERS=1 FIT_OUT=/tmp/fit.jsonl pnpm sim:harness --games 10000` then `python3 tools/import/fit_grade_weights.py /tmp/fit.jsonl --write` |
@@ -253,6 +254,18 @@ data/raw          source spreadsheet
     games in a Web Worker pool (`GameJob` = rosters with cards + ratings, `runGameJob`) while you play
     yours: a week sims in ~1.5 s, a season in ~30 s. Numbers + news templates: `config/franchise.json`.
 
+22. **Polish (M12).** *Balance:* a blocker's rating edge over his rusher counts only up to
+    `tuning.blocking.passGapMax` (10) / `runGapMax` (20) points, and a tackle with another defender within
+    `tackle.assistRange` goes to a random nearby defender `assistShare` of the time, so one elite rusher or
+    linebacker no longer posts 10+ sacks / 20+ tackles a game (team totals unchanged). *Practice* (menu PRACTICE)
+    = guided drills from `data/tutorial.json` (passing, running, kicking, reading coverage, motion/audibles,
+    defense): a `DrillController` resets the spot every rep, `SnapOptions.practiceDefense` forces the AI's
+    call/front, reading drills draw the defense's assignments over the pre-snap view (`coverageHints`) with
+    a coverage-read text per call; finished drills are kept in localStorage. *Accessibility:* text size
+    (CSS zoom on the UI, field canvas unchanged), remappable keys (Settings → KEYS; arrows/WASD always steer),
+    draft slot cells show ✓ / ~ / ✗ next to the colour. *Performance:* Phaser + the field scene are a lazy
+    chunk (first load 385 KB instead of 1.6 MB).
+
 ## Balance targets (for the M2 harness)
 
 Per team per game, arcade-realistic: 20–31 pts avg, 55–75 offensive plays, run/pass 42/58 ±8,
@@ -399,7 +412,13 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   season simmed in ~26 s through the off-season into season 2. Fixed on the way: a double tap on SIM
   could record a game twice (now guarded in the UI and in `recordGame`); opening payrolls ($175-424M)
   needed the fixed cap + scaling.
-- [ ] M12 Polish
+- [x] **M12 Polish** (decision 22) — balance (block-gap cap, assisted tackles; `stars.ts`: top rushers
+  ~1.3–1.8 sacks/game, max 4; top tacklers ~10–12), practice/tutorial drills, accessibility (text size,
+  key remapping, colour-blind-safe slot markers), Phaser code-split. **4,000 real-team games (seed m12):
+  0 metrics out of range** — 63.3% comp, 5.5% sacks, 41.2% 3rd down; grade gap 3–5 wins 74%, 5+ 87%.
+  Fixed on the way: a controller that changed state before the Game screen subscribed left a stale UI
+  (now synced on subscribe). Browser: every drill runs reps (desktop + iPhone 13), settings persist,
+  two-browser online run still in lockstep.
 
 ## Known issues / todo
 
@@ -410,7 +429,7 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   WR screens (bubble/smoke/tunnel 1–2 yds) are weak; PA shots (~15 ypp) and TE seams/Four Verts
   (11–13) are strong, so their AI weights are low. Jet sweep ~5.6 yds; Orbit Flat weak (~1.4).
 - The human read-option window is short (0.5 s mesh): plan KEEP before the snap or tap during the mesh.
-- Client bundle is 1.6 MB (Phaser); code-split later (M12). Portraits not yet in the client.
+- Portraits not yet in the client. Phaser chunk is still 1.5 MB (loaded at the first game).
 - Two-point tries pick a random non-deep play.
 - Return TDs are very rare (~0 per game; NFL ~0.02/team-game): coverage pursuit wins most races.
 - No penalties on kicks yet (holding on returns, running into the kicker, kick catch interference).
@@ -427,8 +446,9 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   rollback re-simulates the whole play (fine at ~1 ms a play; snapshot/restore if plays get heavier);
   online two-point tries and onside recoveries are human-vs-human but untested by the browser script;
   no rematch side swap; rooms live in memory (a server restart ends games; SQLite later for accounts).
-- **Presentation follow-ups:** spec's pre-snap matchup arrows (toggle) and Tutorial coverage-read
-  hints not done; a forced Pro camera on a portrait phone is small (Auto picks Bowl there); sprites
+- **Practice follow-ups:** drills have no scripted coaching mid-play; the coverage read only names the
+  call (no live arrows). Online play ignores the text size of the Phaser canvas (only HTML UI scales).
+- **Presentation follow-ups:** spec's pre-snap matchup arrows (toggle) not done; a forced Pro camera on a portrait phone is small (Auto picks Bowl there); sprites
   are placeholders (side profile in Pro, back/front in Bowl); replays don't auto-play after highlights
   (open them with REPLAY or from the summary); highlights aren't saved across games yet.
 - **Modes follow-ups:** leaderboard submissions are plausibility-checked only (replay-verify the
@@ -436,10 +456,7 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   SQLite file is lost on redeploys until a paid disk is attached (`render.yaml` has it commented);
   Daily later rounds differ between players (offers adapt to your picks); SIM is allowed in both modes
   (shown as "(sim)"); no Glicko / rating deviation; ranked pairing is first-fit in queue order.
-- **Franchise follow-ups:** the engine concentrates sacks and tackles on elite players (team totals are
-  realistic, ~2 sacks/game, but a top rusher can post 10+ in a game and ~60 in a season; top tacklers
-  ~15/game), so season records look inflated: spread credit / cap individual dominance in the engine;
-  player morale per player, playing-time morale and trade value of picks are not modelled; AI teams
+- **Franchise follow-ups:** individual sack / tackle concentration was capped in M12 (decision 22); re-check season records after a full franchise season; player morale per player, playing-time morale and trade value of picks are not modelled; AI teams
   don't trade with each other; no multi-week injuries for AI starters' depth (they auto-sub); the
   rookie draft has no draft-day trades; one franchise sims only in the open tab.
 - Draft extras not done: draft card share image, spectator link, daily draft (M10), drag-and-drop

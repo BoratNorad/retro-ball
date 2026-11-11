@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import Phaser from "phaser";
 import type { DefenseCall, OffensePlay } from "@tdf/shared";
 import { HOT_ROUTES, runRate, situation, type MotionKind, type PlayCall, type Tendencies, type UserInput } from "@tdf/sim";
 type UserInputAction = NonNullable<UserInput["action"]>;
 import { loadClientData, type ClientData } from "../data.js";
-import { Controller, ordinal, spotText, toGoText, type AbilityCtx, type UiState } from "../game/controller.js";
-import { FieldScene } from "../render/FieldScene.js";
+import { Controller, keysOf, ordinal, spotText, toGoText, type AbilityCtx, type UiState } from "../game/controller.js";
 import { helmetCanvas } from "../render/sprites.js";
 import { AbilitiesToggle } from "./AbilitiesToggle.js";
 import { DraftScreen, DraftSetup, Lineup, PostDraft, type DraftConfigUi } from "./Draft.js";
 import { OnlineScreen } from "./Online.js";
 import { Leaderboards, ModeScreen } from "./Modes.js";
 import { FranchiseScreen } from "./Franchise.js";
+import { PracticeScreen } from "./Practice.js";
 import { deleteTeam, loadTeam, savedTeams } from "./saved.js";
 import { applyAudioSettings, GameSummary, ReplayBar, SettingsPanel } from "./Presentation.js";
 import { audio } from "../audio/audio.js";
@@ -19,7 +18,7 @@ import { hasOnlineSeat } from "../net/client.js";
 import type { Draft, Roster } from "@tdf/sim";
 
 type Screen = { kind: "loading" } | { kind: "error"; msg: string } | { kind: "menu" } | { kind: "game"; ctl: Controller; back?: Screen }
-  | { kind: "online" } | { kind: "gauntlet" } | { kind: "daily" } | { kind: "boards" } | { kind: "franchise" }
+  | { kind: "online" } | { kind: "gauntlet" } | { kind: "daily" } | { kind: "boards" } | { kind: "franchise" } | { kind: "practice" }
   | { kind: "draftSetup"; mode: "ai" | "hotseat" } | { kind: "draft"; cfg: DraftConfigUi }
   | { kind: "postDraft"; cfg: DraftConfigUi; d: Draft; rosters: [Roster, Roster] }
   | { kind: "lineup"; cfg: DraftConfigUi; d: Draft; rosters: [Roster, Roster]; side: 0 | 1 };
@@ -49,6 +48,7 @@ export function App() {
     onDraft={(mode) => setScreen({ kind: "draftSetup", mode })} onOnline={() => setScreen({ kind: "online" })} onMode={(k) => setScreen({ kind: k })} />;
   if (screen.kind === "gauntlet" || screen.kind === "daily") return <ModeScreen cd={c} kind={screen.kind} onExit={() => setScreen({ kind: "menu" })} />;
   if (screen.kind === "boards") return <Leaderboards onExit={() => setScreen({ kind: "menu" })} />;
+  if (screen.kind === "practice") return <PracticeScreen cd={c} onExit={() => setScreen({ kind: "menu" })} />;
   if (screen.kind === "franchise") return <FranchiseScreen cd={c} onExit={() => setScreen({ kind: "menu" })} />;
   if (screen.kind === "online") return <OnlineScreen cd={c} onExit={() => setScreen({ kind: "menu" })} />;
   if (screen.kind === "draftSetup") return <DraftSetup cd={c} mode={screen.mode} onBack={() => setScreen({ kind: "menu" })} onStart={(cfg) => setScreen({ kind: "draft", cfg })} />;
@@ -82,7 +82,7 @@ function exhibitionRoster(cd: ClientData, key: string) {
   return cd.roster(key.startsWith("saved:") ? cd.data.teams.teams[0]!.abbr : key);
 }
 
-function Menu({ cd, onStart, onDraft, onOnline, onMode }: { cd: ClientData; onStart: (user: string, opp: string, quarterMinutes: number) => void; onDraft: (mode: "ai" | "hotseat") => void; onOnline: () => void; onMode: (k: "gauntlet" | "daily" | "boards" | "franchise") => void }) {
+function Menu({ cd, onStart, onDraft, onOnline, onMode }: { cd: ClientData; onStart: (user: string, opp: string, quarterMinutes: number) => void; onDraft: (mode: "ai" | "hotseat") => void; onOnline: () => void; onMode: (k: "gauntlet" | "daily" | "boards" | "franchise" | "practice") => void }) {
   const [settings, setSettings] = useState(false);
   const [saved, setSaved] = useState(() => savedTeams());
   const teams = [...cd.data.teams.teams].sort((a, b) => a.name.localeCompare(b.name));
@@ -103,6 +103,7 @@ function Menu({ cd, onStart, onDraft, onOnline, onMode }: { cd: ClientData; onSt
         <button class="play" onClick={() => onMode("daily")}><b>DAILY DRAFT</b><small>today's draft is the same for everyone · 5 games · leaderboard</small></button>
         <button class="play" onClick={() => onDraft("ai")}><b>TRIPLE DRAFT vs AI</b><small>draft 24 real players, then play</small></button>
         <button class="play" onClick={() => onDraft("hotseat")}><b>HOT-SEAT DRAFT</b><small>two players, one device</small></button>
+        <button class="play" onClick={() => onMode("practice")}><b>PRACTICE</b><small>guided drills: passing, running, kicking, coverage reads, motion, defense</small></button>
         <button class="play" onClick={() => onMode("boards")}><b>LEADERBOARDS</b><small>daily, gauntlet and the ranked ladder</small></button>
       </div>
       <div class="sub">OR PLAY AN EXHIBITION WITH REAL NFL ROSTERS{saved.length ? " OR YOUR SAVED TEAMS" : ""}</div>
@@ -151,25 +152,33 @@ function Menu({ cd, onStart, onDraft, onOnline, onMode }: { cd: ClientData; onSt
 // ---------------------------------------------------------------- game
 function useUi(ctl: Controller): UiState {
   const [ui, setUi] = useState(ctl.ui);
-  useEffect(() => ctl.subscribe(() => setUi(ctl.ui)), [ctl]);
+  // sync once on subscribe too: the controller may have moved on before this effect ran
+  useEffect(() => { const off = ctl.subscribe(() => setUi(ctl.ui)); setUi(ctl.ui); return off; }, [ctl]);
   return ui;
 }
 
-export function Game({ ctl, onExit, exitLabel = "PLAY AGAIN", extra, banner }: {
+export function Game({ ctl, onExit, exitLabel = "PLAY AGAIN", extra, banner, overlay }: {
   ctl: Controller; onExit: () => void; exitLabel?: string;
   /** more buttons on the final screen (online: leave) */ extra?: preact.ComponentChildren;
   /** a status line over the field (online: connection) */ banner?: string | null;
+  /** extra panel over the field (practice drills) */ overlay?: preact.ComponentChildren;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const ui = useUi(ctl);
   useEffect(() => {
-    const game = new Phaser.Game({
-      type: Phaser.AUTO, parent: host.current!, backgroundColor: "#12141c", pixelArt: true,
-      scale: { mode: Phaser.Scale.RESIZE, width: host.current!.clientWidth, height: host.current!.clientHeight },
-      input: { activePointers: 2 },
+    // Phaser + the field scene are a separate chunk, loaded when the first game starts (M12)
+    let game: { destroy(b: boolean): void } | null = null, dead = false;
+    void Promise.all([import("phaser"), import("../render/FieldScene.js")]).then(([{ default: Phaser }, { FieldScene }]) => {
+      if (dead || !host.current) return;
+      const g = new Phaser.Game({
+        type: Phaser.AUTO, parent: host.current, backgroundColor: "#12141c", pixelArt: true,
+        scale: { mode: Phaser.Scale.RESIZE, width: host.current.clientWidth, height: host.current.clientHeight },
+        input: { activePointers: 2 },
+      });
+      g.scene.add("field", FieldScene, true, { ctl });
+      game = g;
     });
-    game.scene.add("field", FieldScene, true, { ctl });
-    return () => game.destroy(true);
+    return () => { dead = true; game?.destroy(true); };
   }, [ctl]);
   useKeyboard(ctl);
   useEffect(() => { audio.crowd(0.45); return () => audio.crowd(0); }, [ctl]);
@@ -196,6 +205,7 @@ export function Game({ ctl, onExit, exitLabel = "PLAY AGAIN", extra, banner }: {
         </div>
       )}
       {banner && <div class="netbanner">{banner}</div>}
+      {overlay}
       {ui.toast && ui.mode === "result" && <div class="toast">{ui.toast}</div>}
       {ui.bigToast && <div class="bigtoast">{ui.bigToast}</div>}
       <div class={`bottom ${ui.replaying ? "hidden" : ""}`}>
@@ -723,18 +733,20 @@ function useKeyboard(ctl: Controller) {
       else if (ctl.input.move && [...keys].length === 0) ctl.input.move = null;
     };
     const down = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement | null)?.tagName === "INPUT") return;
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-      if (k === "Enter") { ctl.snapBall(); return; }
-      if (k === "v" && ctl.ui.mode !== "live") { ctl.setCamera(ctl.cameraFor(window.innerWidth, window.innerHeight) === "pro" ? "bowl" : "pro"); return; }
+      const K = keysOf(ctl.settings);
+      if (k === K.snap) { ctl.snapBall(); return; }
+      if (k === K.camera && ctl.ui.mode !== "live") { ctl.setCamera(ctl.cameraFor(window.innerWidth, window.innerHeight) === "pro" ? "bowl" : "pro"); return; }
       if (ctl.live?.userDefense) {
-        // defense: Space dive, E swat, Q strip, Tab/C switch
-        const m: Record<string, UserInputAction> = { " ": "dive", e: "swat", q: "strip", Tab: "switch", c: "switch" };
-        if (m[k]) { ctl.input.action = m[k]; e.preventDefault(); return; }
+        const m: [string, UserInputAction][] = [[K.dive, "dive"], [K.swat, "swat"], [K.strip, "strip"], [K.switch, "switch"]];
+        const hit = m.find(([key]) => key === k);
+        if (hit) { ctl.input.action = hit[1]; e.preventDefault(); return; }
       } else {
-        if (k === " ") { ctl.input.action = ctl.ui.canKeep ? "keep" : "juke"; e.preventDefault(); return; }
-        if (k === "e") { ctl.input.action = "spin"; return; }
-        if (k === "Shift") { ctl.input.action = "burst"; return; }
-        if (k === "r") { ctl.input.action = "scramble"; return; }
+        if (k === K.juke) { ctl.input.action = ctl.ui.canKeep ? "keep" : "juke"; e.preventDefault(); return; }
+        if (k === K.spin) { ctl.input.action = "spin"; return; }
+        if (k === K.burst) { ctl.input.action = "burst"; return; }
+        if (k === K.scramble) { ctl.input.action = "scramble"; return; }
       }
       keys.add(k); update();
     };

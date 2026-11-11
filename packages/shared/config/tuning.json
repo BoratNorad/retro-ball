@@ -1,5 +1,5 @@
 {
-  "_doc": "Play-engine tuning. Distances in yards, speeds in yards/second, times in seconds, probabilities in per-mille (out of 1000). Ratings are 0-99. 'per' = change per rating point.",
+  "_doc": "Play-engine tuning. Distances in yards, speeds in yards/second, times in seconds, probabilities in per-mille (out of 1000). Ratings are 0-99. 'per' = change per rating point. blocking.passGapMax / runGapMax = the largest blocker-vs-rusher rating gap that changes how long a block holds (stars win fast, not instantly). tackle.assistRange / assistShare = a tackle is credited to one of the defenders within assistRange of the carrier assistShare of the time (assisted tackles).",
   "field": {
     "width": 53.333,
     "hashHalfGap": 3.1,
@@ -27,7 +27,9 @@
     "runHoldJitter": 0.36,
     "doubleTeamMult": 1.7,
     "shedStun": 0.35,
-    "pushPer": 0.012
+    "pushPer": 0.012,
+    "passGapMax": 10,
+    "runGapMax": 20
   },
   "qb": {
     "readStartAfterDrop": 0.15,
@@ -117,7 +119,9 @@
     "fallForwardMax": 3.8,
     "fallForwardBase": 2.05,
     "afterContactPowerPer": 0.05,
-    "fallForwardReceiverMult": 0.5
+    "fallForwardReceiverMult": 0.5,
+    "assistRange": 4,
+    "assistShare": 0.85
   },
   "carrier": {
     "lookAhead": 9,

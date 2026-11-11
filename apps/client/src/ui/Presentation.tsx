@@ -3,12 +3,13 @@
 import { useEffect, useState } from "preact/hooks";
 import { drives } from "@tdf/sim";
 import { audio } from "../audio/audio.js";
-import { loadSettings, saveSettings, type Controller, type PlayRecord, type Settings } from "../game/controller.js";
+import { applyTextSize, DEFAULT_KEYS, keysOf, loadSettings, saveSettings, type Controller, type KeyAction, type PlayRecord, type Settings } from "../game/controller.js";
 import type { ClientData } from "../data.js";
 import { BoxScore } from "./BoxScore.js";
 
 /** Apply the saved audio settings (call at start and after every change). */
 export function applyAudioSettings(cd: ClientData, s: Settings = loadSettings()) {
+  applyTextSize(s);
   audio.configure(cd.data.presentation.audio, { sound: s.sound !== false, music: s.music !== false, volume: s.volume ?? 1 });
 }
 
@@ -20,8 +21,23 @@ export function SettingsPanel({ cd, ctl, onClose }: { cd: ClientData; ctl?: Cont
     saveSettings(n);
     if (ctl) { ctl.settings = n; ctl.setCamera(n.camera ?? "auto"); }
     applyAudioSettings(cd, n);
+    applyTextSize(n);
     audio.play("click");
   };
+  const [listening, setListening] = useState<KeyAction | null>(null);
+  useEffect(() => {
+    if (!listening) return;
+    const on = (e: KeyboardEvent) => {
+      e.preventDefault(); e.stopPropagation();
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      if (k !== "Escape") put({ keys: { ...(s.keys ?? {}), [listening]: k } });
+      setListening(null);
+    };
+    window.addEventListener("keydown", on, { capture: true });
+    return () => window.removeEventListener("keydown", on, { capture: true });
+  }, [listening]);
+  const keyName = (k: string) => (k === " " ? "SPACE" : k.toUpperCase());
+  const K = keysOf(s);
   const Chip = ({ on, label, onClick }: { on: boolean; label: string; onClick: () => void }) => <button class={`chip ${on ? "on" : ""}`} onClick={onClick}>{label}</button>;
   const cam = s.camera ?? "auto";
   return (
@@ -40,6 +56,12 @@ export function SettingsPanel({ cd, ctl, onClose }: { cd: ClientData; ctl?: Cont
         <div class="row"><span class="lbl">MOTION</span>
           <Chip on={!s.reducedMotion} label="FULL" onClick={() => put({ reducedMotion: false })} />
           <Chip on={Boolean(s.reducedMotion)} label="REDUCED (NO SHAKE / SLOW-MO / CONFETTI)" onClick={() => put({ reducedMotion: true })} /></div>
+        <div class="row"><span class="lbl">TEXT SIZE</span>
+          {[1, 1.15, 1.3].map((v) => <Chip on={(s.textSize ?? 1) === v} label={v === 1 ? "NORMAL" : v === 1.15 ? "LARGE" : "LARGEST"} onClick={() => put({ textSize: v })} />)}</div>
+        <div class="row keymap"><span class="lbl">KEYS</span>
+          {(Object.keys(DEFAULT_KEYS) as KeyAction[]).map((a) => <button class={`chip ${listening === a ? "on" : ""}`} onClick={() => setListening(a)}>{a.toUpperCase()}: {listening === a ? "PRESS A KEY…" : keyName(K[a])}</button>)}
+          <Chip on={false} label="RESET KEYS" onClick={() => put({ keys: {} })} /></div>
+        <p class="hint">Arrows / WASD always steer. Offense keys: juke, spin, burst, scramble; defense keys: dive, swat, strip, switch.</p>
         <div class="row"><span class="lbl">HAPTICS</span>
           <Chip on={Boolean(s.haptics)} label={s.haptics ? "VIBRATE ON HITS" : "OFF"} onClick={() => put({ haptics: !s.haptics })} /></div>
         <div class="row"><button class="big" onClick={onClose}>DONE</button></div>

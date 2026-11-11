@@ -509,7 +509,8 @@ export class FieldScene extends Phaser.Scene {
         for (const pt of r.pts) { const p1 = P(pt.x, pt.y); g.lineBetween(p0.x, p0.y, p1.x, p1.y); p0 = p1; }
         g.fillStyle(hot ? 0xff5a4e : 0xffd23e, 1).fillCircle(p0.x, p0.y, S * 0.35);
       }
-      return;
+      // practice: the coverage read (normally you never see the other side's assignments)
+      if (!this.ctl.coverageHints) return;
     }
     const qb = cur.actors.find((a) => a.side === "O" && a.role === "QB")!;
     for (const as of cur.assign) {

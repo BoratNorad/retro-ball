@@ -122,6 +122,8 @@ export interface SnapOptions {
   offActive?: ArmedActive | null;
   /** online: which side called the timeout (else the human, when `timeout`) */
   timeoutBy?: Side;
+  /** practice drills: the defense's call (and front), whatever the AI would pick */
+  practiceDefense?: { call: DefenseCall; front?: string };
 }
 
 /** A live scrimmage play in progress. */
@@ -340,6 +342,8 @@ export class GameSession {
       : this.preview ?? chooseScrimmage(s, offense, defense, data, ratings, rng, this.tend[off], this.tend[def], (b) => this.kickChanceFor("fieldGoal", b));
     this.preview = null;
     if (dec.kind === "play" && defCalls && opts.defCall) dec = { ...dec, call: opts.defCall, front: opts.defFront ?? dec.front };
+    // practice drills: a fixed defensive look
+    if (dec.kind === "play" && opts.practiceDefense) dec = { ...dec, call: opts.practiceDefense.call, front: opts.practiceDefense.front ?? dec.front };
     if (dec.kind === "punt" || dec.kind === "fieldGoal") return { live: this.startKick(s, before, dec.kind, opts) };
     if (dec.kind === "fake") {
       // the fake comes out of the kicking unit; the defense lined up for the kick it expected

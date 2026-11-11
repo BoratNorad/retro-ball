@@ -199,3 +199,14 @@ table.roster td.acts { display: flex; gap: 3px; flex-wrap: wrap; }
 table.roster td.acts .chip { padding: 3px 5px; font-size: 7px; }
 .leadgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
 .nextgame.event { border-color: #ff7a6b; }
+/* M12 practice */
+.drillpanel { position: absolute; top: calc(44px + env(safe-area-inset-top)); left: 6px; right: 6px; background: #000d; border: 3px solid var(--gold); padding: 6px 8px; z-index: 5; font-size: 11px; max-width: 560px; }
+.drillpanel ol { margin: 6px 0 2px 18px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.drillpanel .tag.gold { color: var(--gold); }
+.drillpanel .coverread { color: #7fd6ff; margin-top: 4px; }
+.drillpanel .verdict { font-family: var(--pixel); font-size: 10px; margin-top: 6px; display: flex; gap: 8px; align-items: center; }
+.drillpanel .verdict.ok { color: #9be07f; }
+.drillpanel .verdict.no { color: #ff7a6b; }
+/* M12 accessibility: UI text scale (the field canvas keeps its own size) */
+.menu, .sheet, .bar, .bug, .overlay, .drillpanel, .replaybar, .hudbtns, .toast, .netbanner, .draft { zoom: var(--ts, 1); }
+.keymap .chip { font-size: 8px; }
