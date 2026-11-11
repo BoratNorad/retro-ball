@@ -188,6 +188,38 @@ export const RulesConfigSchema = z.object({
 });
 export type RulesConfig = z.infer<typeof RulesConfigSchema>;
 
+// ---------------------------------------------------------------- playbook
+const XY = z.tuple([z.number(), z.number()]);
+export const FormationsFileSchema = z.object({
+  roles: z.object({ offense: z.record(z.string(), z.string()), defense: z.record(z.string(), z.string()) }),
+  offense: z.array(z.object({ id: z.string(), name: z.string(), personnel: z.string(), spots: z.record(z.string(), XY) })),
+  defense: z.array(z.object({ id: z.string(), name: z.string(), spots: z.record(z.string(), XY), alignOn: z.record(z.string(), z.string()).optional() })),
+});
+export type FormationsFile = z.infer<typeof FormationsFileSchema>;
+export const RoutesFileSchema = z.object({
+  routes: z.record(z.string(), z.object({ points: z.array(XY), settle: z.boolean().optional(), block: z.boolean().optional() })),
+});
+export type RoutesFile = z.infer<typeof RoutesFileSchema>;
+export const OffensePlaySchema = z.object({
+  id: z.string(), name: z.string(), kind: z.enum(["run", "pass"]), formations: z.array(z.string()).min(1),
+  weight: z.number().nonnegative(), tags: z.array(z.string()),
+  carrier: z.string().optional(), aim: XY.optional(), block: z.enum(["zone", "man"]).optional(),
+  drop: z.number().optional(), routes: z.record(z.string(), z.string()).optional(), read: z.array(z.string()).optional(),
+});
+export type OffensePlay = z.infer<typeof OffensePlaySchema>;
+export const OffenseFileSchema = z.object({ plays: z.array(OffensePlaySchema).min(1) });
+const Assignment = z.union([z.literal("rush"), z.literal("spy"), z.object({ man: z.string() }), z.object({ zone: z.string() })]);
+export const DefenseCallSchema = z.object({
+  id: z.string(), name: z.string(), formation: z.string(), weight: z.number().nonnegative(), tags: z.array(z.string()),
+  roles: z.record(z.string(), Assignment),
+});
+export type DefenseCall = z.infer<typeof DefenseCallSchema>;
+export const DefenseFileSchema = z.object({
+  zones: z.record(z.string(), z.object({ at: XY, r: z.number().positive(), deep: z.boolean().optional() })),
+  calls: z.array(DefenseCallSchema).min(1),
+});
+export type DefenseFile = z.infer<typeof DefenseFileSchema>;
+
 // ---------------------------------------------------------------- derived pool (output of tools/report/build_pool.ts)
 export const CreatureSchema = z.object({
   id: z.number().int(),

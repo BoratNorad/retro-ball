@@ -5,7 +5,7 @@ import { slotOverall } from "./creatures.js";
 
 /** A lineup: slot id (e.g. "QB", "WR", "CB") -> creature. Repeated slots (3 WRs) use suffixes "WR#2". */
 export type Lineup = Record<string, Creature>;
-export const slotBase = (slot: string) => slot.split("#")[0] as string;
+export const slotBase = (slot: string) => slot.replace(/#?\d+$/, "");
 
 export interface UnitGrade { score: number; letter: string }
 export interface TeamGrade {

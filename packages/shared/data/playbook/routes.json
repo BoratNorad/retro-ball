@@ -1,0 +1,19 @@
+{
+  "_doc": "Route waypoints relative to the receiver's alignment: [out, depth] where out = yards toward HIS sideline (negative = inside). settle: stop and sit at the end (find space). Otherwise he keeps running in the last direction.",
+  "routes": {
+    "go":       { "points": [[1, 4], [1, 45]] },
+    "seam":     { "points": [[0, 4], [-1, 45]] },
+    "slant":    { "points": [[0, 2], [-6, 8], [-16, 16]] },
+    "out":      { "points": [[0, 10], [10, 10]], "settle": true },
+    "dig":      { "points": [[0, 13], [-14, 13], [-24, 14]] },
+    "curl":     { "points": [[0, 13], [-1.5, 11]], "settle": true },
+    "comeback": { "points": [[0, 16], [2.5, 13]], "settle": true },
+    "post":     { "points": [[0, 12], [-7, 22], [-12, 40]] },
+    "corner":   { "points": [[0, 11], [8, 20], [11, 26]] },
+    "drag":     { "points": [[0, 2], [-22, 5], [-30, 6]] },
+    "flat":     { "points": [[3, 1], [10, 2]], "settle": true },
+    "hitch":    { "points": [[0, 6], [0, 5]], "settle": true },
+    "swing":    { "points": [[4, -1], [9, 1]], "settle": true },
+    "block":    { "points": [], "block": true }
+  }
+}

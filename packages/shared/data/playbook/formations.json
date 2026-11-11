@@ -1,0 +1,22 @@
+{
+  "_doc": "Alignments relative to the ball: x yards (+ = offense's right), y yards (offense < 0 behind the line, defense > 0 off the line). Offense roles map to roster slots in roles.offense; defense roles in roles.defense. alignOn: defender lines up over that offensive role (x from the receiver, y from the spot).",
+  "roles": {
+    "offense": { "QB": "QB", "RB": "RB", "X": "WR1", "Z": "WR2", "SLOT": "WR3", "TE": "TE", "LT": "LT", "LG": "LG", "C": "C", "RG": "RG", "RT": "RT" },
+    "defense": { "LDE": "DE1", "LDT": "DT1", "RDT": "DT2", "RDE": "DE2", "WLB": "OLB1", "MLB": "MLB", "SLB": "OLB2", "LCB": "CB1", "RCB": "CB2", "FS": "FS", "SS": "SS" }
+  },
+  "offense": [
+    { "id": "gun_doubles", "name": "Shotgun Doubles", "personnel": "11",
+      "spots": { "QB": [0, -5], "RB": [1.5, -5], "X": [-20, -1], "Z": [20, -1], "SLOT": [-9, -1.5], "TE": [4.5, -1.2],
+                 "LT": [-4.6, -1], "LG": [-2.3, -1], "C": [0, -1], "RG": [2.3, -1], "RT": [4.6, -1] } },
+    { "id": "singleback", "name": "Singleback", "personnel": "11",
+      "spots": { "QB": [0, -1.5], "RB": [0, -7], "X": [-19, -1], "Z": [19, -1], "SLOT": [-9, -1.5], "TE": [4.5, -1.2],
+                 "LT": [-4.6, -1], "LG": [-2.3, -1], "C": [0, -1], "RG": [2.3, -1], "RT": [4.6, -1] } }
+  ],
+  "defense": [
+    { "id": "base43", "name": "4-3 Base",
+      "spots": { "LDE": [-5.6, 1], "LDT": [-1.6, 1], "RDT": [1.6, 1], "RDE": [5.6, 1],
+                 "WLB": [-4.5, 4.5], "MLB": [0, 5], "SLB": [4.5, 4.5],
+                 "LCB": [-19, 6], "RCB": [19, 6], "FS": [-5, 13], "SS": [6, 10] },
+      "alignOn": { "LCB": "X", "RCB": "Z" } }
+  ]
+}
