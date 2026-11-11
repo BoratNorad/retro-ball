@@ -36,6 +36,8 @@ export type ClientMsg =
   | { t: "create"; settings: RoomSettings; team: TeamSetupWire }
   | { t: "join"; code: string; team: TeamSetupWire }
   | { t: "quick"; team: TeamSetupWire }
+  /** ranked queue (M10): a guest account from POST /api/account */
+  | { t: "ranked"; team: TeamSetupWire; account: { id: string; secret: string } }
   | { t: "leave" }
   | { t: "pick"; cardId: number; slot: string | null }
   | { t: "reroll" }
@@ -55,7 +57,7 @@ export type ClientMsg =
 export type ServerMsg =
   | { t: "welcome"; token: string }
   | { t: "error"; msg: string }
-  | { t: "room"; code: string; side: Side; phase: RoomPhase; settings: RoomSettings; seats: [SeatInfo | null, SeatInfo | null]; quick: boolean }
+  | { t: "room"; code: string; side: Side; phase: RoomPhase; settings: RoomSettings; seats: [SeatInfo | null, SeatInfo | null]; quick: boolean; ranked: boolean }
   /** draft log entries from action `from` on; reset = this is the whole log (start, reconnect, resync) */
   | { t: "draft"; init: DraftInit; from: number; actions: DraftAction[]; reset: boolean }
   /** the draft's pick timer */
@@ -73,4 +75,6 @@ export type ServerMsg =
   /** state checksum after `at` match actions */
   | { t: "sum"; at: number; sum: string }
   | { t: "results"; forfeit: Side | null; rematch: [boolean, boolean] }
-  | { t: "pong"; at: number };
+  | { t: "pong"; at: number }
+  /** ranked: the rating change after the game (season = YYYY-MM) */
+  | { t: "rating"; season: string; before: number; after: number; opponent: string };

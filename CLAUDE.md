@@ -22,6 +22,7 @@ decisions and milestone status. Keep it updated.
 | Play x coverage yardage table | `pnpm tsx tools/sim/matrix.ts 60` (`KIND=run` for runs) |
 | Kicking physics calibration (FG % by distance, punt/kickoff depth) | `pnpm tsx tools/sim/kicks.ts` |
 | Effect of each active ability / signature (armed vs not) | `pnpm tsx tools/sim/abilities.ts` (`ONLY=battering_ram,sig:RB N=70`) |
+| Boss Gauntlet difficulty (drafted team vs bosses by strength) | `pnpm tsx tools/sim/gauntlet.ts 30` |
 | Every play vs AI-chosen fronts/calls | `pnpm tsx tools/sim/plays.ts 60` (`ONLY=regex`, `BY=formation`) |
 | Trace/probe a formation or front | add `FORM=gun_trips FRONT=nickel PERS=11` to `trace.ts` / `probe.ts` |
 | Re-fit team-grade weights to what wins | `RANDOM_ROSTERS=1 FIT_OUT=/tmp/fit.jsonl pnpm sim:harness --games 10000` then `python3 tools/import/fit_grade_weights.py /tmp/fit.jsonl --write` |
@@ -44,15 +45,18 @@ packages/sim      headless core: seeded RNG, Q16.16 fixed-point maths, cards.ts 
                   coach.ts (AI play calling + clock management), game.ts (full game loop + box score),
                   draft.ts (Triple Draft engine, AI drafters, spread prediction),
                   online.ts (match/draft action logs, OnlineMatch, wire rosters/inputs), net.ts (client/server messages),
-                  replay.ts (replay frames from seed + inputs, highlights, drive chart)
+                  replay.ts (replay frames from seed + inputs, highlights, drive chart),
+                  modes.ts (League Boss rosters, Boss Gauntlet season + playoffs, Daily Draft, Elo)
 apps/client       Vite + Phaser 3 + Preact: src/game/controller.ts (GameSession + 30 Hz live loop + UI state),
                   src/game/netcontroller.ts (online match: decisions -> server, rollback), src/net/client.ts (socket + replicas),
                   src/ui/Online.tsx (lobby, room, online draft, lineup, match),
                   src/render/FieldScene.ts (both cameras, sprites, slingshot aim, steer-to-finger, replays, juice),
                   src/render/view.ts (Bowl / Pro projections), src/audio/audio.ts (generated SFX, music, crowd),
-                  src/ui/Presentation.tsx (settings, replay bar, halftime/final summary), src/ui/*.tsx (menus, HUD),
+                  src/ui/Presentation.tsx (settings, replay bar, halftime/final summary), src/ui/Modes.tsx (Gauntlet / Daily
+                  hubs, leaderboards, name), src/ui/saved.ts (saved teams), src/net/api.ts (accounts, boards), src/ui/*.tsx (menus, HUD),
                   src/ui/Draft.tsx (draft setup / board / reveal / post-draft / lineup builder)
-apps/server       online game server (M8): ws rooms, timers, referee (src/room.ts), sockets/codes/quick match (src/server.ts)
+apps/server       online game server (M8): ws rooms, timers, referee (src/room.ts), sockets/codes/quick match/ranked queue +
+                  HTTP API (src/server.ts), SQLite accounts/ratings/leaderboards (src/store.ts, node:sqlite)
 apps/dex          Gridiron Dex, the original static roster browser (kept working; parts get ported to client)
 tools/import      Python importers (Madden xlsx + nflverse → JSON), position-weight fitter, headshot baker, icon maker
 tools/report      TS build/report scripts (pool.json, distribution report)
@@ -210,6 +214,22 @@ data/raw          source spreadsheet
     loops for menu/draft, jsfxr-style SFX, filtered-noise crowd); `public/audio/manifest.json` maps any
     sound id to a file to replace it. Numbers in `config/presentation.json`.
 
+20. **Modes (M10).** *League Bosses* (`data/bosses.json`) are original themed teams built from the real pool:
+    each slot takes a natural player near a target overall (`bossRoster`, focus groups + `focusBoost`),
+    with the boss's base offense and a signature defensive scheme (`coach.json defStyles`: call-weight
+    multipliers by tag, e.g. the Blitz Brigade blitzes ~3x). *Boss Gauntlet* = draft vs AI, then a
+    17-week season (every boss but the final one, strength rising 70 → 82), 10+ wins = a 3-round
+    single-elimination bracket ending vs The Dynasty; play or SIM each game; the run is saved in the
+    browser; score = wins / playoff wins / capped point difference. *Daily Draft* = the day's seed
+    (UTC date) for the draft (same offers for everyone in round 1; later rounds depend on your picks)
+    and 5 bosses; one run per day. *Ranked* = online matches between guest accounts, Elo (K 32), monthly
+    seasons from 1200, pairing within a rating window that widens with the wait, no throw guide, no
+    rematch (queue again). *Accounts* are server-issued guest ids + secrets (only a hash stored), a
+    display name. *Leaderboards* (daily, gauntlet, ranked) are on the server (SQLite); submissions are
+    plausibility-checked (today's key, score range, account secret), not replay-verified yet.
+    *Saved teams*: any drafted team can be saved (post-draft) and picked in Exhibition. Numbers:
+    `config/modes.json`.
+
 ## Balance targets (for the M2 harness)
 
 Per team per game, arcade-realistic: 20–31 pts avg, 55–75 offensive plays, run/pass 42/58 ±8,
@@ -331,7 +351,19 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   included), drives add up. Checked with Playwright on desktop (Pro) and iPhone 13 (Bowl), and the
   two-browser online run still in lockstep. Fixed on the way: the pixel font family wasn't quoted, so
   every Phaser text fell back to a tiny default font.
-- [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
+- [x] **M10 Modes** (decision 20) — main menu: Online, Boss Gauntlet, Daily Draft, vs AI, Hot-seat,
+  Leaderboards, Exhibition (NFL rosters + saved teams). 12 League Bosses with schemes; Gauntlet hub
+  (schedule, next boss + scheme, PLAY / SIM / LINEUP, record, playoffs, run summary, NEW RUN); Daily
+  hub (today's 5 bosses, one try, auto-posted); leaderboards screen (daily / gauntlet / ranked ladder)
+  with a name box; ranked match in the online lobby (rating shown, rating change after the game).
+  Server: SQLite store (accounts, ratings per season, ranked matches, boards), `/api/account`,
+  `/api/rename`, `/api/me`, `/api/board`, `/api/submit`, ranked queue + Elo on results (forfeit = loss).
+  Tests: boss rosters (unique, deterministic, stronger with strength, focus), defStyles shift the AI's
+  calls, season / playoffs / perfect run / missed playoffs / daily determinism, Elo; server: accounts,
+  board validation + best-score keeping, a full ranked game over sockets moving both ratings equally.
+  Browser (Playwright): two browsers get the same Daily offers, a Daily run simmed and posted to the
+  board, a Gauntlet drafted + simmed + a boss game started, the leaderboard screen.
+- [ ] M11 Franchise · [ ] M12 Polish
 
 ## Known issues / todo
 
@@ -363,5 +395,10 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   hints not done; a forced Pro camera on a portrait phone is small (Auto picks Bowl there); sprites
   are placeholders (side profile in Pro, back/front in Bowl); replays don't auto-play after highlights
   (open them with REPLAY or from the summary); highlights aren't saved across games yet.
+- **Modes follow-ups:** leaderboard submissions are plausibility-checked only (replay-verify the
+  draft + game logs server-side later); free Render web services have no persistent disk, so the
+  SQLite file is lost on redeploys until a paid disk is attached (`render.yaml` has it commented);
+  Daily later rounds differ between players (offers adapt to your picks); SIM is allowed in both modes
+  (shown as "(sim)"); no Glicko / rating deviation; ranked pairing is first-fit in queue order.
 - Draft extras not done: draft card share image, spectator link, daily draft (M10), drag-and-drop
   lineup (tap-tap only), stamina-based auto-sub thresholds (no fatigue model yet).

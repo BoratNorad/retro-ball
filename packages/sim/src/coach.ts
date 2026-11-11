@@ -267,6 +267,9 @@ export function chooseDefense(s: GameState, data: GameData, rng: Rng, personnel 
     if (c.tags.includes("run")) w *= runBias;
     if (c.tags.includes("prevent")) w *= prevent ? 8 : 0.1;
     if (c.tags.includes("blitz") && prevent) w *= 0.2;
+    // a League Boss's signature scheme
+    const ds = defense?.defStyle ? C.defStyles[defense.defStyle] : undefined;
+    if (ds) for (const t of c.tags) w *= ds[t] ?? 1;
     return { ...c, weight: w, orig: c };
   });
   const call = weightedPick(calls, rng).orig;

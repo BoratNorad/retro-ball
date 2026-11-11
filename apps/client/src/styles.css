@@ -174,3 +174,14 @@ table.drives tr.score td { color: var(--gold); }
 .hllist { display: flex; flex-direction: column; gap: 6px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 .game > .overlay { z-index: 10; }
+/* M10 modes */
+.bosslist { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; max-width: 640px; }
+.bosslist .tag { display: inline-flex; align-items: center; gap: 4px; }
+.nextgame { border: 3px solid var(--gold); background: var(--panel); padding: 10px 12px; width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 6px; }
+.nextgame h2 { display: flex; align-items: center; gap: 8px; font-family: var(--pixel); font-size: 13px; margin: 0; }
+.nextgame h2 small { font-size: 9px; color: var(--gold); }
+.nextgame.done { border-color: #9be07f; }
+.hub table.sched { max-width: 560px; }
+table.drives tr.next td { color: #7fd6ff; }
+.teams.saved { border-bottom: 2px dashed #ffffff33; padding-bottom: 8px; }
+.namebox input { width: 10em; }

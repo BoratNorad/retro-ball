@@ -17,11 +17,13 @@ import type { ArmedActive } from "./engine/abilities.js";
 // ---------------------------------------------------------------- rosters on the wire
 export interface WireRoster {
   info: TeamInfo; starters: Record<string, number>; depth: Record<string, number>; bench: number[];
-  baseFront?: string; style?: OffenseStyle; kr?: number; pr?: number;
+  baseFront?: string; style?: OffenseStyle; defStyle?: string; kr?: number; pr?: number;
 }
 export function rosterToWire(r: Roster): WireRoster {
   const ids = (o: Record<string, PlayerCard>) => Object.fromEntries(Object.entries(o).map(([k, c]) => [k, c.id]));
-  return { info: r.info, starters: ids(r.starters), depth: ids(r.depth), bench: r.bench.map((c) => c.id), baseFront: r.baseFront, style: r.style, kr: r.kr, pr: r.pr };
+  const w: WireRoster = { info: r.info, starters: ids(r.starters), depth: ids(r.depth), bench: r.bench.map((c) => c.id), baseFront: r.baseFront, style: r.style, kr: r.kr, pr: r.pr };
+  if (r.defStyle) w.defStyle = r.defStyle;
+  return w;
 }
 export function rosterFromWire(w: WireRoster, byId: (id: number) => PlayerCard | undefined): Roster {
   const card = (id: number) => { const c = byId(id); if (!c) throw new Error(`unknown player ${id}`); return c; };
@@ -29,6 +31,7 @@ export function rosterFromWire(w: WireRoster, byId: (id: number) => PlayerCard |
   const r: Roster = { info: w.info, starters: map(w.starters), depth: map(w.depth), bench: w.bench.map(card) };
   if (w.baseFront) r.baseFront = w.baseFront;
   if (w.style) r.style = w.style;
+  if (w.defStyle) r.defStyle = w.defStyle;
   if (w.kr != null) r.kr = w.kr;
   if (w.pr != null) r.pr = w.pr;
   return r;

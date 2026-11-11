@@ -17,6 +17,8 @@ export interface ServerEnv {
   seed: () => string;
   /** wall clock in ms (injectable for tests) */
   now: () => number;
+  /** accounts, ratings, leaderboards */
+  store: import("./store.js").Store;
 }
 export interface Conn { send(m: ServerMsg): void }
 
@@ -67,6 +69,10 @@ export class Room {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pump: ReturnType<typeof setInterval> | null = null;
   closed = false;
+  /** ranked game: the two seats' accounts (side 0, side 1) */
+  ranked: [string, string] | null = null;
+  /** called once when a game ends (ranked rating updates) */
+  onResult: ((room: Room, score: [number, number], forfeit: Side | null) => void) | null = null;
 
   constructor(readonly code: string, readonly settings: RoomSettings, readonly env: ServerEnv, readonly quick: boolean) {}
 
@@ -120,7 +126,7 @@ export class Room {
     return s ? { team: s.team, connected: s.connected, ready: this.phase === "lineup" ? this.ready[s.side] : s.rematch } : null;
   }
   private broadcastRoom() {
-    for (const s of this.seats) if (s) this.send(s.side, { t: "room", code: this.code, side: s.side, phase: this.phase, settings: this.settings, seats: [this.seatInfo(this.seats[0]), this.seatInfo(this.seats[1])], quick: this.quick });
+    for (const s of this.seats) if (s) this.send(s.side, { t: "room", code: this.code, side: s.side, phase: this.phase, settings: this.settings, seats: [this.seatInfo(this.seats[0]), this.seatInfo(this.seats[1])], quick: this.quick, ranked: this.ranked !== null });
   }
   /** Everything a (re)connecting client needs to rebuild its view. */
   private sendState(seat: Seat) {
@@ -162,7 +168,7 @@ export class Room {
       case "in": if (this.phase === "match" && this.wait.step === "live" && m.play === this.liveIdx) this.onInputs(side, m.from, m.inputs); return;
       case "resync": this.sendState(seat); return;
       case "rematch":
-        if (this.phase !== "results") return;
+        if (this.phase !== "results" || this.ranked) return; // ranked: queue again for a new opponent
         seat.rematch = true;
         this.broadcastRoom();
         this.both({ t: "results", forfeit: this.forfeit, rematch: [Boolean(this.seats[0]?.rematch), Boolean(this.seats[1]?.rematch)] });
@@ -412,5 +418,10 @@ export class Room {
     this.setWait({ step: "final" });
     this.broadcastRoom();
     this.both({ t: "results", forfeit: this.forfeit, rematch: [false, false] });
+    const sc = this.match?.session.state.score ?? [0, 0];
+    this.onResult?.(this, [sc[0], sc[1]], this.forfeit);
+    this.onResult = null;
   }
+  /** send a message to one seat (ranked results) */
+  tell(side: Side, m: ServerMsg) { this.send(side, m); }
 }

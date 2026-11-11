@@ -26,6 +26,8 @@ export interface Roster {
   baseFront?: string;
   /** base offense (affects AI play calling and the Suggested list) */
   style?: OffenseStyle;
+  /** signature defensive scheme (coach.json defStyles; League Bosses) */
+  defStyle?: string;
   /** chosen kick / punt returners (player ids); default: the best KR on the roster */
   kr?: number; pr?: number;
 }

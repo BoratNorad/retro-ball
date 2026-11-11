@@ -10,13 +10,15 @@ import { helmetCanvas } from "../render/sprites.js";
 import { AbilitiesToggle } from "./AbilitiesToggle.js";
 import { DraftScreen, DraftSetup, Lineup, PostDraft, type DraftConfigUi } from "./Draft.js";
 import { OnlineScreen } from "./Online.js";
+import { Leaderboards, ModeScreen } from "./Modes.js";
+import { deleteTeam, loadTeam, savedTeams } from "./saved.js";
 import { applyAudioSettings, GameSummary, ReplayBar, SettingsPanel } from "./Presentation.js";
 import { audio } from "../audio/audio.js";
 import { hasOnlineSeat } from "../net/client.js";
 import type { Draft, Roster } from "@tdf/sim";
 
 type Screen = { kind: "loading" } | { kind: "error"; msg: string } | { kind: "menu" } | { kind: "game"; ctl: Controller; back?: Screen }
-  | { kind: "online" }
+  | { kind: "online" } | { kind: "gauntlet" } | { kind: "daily" } | { kind: "boards" }
   | { kind: "draftSetup"; mode: "ai" | "hotseat" } | { kind: "draft"; cfg: DraftConfigUi }
   | { kind: "postDraft"; cfg: DraftConfigUi; d: Draft; rosters: [Roster, Roster] }
   | { kind: "lineup"; cfg: DraftConfigUi; d: Draft; rosters: [Roster, Roster]; side: 0 | 1 };
@@ -42,8 +44,10 @@ export function App() {
   if (screen.kind === "loading") return <div class="center"><div class="title">LOADING…</div></div>;
   if (screen.kind === "error") return <div class="center"><div class="title">ERROR</div><p>{screen.msg}</p></div>;
   const c = cd!;
-  if (screen.kind === "menu") return <Menu cd={c} onStart={(u, o, q) => setScreen({ kind: "game", ctl: new Controller(c, [c.roster(u), c.roster(o)], q) })}
-    onDraft={(mode) => setScreen({ kind: "draftSetup", mode })} onOnline={() => setScreen({ kind: "online" })} />;
+  if (screen.kind === "menu") return <Menu cd={c} onStart={(u, o, q) => setScreen({ kind: "game", ctl: new Controller(c, [exhibitionRoster(c, u), exhibitionRoster(c, o)], q) })}
+    onDraft={(mode) => setScreen({ kind: "draftSetup", mode })} onOnline={() => setScreen({ kind: "online" })} onMode={(k) => setScreen({ kind: k })} />;
+  if (screen.kind === "gauntlet" || screen.kind === "daily") return <ModeScreen cd={c} kind={screen.kind} onExit={() => setScreen({ kind: "menu" })} />;
+  if (screen.kind === "boards") return <Leaderboards onExit={() => setScreen({ kind: "menu" })} />;
   if (screen.kind === "online") return <OnlineScreen cd={c} onExit={() => setScreen({ kind: "menu" })} />;
   if (screen.kind === "draftSetup") return <DraftSetup cd={c} mode={screen.mode} onBack={() => setScreen({ kind: "menu" })} onStart={(cfg) => setScreen({ kind: "draft", cfg })} />;
   if (screen.kind === "draft") return <DraftScreen cd={c} cfg={screen.cfg} onDone={(d) => setScreen({ kind: "postDraft", cfg: screen.cfg, d, rosters: [d.toRoster(0), d.toRoster(1)] })} />;
@@ -70,13 +74,21 @@ function Helmet({ team, scale = 3 }: { team: { abbr: string; c1: string; c2: str
   return <img class="helmet" src={src} alt={team.abbr} />;
 }
 
-function Menu({ cd, onStart, onDraft, onOnline }: { cd: ClientData; onStart: (user: string, opp: string, quarterMinutes: number) => void; onDraft: (mode: "ai" | "hotseat") => void; onOnline: () => void }) {
+/** An Exhibition team: an NFL abbreviation, or "saved:<id>" for a team saved after a draft. */
+function exhibitionRoster(cd: ClientData, key: string) {
+  if (key.startsWith("saved:")) { const t = savedTeams().find((x) => `saved:${x.id}` === key); const r = t && loadTeam(cd, t); if (r) return r; }
+  return cd.roster(key.startsWith("saved:") ? cd.data.teams.teams[0]!.abbr : key);
+}
+
+function Menu({ cd, onStart, onDraft, onOnline, onMode }: { cd: ClientData; onStart: (user: string, opp: string, quarterMinutes: number) => void; onDraft: (mode: "ai" | "hotseat") => void; onOnline: () => void; onMode: (k: "gauntlet" | "daily" | "boards") => void }) {
   const [settings, setSettings] = useState(false);
+  const [saved, setSaved] = useState(() => savedTeams());
   const teams = [...cd.data.teams.teams].sort((a, b) => a.name.localeCompare(b.name));
   const [user, setUser] = useState<string | null>(null);
   const [opp, setOpp] = useState<string | null>(null);
   const [qm, setQm] = useState(5);
   const picking = !user ? "YOUR TEAM" : "OPPONENT";
+  const label = (k: string) => (k.startsWith("saved:") ? saved.find((t) => `saved:${t.id}` === k)?.roster.info.abbr ?? "?" : k);
   return (
     <div class="menu">
       <h1>TRIPLE DRAFT <span>FOOTBALL</span></h1>
@@ -84,11 +96,29 @@ function Menu({ cd, onStart, onDraft, onOnline }: { cd: ClientData; onStart: (us
       {settings && <SettingsPanel cd={cd} onClose={() => setSettings(false)} />}
       <div class="plays modes">
         <button class="play online" onClick={onOnline}><b>ONLINE TRIPLE DRAFT</b><small>quick match or a private room · draft head to head, then play</small></button>
+        <button class="play" onClick={() => onMode("gauntlet")}><b>BOSS GAUNTLET</b><small>draft, then a 17-game season vs the League Bosses + playoffs</small></button>
+        <button class="play" onClick={() => onMode("daily")}><b>DAILY DRAFT</b><small>today's draft is the same for everyone · 5 games · leaderboard</small></button>
         <button class="play" onClick={() => onDraft("ai")}><b>TRIPLE DRAFT vs AI</b><small>draft 24 real players, then play</small></button>
         <button class="play" onClick={() => onDraft("hotseat")}><b>HOT-SEAT DRAFT</b><small>two players, one device</small></button>
+        <button class="play" onClick={() => onMode("boards")}><b>LEADERBOARDS</b><small>daily, gauntlet and the ranked ladder</small></button>
       </div>
-      <div class="sub">OR PLAY AN EXHIBITION WITH REAL NFL ROSTERS</div>
+      <div class="sub">OR PLAY AN EXHIBITION WITH REAL NFL ROSTERS{saved.length ? " OR YOUR SAVED TEAMS" : ""}</div>
       <div class="sub">PICK {picking}</div>
+      {saved.length > 0 && (
+        <div class="teams saved">
+          {saved.map((t) => {
+            const key = `saved:${t.id}`, i = t.roster.info;
+            return (
+              <button class={`team ${user === key ? "you" : ""} ${opp === key ? "them" : ""}`} disabled={user === key} title={i.name}
+                onClick={() => (!user ? setUser(key) : setOpp(key))}
+                onContextMenu={(e) => { e.preventDefault(); if (confirm(`Delete ${i.name}?`)) { deleteTeam(t.id); setSaved(savedTeams()); } }}>
+                <Helmet team={i} />
+                <span>{i.abbr}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div class="teams">
         {teams.map((t) => (
           <button class={`team ${user === t.abbr ? "you" : ""} ${opp === t.abbr ? "them" : ""}`} disabled={user === t.abbr}
@@ -106,7 +136,7 @@ function Menu({ cd, onStart, onDraft, onOnline }: { cd: ClientData; onStart: (us
       <div class="row">
         {user && <button class="chip" onClick={() => { setUser(null); setOpp(null); }}>RESET</button>}
         <button class="big" disabled={!user || !opp} onClick={() => onStart(user!, opp!, qm)}>
-          {user && opp ? `PLAY ${user} vs ${opp}` : "PICK TWO TEAMS"}
+          {user && opp ? `PLAY ${label(user)} vs ${label(opp)}` : "PICK TWO TEAMS"}
         </button>
       </div>
       <p class="hint">Real Madden 27 rosters. On offense: pull back and release to throw, hold a finger on the field to run. On defense: call a front and coverage, and (if you turn on CONTROL DEFENDER in the defense call screen) play one defender yourself.</p>

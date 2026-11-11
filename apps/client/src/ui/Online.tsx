@@ -7,6 +7,8 @@ import type { ClientData } from "../data.js";
 import { NetClient } from "../net/client.js";
 import { NetController } from "../game/netcontroller.js";
 import { audio } from "../audio/audio.js";
+import { account, fetchMe } from "../net/api.js";
+import { NameBox } from "./Modes.js";
 import { Game } from "./App.js";
 import { GradeChips, Icon, Lineup, PALETTES, PlayerCardView, PostDraft, Reveal, SlotBoard, TeamEditor, type DraftConfigUi, type TeamSetup } from "./Draft.js";
 
@@ -63,6 +65,9 @@ function Lobby({ cd, net, conn, onBack }: { cd: ClientData; net: NetClient; conn
   const setTeam = (t: TeamSetup) => { setTeamRaw(t); try { localStorage.setItem(TEAM_KEY, JSON.stringify(t)); } catch { /* private */ } };
   const [code, setCode] = useState("");
   const [creating, setCreating] = useState(false);
+  const [needName, setNeedName] = useState(false);
+  const [me, setMe] = useState<{ rating: number } | null>(null);
+  useEffect(() => { fetchMe().then((r) => r && setMe(r.ranked)).catch(() => {}); }, []);
   const [st, setSt] = useState<RoomSettings>({ format: "quick", mirror: false, revealPassed: true, themed: false, timer: true, quarterMinutes: 3, abilities: true, controlDefender: false });
   const tog = (k: keyof RoomSettings) => setSt({ ...st, [k]: !st[k] });
   const ok = net.status === "open";
@@ -76,7 +81,10 @@ function Lobby({ cd, net, conn, onBack }: { cd: ClientData; net: NetClient; conn
       <div class="plays modes">
         <button class="play" disabled={!ok} onClick={() => net.quick(team)}><b>QUICK MATCH</b><small>quick draft · 3 min quarters · first opponent available</small></button>
         <button class={`play ${creating ? "on" : ""}`} disabled={!ok} onClick={() => setCreating(!creating)}><b>CREATE A ROOM</b><small>pick the rules, share the code</small></button>
+        <button class="play online" disabled={!ok} onClick={() => { const a = account(); if (a) net.ranked(team, a); else setNeedName(true); }}>
+          <b>RANKED MATCH</b><small>Elo ladder, monthly seasons · no throw guide{me ? ` · you: ${me.rating}` : ""}</small></button>
       </div>
+      {needName && <><p class="hint">Ranked needs a name on the ladder.</p><NameBox onChange={() => { setNeedName(false); const a = account(); if (a) net.ranked(team, a); }} /></>}
       {creating && (
         <div class="teamsetup">
           <div class="row"><span class="lbl">FORMAT</span>
@@ -188,8 +196,11 @@ function OnlineMatchView({ cd, net, conn, onLeave }: { cd: ClientData; net: NetC
   const opp = net.room!.seats[1 - me];
   const oppAway = opp && !opp.connected ? `${opp.team.info.abbr} DISCONNECTED · WAITING ${cd.data.online.forfeitSeconds}s (THE AI PLAYS FOR THEM)` : null;
   const forfeit = r?.forfeit != null ? (r.forfeit === me ? "YOU FORFEITED" : `${opp?.team.info.abbr ?? "OPPONENT"} FORFEITED · YOU WIN`) : null;
+  const rt = net.rating, ranked = Boolean(net.room?.ranked);
+  const ratingText = rt ? `RATING ${rt.before} → ${rt.after} (${rt.after >= rt.before ? "+" : ""}${rt.after - rt.before}) vs ${rt.opponent}` : null;
   return (
-    <Game key={net.matchVersion} ctl={ctl} banner={forfeit ?? conn ?? oppAway ?? null} exitLabel={r?.rematch[me] ? "WAITING FOR A REMATCH…" : "REMATCH (NEW DRAFT)"}
-      onExit={() => net.send({ t: "rematch" })} extra={<button class="chip" onClick={onLeave}>LEAVE</button>} />
+    <Game key={net.matchVersion} ctl={ctl} banner={ratingText ?? forfeit ?? conn ?? oppAway ?? null}
+      exitLabel={ranked ? "BACK TO THE LOBBY" : r?.rematch[me] ? "WAITING FOR A REMATCH…" : "REMATCH (NEW DRAFT)"}
+      onExit={() => (ranked ? onLeave() : net.send({ t: "rematch" }))} extra={!ranked && <button class="chip" onClick={onLeave}>LEAVE</button>} />
   );
 }

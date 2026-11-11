@@ -1,9 +1,10 @@
 // The game server: HTTP (health check) + WebSocket on /ws. Rooms by code, a quick-match queue,
 // seat tokens for reconnecting, a per-connection flood limit. The game logic lives in room.ts.
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomBytes, randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { ClientMsg, RoomSettings, ServerMsg, TeamSetupWire } from "@tdf/sim";
+import { dailyDate, elo, rankedSeason, type ClientMsg, type RoomSettings, type ServerMsg, type TeamSetupWire } from "@tdf/sim";
+import { cleanName } from "./store.js";
 import { Room, type Seat, type ServerEnv } from "./room.js";
 
 export interface GameServer { port: number; close(): Promise<void>; rooms: Map<string, Room> }
@@ -18,16 +19,75 @@ export async function startServer(env: ServerEnv, port = 0): Promise<GameServer>
   const rooms = new Map<string, Room>();
   const seats = new Map<string, { room: Room; seat: Seat }>();
   const queue: { ws: WebSocket; team: TeamSetupWire; conn: Client }[] = [];
+  const rankedQueue: { team: TeamSetupWire; conn: Client; account: string; rating: number; since: number }[] = [];
   const L = env.data.online;
 
+  const M = env.data.modes;
   const http: Server = createServer((req, res) => {
     if (req.url === "/health" || req.url === "/") {
       res.writeHead(200, { "content-type": "text/plain", "access-control-allow-origin": "*" });
       res.end(`ok ${rooms.size} rooms`);
       return;
     }
+    if (req.url?.startsWith("/api/")) { void api(req, res); return; }
     res.writeHead(404); res.end();
   });
+
+  // ---------------------------------------------------------------- HTTP API (accounts, leaderboards)
+  const json = (res: ServerResponse, code: number, body: unknown) => {
+    res.writeHead(code, { "content-type": "application/json", "access-control-allow-origin": "*", "access-control-allow-headers": "content-type" });
+    res.end(JSON.stringify(body));
+  };
+  const readBody = (req: IncomingMessage): Promise<Record<string, unknown>> => new Promise((ok) => {
+    let b = "";
+    req.on("data", (d) => { b += d; if (b.length > 16_384) req.destroy(); });
+    req.on("end", () => { try { ok(JSON.parse(b || "{}")); } catch { ok({}); } });
+  });
+  const BOARDS = ["daily", "gauntlet", "ranked"];
+  async function api(req: IncomingMessage, res: ServerResponse) {
+    const url = new URL(req.url!, "http://x");
+    const st = env.store, now = new Date(env.now());
+    if (req.method === "OPTIONS") return json(res, 204, {});
+    try {
+      if (url.pathname === "/api/account" && req.method === "POST") {
+        const b = await readBody(req);
+        const name = cleanName(b.name);
+        if (!name) return json(res, 400, { error: "pick a name of 2-16 letters" });
+        return json(res, 200, st.createAccount(name));
+      }
+      if (url.pathname === "/api/rename" && req.method === "POST") {
+        const b = await readBody(req), a = st.auth(b.id, b.secret), name = cleanName(b.name);
+        if (!a || !name) return json(res, 400, { error: "bad account or name" });
+        st.rename(a.id, name);
+        return json(res, 200, { ok: true, name });
+      }
+      if (url.pathname === "/api/me") {
+        const a = st.auth(url.searchParams.get("id"), url.searchParams.get("secret"));
+        if (!a) return json(res, 404, { error: "unknown account" });
+        const season = rankedSeason(now);
+        return json(res, 200, { name: a.name, season, ranked: st.rating(a.id, season, M.ranked.ratingStart), today: dailyDate(now) });
+      }
+      if (url.pathname === "/api/board") {
+        const kind = url.searchParams.get("kind") ?? "", key = url.searchParams.get("key") ?? "";
+        if (!BOARDS.includes(kind)) return json(res, 400, { error: "unknown board" });
+        if (kind === "ranked") return json(res, 200, { kind, key, rows: st.rankedBoard(key || rankedSeason(now)) });
+        return json(res, 200, { kind, key, rows: st.board(kind, key) });
+      }
+      if (url.pathname === "/api/submit" && req.method === "POST") {
+        const b = await readBody(req), a = st.auth(b.id, b.secret);
+        if (!a) return json(res, 403, { error: "unknown account" });
+        const kind = String(b.kind), key = String(b.key), score = Number(b.score);
+        // plausibility: today's (or yesterday's) Daily Draft; the Gauntlet board is all-time; scores in range
+        const okKey = kind === "daily" ? [dailyDate(now), dailyDate(new Date(now.getTime() - 86_400_000))].includes(key) : kind === "gauntlet" && key === "all";
+        const max = kind === "daily" ? M.daily.dailyGames * (M.daily.winPoints + 100)
+          : (M.gauntlet.weeks * M.gauntlet.winPoints + M.gauntlet.playoffRounds.length * M.gauntlet.playoffPoints + M.gauntlet.pointDiffCap);
+        if (!okKey || !Number.isFinite(score) || Math.abs(score) > max) return json(res, 400, { error: "that result can't be right" });
+        const best = st.submit(kind, key, a.id, Math.round(score), String(b.summary ?? "").slice(0, 80), JSON.stringify(b.detail ?? {}).slice(0, 2000));
+        return json(res, 200, { ok: true, best, rows: st.board(kind, key) });
+      }
+      return json(res, 404, { error: "not found" });
+    } catch (e) { return json(res, 500, { error: String(e) }); }
+  }
   const wss = new WebSocketServer({ server: http, path: "/ws", maxPayload: 256 * 1024 });
 
   const newCode = () => {
@@ -105,15 +165,59 @@ export async function startServer(env: ServerEnv, port = 0): Promise<GameServer>
         sit(c, room, m.team);
         return;
       }
+      if (m.t === "ranked") {
+        if (c.at || rankedQueue.some((q) => q.conn === c)) return;
+        const a = env.store.auth(m.account?.id, m.account?.secret);
+        if (!a) { c.send({ t: "error", msg: "ranked needs an account: set your name first" }); return; }
+        if (rankedQueue.some((q) => q.account === a.id)) { c.send({ t: "error", msg: "you are already in the ranked queue" }); return; }
+        const r = env.store.rating(a.id, rankedSeason(new Date(env.now())), M.ranked.ratingStart);
+        rankedQueue.push({ team: m.team, conn: c, account: a.id, rating: r.rating, since: env.now() });
+        c.send({ t: "error", msg: `searching for a ranked opponent near ${r.rating}...` });
+        matchRanked();
+        return;
+      }
       if (m.t === "leave") { drop(c, true); return; }
       if (c.at) c.at.room.handle(c.at.seat, m);
     });
     ws.on("close", () => drop(c, false));
   });
 
+  /** Pair ranked players whose ratings are close; the window widens the longer they wait. */
+  function matchRanked() {
+    const now = env.now();
+    for (let i = 0; i < rankedQueue.length; i++) {
+      for (let j = i + 1; j < rankedQueue.length; j++) {
+        const a = rankedQueue[i]!, b = rankedQueue[j]!;
+        if (a.conn.ws.readyState !== a.conn.ws.OPEN || b.conn.ws.readyState !== b.conn.ws.OPEN) continue;
+        const wait = Math.min(now - a.since, now - b.since) / 1000;
+        if (Math.abs(a.rating - b.rating) > M.ranked.ratingWindow + M.ranked.windowGrowthPerSec * wait) continue;
+        rankedQueue.splice(j, 1); rankedQueue.splice(i, 1);
+        const room = makeRoom({ ...defaultSettings(), quarterMinutes: M.ranked.quarterMinutes, timer: true, abilities: true }, true);
+        room.ranked = [a.account, b.account];
+        room.onResult = rankedResult;
+        sit(a.conn, room, a.team);
+        sit(b.conn, room, b.team);
+        return matchRanked();
+      }
+    }
+  }
+  /** Elo after a ranked game (a forfeit is a loss whatever the score). */
+  function rankedResult(room: Room, score: [number, number], forfeit: 0 | 1 | null) {
+    const [ida, idb] = room.ranked!;
+    const season = rankedSeason(new Date(env.now()));
+    const ra = env.store.rating(ida, season, M.ranked.ratingStart), rb = env.store.rating(idb, season, M.ranked.ratingStart);
+    const sA = forfeit === 0 ? 0 : forfeit === 1 ? 1 : score[0] > score[1] ? 1 : score[0] < score[1] ? 0 : 0.5;
+    const [na, nb] = elo(ra.rating, rb.rating, sA, M.ranked.eloK);
+    env.store.recordRanked(season, ra, rb, score[0], score[1], forfeit, na, nb);
+    room.tell(0, { t: "rating", season, before: ra.rating, after: na, opponent: rb.name });
+    room.tell(1, { t: "rating", season, before: rb.rating, after: nb, opponent: ra.name });
+  }
+
   const drop = (c: Client, leaving: boolean) => {
     const qi = queue.findIndex((q) => q.conn === c);
     if (qi >= 0) queue.splice(qi, 1);
+    const ri = rankedQueue.findIndex((q) => q.conn === c);
+    if (ri >= 0) rankedQueue.splice(ri, 1);
     if (!c.at) return;
     const { room, seat } = c.at;
     if (seat.conn === c) room.detach(seat);
@@ -121,6 +225,7 @@ export async function startServer(env: ServerEnv, port = 0): Promise<GameServer>
   };
 
   const ticker = setInterval(() => {
+    matchRanked();
     for (const [code, r] of rooms) {
       r.tick();
       if (r.closed) {
@@ -139,6 +244,7 @@ export async function startServer(env: ServerEnv, port = 0): Promise<GameServer>
       clearInterval(ticker);
       for (const r of rooms.values()) r.close();
       for (const ws of wss.clients) ws.terminate();
+      env.store.close();
       wss.close(() => http.close(() => res()));
     }),
   };

@@ -9,6 +9,15 @@ services:
     buildCommand: corepack enable && pnpm install --frozen-lockfile
     startCommand: pnpm --filter @tdf/server start
     healthCheckPath: /health
+    # Accounts, ratings and leaderboards live in SQLite at $DATA_DIR/tdf.sqlite. Free web services have
+    # no persistent disk (the file is lost on every deploy/restart); on a paid plan uncomment the disk.
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+    # disk:
+    #   name: tdf-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
     pullRequestPreviewsEnabled: false
   - type: web
     name: triple-draft-football

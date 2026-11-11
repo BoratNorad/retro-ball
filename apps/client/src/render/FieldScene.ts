@@ -351,7 +351,7 @@ export class FieldScene extends Phaser.Scene {
       const qb = this.qbUser()!;
       const g = this.guide;
       const steps = 14;
-      for (let k = 1; k <= steps; k++) {
+      for (let k = 1; k <= (this.ctl.aimGuide ? steps : 0); k++) {
         const t = k / steps;
         const x = qb.x + (this.aim.x - qb.x) * t, y = qb.y + (this.aim.y - qb.y) * t;
         const apex = 6 * (1 - this.aim.power) + 1.6 * this.aim.power;

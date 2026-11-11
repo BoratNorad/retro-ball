@@ -1,0 +1,37 @@
+{
+  "_doc": "Modes (M10). gauntlet: a 17-week season vs League Bosses; strength = the boss starters' target overall, rising from strengthStart (week 1) to strengthEnd (week 17); focus groups get +focusBoost; candidates per slot = the closest pickTop players to the target; bench at strength - benchDrop. playoffWins wins make the playoffs (rounds, the last vs the final boss at playoffStrength). score = wins x winPoints + playoff wins x playoffPoints + point difference (clamped to pointDiffCap). daily: one Triple Draft a day from the same seed for everyone (Quick format, need-based AI drafter), then dailyGames games vs bosses from dailyStrengthStart to dailyStrengthEnd; score = wins x winPoints + point difference. ranked: Elo with eloK, seasons are calendar months, everyone starts at ratingStart; matchmaking pairs players within ratingWindow, widening by windowGrowthPerSec while they wait. trajectoryGuide = the throw aiming guide in ranked games.",
+  "gauntlet": {
+    "weeks": 17,
+    "strengthStart": 70,
+    "strengthEnd": 82,
+    "focusBoost": 6,
+    "pickTop": 4,
+    "benchDrop": 8,
+    "playoffWins": 10,
+    "playoffRounds": [
+      "Divisional",
+      "Conference",
+      "Championship"
+    ],
+    "playoffStrength": 85,
+    "winPoints": 100,
+    "playoffPoints": 150,
+    "pointDiffCap": 300,
+    "quarterMinutes": 3
+  },
+  "daily": {
+    "dailyGames": 5,
+    "dailyStrengthStart": 72,
+    "dailyStrengthEnd": 82,
+    "winPoints": 1000,
+    "quarterMinutes": 3
+  },
+  "ranked": {
+    "eloK": 32,
+    "ratingStart": 1200,
+    "ratingWindow": 150,
+    "windowGrowthPerSec": 10,
+    "trajectoryGuide": false,
+    "quarterMinutes": 3
+  }
+}

@@ -11,7 +11,7 @@ import type { ServerEnv } from "../src/room.js";
 let env: ServerEnv;
 let server: GameServer;
 beforeAll(async () => {
-  const e = await loadEnv();
+  const e = await loadEnv(":memory:");
   // fast timers for the test
   env = { ...e, data: { ...e.data, online: { ...e.data.online, resultSeconds: 0.01, aiPresnapSeconds: 0.01, aiAfterSeconds: 0.3, fillMs: 40, maxPredictTicks: 100000 } } };
   server = await startServer(env, 0);
@@ -33,6 +33,7 @@ class Bot {
   mismatches = 0;
   seen: ServerMsg[] = [];
   results: ServerMsg | null = null;
+  rating: Extract<ServerMsg, { t: "rating" }> | null = null;
   sentLive = -1;
   constructor(readonly name: string) {}
   connect(token?: string): Promise<void> {
@@ -67,6 +68,7 @@ class Bot {
         break;
       case "wait": this.onWait(m.wait); break;
       case "results": this.results = m; break;
+      case "rating": this.rating = m; break;
       default: break;
     }
   }
@@ -166,4 +168,40 @@ describe("game server", () => {
     expect(got[0]!.t).toBe("error");
     for (const s of [a.ws, b.ws, c.ws, x]) s.close();
   }, 60_000);
+
+  it("accounts, leaderboards (validated) and a ranked game that moves both ratings", async () => {
+    const base = `http://localhost:${server.port}/api`;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const post = async (path: string, body: unknown): Promise<any> => (await fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
+    const acA = await post("/account", { name: "Alpha Coach" }), acB = await post("/account", { name: "Bravo<script>" });
+    expect(acA.id).toBeTruthy(); expect(acB.name).toBe("Bravoscript");
+    expect((await post("/account", { name: "x" })).error).toBeTruthy();
+    // daily board: today only, plausible scores only, best result kept
+    const today = new Date().toISOString().slice(0, 10);
+    expect((await post("/submit", { id: acA.id, secret: acA.secret, kind: "daily", key: today, score: 4012, summary: "4-1" })).ok).toBe(true);
+    expect((await post("/submit", { id: acA.id, secret: acA.secret, kind: "daily", key: today, score: 3000, summary: "3-2" })).best).toBe(false);
+    expect((await post("/submit", { id: acA.id, secret: acA.secret, kind: "daily", key: "2020-01-01", score: 10 })).error).toBeTruthy();
+    expect((await post("/submit", { id: acA.id, secret: "wrong", kind: "daily", key: today, score: 10 })).error).toBeTruthy();
+    expect((await post("/submit", { id: acB.id, secret: acB.secret, kind: "daily", key: today, score: 1e9 })).error).toBeTruthy();
+    const board = await (await fetch(`${base}/board?kind=daily&key=${today}`)).json() as { rows: { name: string; score: number; summary: string }[] };
+    expect(board.rows).toHaveLength(1);
+    expect(board.rows[0]).toMatchObject({ name: "Alpha Coach", score: 4012, summary: "4-1" });
+    // ranked: two players queue, play a full game, both ratings move by the same amount
+    const a = new Bot("ra"), b = new Bot("rb");
+    await a.connect(); await b.connect();
+    a.send({ t: "ranked", team: team("RKA"), account: { id: acA.id, secret: acA.secret } });
+    b.send({ t: "ranked", team: team("RKB"), account: { id: acB.id, secret: acB.secret } });
+    await until(() => Boolean(a.draft && b.draft));
+    expect(a.seen.some((m) => m.t === "room" && m.ranked)).toBe(true);
+    await until(() => Boolean(a.rating && b.rating), 120_000);
+    const da = a.rating!.after - a.rating!.before, db = b.rating!.after - b.rating!.before;
+    expect(da + db).toBe(0);
+    expect(a.rating!.opponent).toBe("Bravoscript");
+    const rb = await (await fetch(`${base}/board?kind=ranked&key=${a.rating!.season}`)).json() as { rows: { games: number }[] };
+    expect(rb.rows).toHaveLength(2);
+    expect(rb.rows[0]!.games).toBe(1);
+    const me = await (await fetch(`${base}/me?id=${acA.id}&secret=${acA.secret}`)).json() as { ranked: { rating: number } };
+    expect(me.ranked.rating).toBe(a.rating!.after);
+    a.ws.close(); b.ws.close();
+  }, 180_000);
 });

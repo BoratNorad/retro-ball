@@ -355,6 +355,8 @@ export class Controller {
   momentumBars(side: Side) { const A = this.cd.data.tuning.abilities; return { bars: this.session.momentum[side] / A.pointsPerBar, max: A.momentumMax / A.pointsPerBar }; }
 
   // ---------------------------------------------------------------- replays & highlights
+  /** the dotted throw path while aiming (off in ranked online games) */
+  aimGuide = true;
   /** inputs fed to the current live play, tick by tick */
   protected rec: TickInput[] = [];
   /** every play of the game that ran live, replayable from its seed + inputs */

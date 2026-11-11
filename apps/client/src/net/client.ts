@@ -103,6 +103,10 @@ export class NetClient {
   close() { this.closedByUser = true; this.ws?.close(); }
 
   quick(team: TeamSetupWire) { this.error = null; this.send({ t: "quick", team }); }
+  /** ranked queue: needs the guest account (see net/api.ts) */
+  ranked(team: TeamSetupWire, account: { id: string; secret: string }) { this.error = null; this.rating = null; this.send({ t: "ranked", team, account }); }
+  /** the rating change after a ranked game */
+  rating: Extract<ServerMsg, { t: "rating" }> | null = null;
   create(settings: RoomSettings, team: TeamSetupWire) { this.error = null; this.send({ t: "create", settings, team }); }
   join(code: string, team: TeamSetupWire) { this.error = null; this.send({ t: "join", code: code.trim().toUpperCase(), team }); }
 
@@ -166,6 +170,7 @@ export class NetClient {
         break;
       case "results": this.results = m; break;
       case "pong": this.rtt = Math.round(performance.now() - m.at); break;
+      case "rating": this.rating = m; break;
     }
     this.emit();
   }

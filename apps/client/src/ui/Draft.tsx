@@ -10,6 +10,7 @@ import type { ClientData } from "../data.js";
 import { helmetCanvas } from "../render/sprites.js";
 import { AbilitiesToggle } from "./AbilitiesToggle.js";
 import { audio } from "../audio/audio.js";
+import { saveTeam } from "./saved.js";
 
 // ---------------------------------------------------------------- shared bits
 export const PALETTES: [string, string, string][] = [
@@ -79,6 +80,8 @@ const abilityName = (cd: ClientData, id: string) => cd.data.abilities.abilities.
 export interface DraftConfigUi {
   mode: "ai" | "hotseat"; teams: [TeamSetup, TeamSetup]; ai: Personality;
   format: "quick" | "full"; mirror: boolean; revealPassed: boolean; themed: boolean; timer: boolean; quarter: number;
+  /** fixed draft seed (the Daily Draft: everyone gets the same offers) */
+  seed?: string;
 }
 /** Team name (abbreviation derived), colours and logo. */
 export function TeamEditor({ cd, t, set, label }: { cd: ClientData; t: TeamSetup; set: (t: TeamSetup) => void; label: string }) {
@@ -182,7 +185,7 @@ export function GradeChips({ d, side }: { d: Draft; side: 0 | 1 }) {
 
 export function DraftScreen({ cd, cfg, onDone }: { cd: ClientData; cfg: DraftConfigUi; onDone: (d: Draft) => void }) {
   const draft = useMemo(() => new Draft(cd.data, cd.pool, [{ info: cfg.teams[0].info }, { info: cfg.teams[1].info, ai: cfg.mode === "ai" ? cfg.ai : undefined }],
-    String(Date.now() % 1e9), { format: cfg.format, mirror: cfg.mirror, revealPassed: cfg.revealPassed, themed: cfg.themed }), []);
+    cfg.seed ?? String(Date.now() % 1e9), { format: cfg.format, mirror: cfg.mirror, revealPassed: cfg.revealPassed, themed: cfg.themed }), []);
   const [, setV] = useState(0);
   const bump = () => setV((x) => x + 1);
   const [side, setSide] = useState<0 | 1>(0);
@@ -313,6 +316,7 @@ export function PostDraft({ cd, d, cfg, rosters, setRosters, onLineup, onKickoff
         <small class="hint">chemistry +{g.chemistry.total.toFixed(1)} (QB-target {g.chemistry.qbTargets.toFixed(1)}, OL {g.chemistry.olCohesion.toFixed(1)})</small>
         <div class="pdlist">{Object.entries(ro.starters).filter(([s]) => s !== "LS").map(([s, c]) => <div><small>{s}</small> <b>{c.name}</b> <i>{slotOverall(c, slotPos(s), cd.data)}</i></div>)}</div>
         {human && <button class="chip" onClick={() => onLineup(side)}>LINEUP & DEPTH CHART</button>}
+        {human && <SaveTeamButton roster={ro} />}
       </div>
     );
   };
@@ -331,6 +335,12 @@ export function PostDraft({ cd, d, cfg, rosters, setRosters, onLineup, onKickoff
       ))}</div>}
     </div>
   );
+}
+
+/** Keep a drafted team for Exhibition games. */
+export function SaveTeamButton({ roster }: { roster: Roster }) {
+  const [saved, setSaved] = useState(false);
+  return <button class={`chip ${saved ? "on" : ""}`} disabled={saved} onClick={() => { saveTeam(roster); setSaved(true); }}>{saved ? "SAVED ✓" : "SAVE TEAM"}</button>;
 }
 
 // ---------------------------------------------------------------- lineup builder / depth chart

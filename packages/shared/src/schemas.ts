@@ -300,6 +300,8 @@ export const CoachConfigSchema = z.object({
   tendency: z.object({ prior: z.number(), runBiasMax: z.number(), paBiteBase: z.number(), paBitePerRunRate: z.number() }),
   qbRun: z.object({ speedRef: z.number(), speedPer: z.number(), min: z.number(), max: z.number() }),
   hailMary: z.object({ maxSeconds: z.number(), minBallOn: z.number(), maxBallOn: z.number() }),
+  /** signature defensive schemes (League Bosses): call weight multipliers by call tag */
+  defStyles: z.record(z.string(), z.record(z.string(), z.number())),
   abilities: z.object({ _doc: z.string().optional(), usePerMille: z.number(), keyPerMille: z.number(),
     roles: z.object({ pass: z.array(z.string()), run: z.array(z.string()), defense: z.array(z.string()), kick: z.array(z.string()), "return": z.array(z.string()) }) }),
   styles: z.record(z.string(), z.object({ pass: z.number(), personnel: z.record(z.string(), z.number()) })),
@@ -356,4 +358,22 @@ export const PresentationConfigSchema = z.object({
     slowmoScale: z.number(), slowmoMs: z.number(), clutchAirYards: z.number(), confetti: z.number(), popupMs: z.number(),
   }),
   audio: z.object({ master: z.number(), music: z.number(), sfx: z.number(), crowd: z.number(), crowdSwellMs: z.number() }),
+});
+
+// ---------------------------------------------------------------- modes (M10)
+export const BossSchema = z.object({
+  id: z.string(), name: z.string(), abbr: z.string(), nick: z.string(), c1: z.string(), c2: z.string(), c3: z.string(), icon: z.string(),
+  focus: z.array(z.enum(["QB", "RB", "WR", "TE", "OL", "DL", "LB", "DB", "ST"])), style: z.enum(["balanced", "spread", "pro", "run", "air"]),
+  defStyle: z.string(), baseFront: z.string(), scheme: z.string(), final: z.boolean().optional(),
+});
+export const BossesFileSchema = z.object({ _doc: z.string().optional(), bosses: z.array(BossSchema).min(4) });
+export const ModesConfigSchema = z.object({
+  _doc: z.string().optional(),
+  gauntlet: z.object({
+    weeks: z.number().int(), strengthStart: z.number(), strengthEnd: z.number(), focusBoost: z.number(), pickTop: z.number().int(), benchDrop: z.number(),
+    playoffWins: z.number().int(), playoffRounds: z.array(z.string()), playoffStrength: z.number(), winPoints: z.number(), playoffPoints: z.number(),
+    pointDiffCap: z.number(), quarterMinutes: z.number(),
+  }),
+  daily: z.object({ dailyGames: z.number().int(), dailyStrengthStart: z.number(), dailyStrengthEnd: z.number(), winPoints: z.number(), quarterMinutes: z.number() }),
+  ranked: z.object({ eloK: z.number(), ratingStart: z.number(), ratingWindow: z.number(), windowGrowthPerSec: z.number(), trajectoryGuide: z.boolean(), quarterMinutes: z.number() }),
 });

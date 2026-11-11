@@ -45,6 +45,8 @@ export class NetController extends Controller implements MatchListener {
     super(cd, m.session.teams, m.session.rules.quarterSeconds / 60, { session: m.session as GameSession });
     this.net = net;
     this.mySide = net.side;
+    // ranked: no trajectory guide (the spec's "off in ranked")
+    this.aimGuide = !net.room?.ranked || cd.data.modes.ranked.trajectoryGuide;
     net.listener = this;
     // pick up wherever the match is (start, or a reconnect mid-game)
     if (m.live) this.adoptLive(false);
