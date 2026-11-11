@@ -20,6 +20,7 @@ decisions and milestone status. Keep it updated.
 | Trace one play tick by tick | `pnpm tsx tools/sim/trace.ts four_verts cover3 7` (`ROLES=regex EVERY=n DEBUG_ROLE=FS`) |
 | Summarise one play type over N reps | `pnpm tsx tools/sim/probe.ts slants cover1 300` |
 | Play x coverage yardage table | `pnpm tsx tools/sim/matrix.ts 60` (`KIND=run` for runs) |
+| Kicking physics calibration (FG % by distance, punt/kickoff depth) | `pnpm tsx tools/sim/kicks.ts` |
 | Every play vs AI-chosen fronts/calls | `pnpm tsx tools/sim/plays.ts 60` (`ONLY=regex`, `BY=formation`) |
 | Trace/probe a formation or front | add `FORM=gun_trips FRONT=nickel PERS=11` to `trace.ts` / `probe.ts` |
 | Re-fit team-grade weights to what wins | `RANDOM_ROSTERS=1 FIT_OUT=/tmp/fit.jsonl pnpm sim:harness --games 10000` then `python3 tools/import/fit_grade_weights.py /tmp/fit.jsonl --write` |
@@ -35,7 +36,8 @@ Data pipeline order after a new ratings week: `data:import` → `data:fit` → `
 ```
 packages/shared   Zod schemas, data/ (players, teams, abilities, icons, pool, playbook/), config/ (all tuning; coach.json = AI play-calling)
 packages/sim      headless core: seeded RNG, Q16.16 fixed-point maths, cards.ts (player cards), team grades,
-                  rules.ts (rules engine), roster.ts, engine/play.ts (30 Hz 22-player engine), engine/kicks.ts,
+                  rules.ts (rules engine), roster.ts, engine/play.ts (30 Hz 22-player engine), engine/special.ts
+                  (30 Hz kicks + returns), engine/kicks.ts (FG distance helper, legacy rating models),
                   coach.ts (AI play calling + clock management), game.ts (full game loop + box score)
 apps/client       Vite + Phaser 3 + Preact: src/game/controller.ts (GameSession + 30 Hz live loop + UI state),
                   src/render/FieldScene.ts (Bowl camera, sprites, slingshot aim, steer-to-finger), src/ui/*.tsx (menus, HUD)
@@ -121,6 +123,15 @@ data/raw          source spreadsheet
     (the AI snaps a jet as the man reaches the ball). Disguises move alignment only; assignments stay
     the call's (spy/double are explicit overrides).
 
+14. **Special teams are live plays (M6).** `createKick` is a `PlaySim` (same snapshot shape, so the
+    client renders it like any play): a 3D ball (gravity, linear drag, per-game wind, curve from the
+    swipe, bounces) and 22 men (coverage lanes, return wall, jammers, rushers). Field goals are good
+    only if the ball crosses y = 110 between the uprights above the crossbar. Kicker error = a uniform
+    aim/power error from kick accuracy, wider under pressure; the UI draws it as the accuracy cone.
+    `kickChance` integrates that error grid deterministically (cached per kicker/spot/wind) and is
+    what the AI and the FG % on the call sheet use. Units come from the roster (fast/tackling bench
+    players cover, blockers return, best KR returns).
+
 ## Balance targets (for the M2 harness)
 
 Per team per game, arcade-realistic: 20–31 pts avg, 55–75 offensive plays, run/pass 42/58 ±8,
@@ -182,7 +193,17 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   Jet Fake Boot, Orbit Flat. **10,000 real-team games: 18/18 in range** — 21.6 pts, 61.3% comp,
   7.5 yds/att, 3.8 ypc (run hold base raised 4.0 → 4.45 to offset shown blitzes and line shifts), 7.0% sacks,
   1.6 TO, 37.7% 3rd down.
-- [ ] M6 Special teams · [ ] M7 Triple Draft offline
+- [x] **M6 Special teams** — flick kicking (direction + power from the swipe, curve from the swipe's
+  bend, accuracy cone from kick accuracy, pressure in the last 2 minutes), wind per game (shown on the
+  kick sheets and as an arrow at the kick spot; teams change ends each quarter), field goals / PATs
+  through modelled uprights, kickoffs (deep, squib, onside with a live loose-ball scramble: steer and
+  DIVE), punts (AI coffin corner from the opponent's 45 in), touchbacks, out-of-bounds kicks, downed
+  punts, fair catches (FAIR CATCH button; AI fair-catches with coverage close), kneels in the end
+  zone, muffs, return fumbles, live returns you steer (JUKE/SPIN/BURST) behind a left/middle/right
+  wall, blocked FGs/punts (rush vs protection; ALL-OUT BLOCK raises it) with scoop-and-score, fake
+  punt pass/run and fake FG pass from real punt / field-goal formations (the punter throws), AI
+  onside kicks when trailing late, squibs to end halves. Goal posts drawn on both end lines. 2,000-game check: punts 47.5 gross / 36.6 net, KR 19.7, PR 9.8, touchbacks 34%, onside 11%, FG 95/82/70% (<40 / 40s / 50+), PAT 96%.
+- [ ] M7 Triple Draft offline
 - [ ] M8 Online (rollback) · [ ] M9 Pro camera + presentation · [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
 
 ## Known issues / todo
@@ -196,7 +217,11 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   (11–13) are strong, so their AI weights are low. Jet sweep ~5.6 yds; Orbit Flat weak (~1.4).
 - The human read-option window is short (0.5 s mesh): plan KEEP before the snap or tap during the mesh.
 - Client bundle is 1.6 MB (Phaser); code-split later (M12). Portraits not yet in the client.
-- Two-point tries pick a random non-deep play; kickoffs/punts are rating models until M6.
+- Two-point tries pick a random non-deep play.
+- Return TDs are very rare (~0 per game; NFL ~0.02/team-game): coverage pursuit wins most races.
+- No penalties on kicks yet (holding on returns, running into the kicker, kick catch interference).
+- Weather beyond wind (rain/snow/heat, ball security, footing) is not modelled yet; wind does not
+  affect passes yet.
 
 - Gridiron Dex on GitHub Pages showed blank portraits (headshot load or processing failed without
   falling back to the helmet). Fix when porting the portrait pipeline to the client in M3; baking

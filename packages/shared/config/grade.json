@@ -3,37 +3,37 @@
   "unitWeights": {
     "offense": {
       "QB": 4.0,
-      "RB": 1.826,
-      "WR": 0.418,
-      "TE": 1.089,
-      "LT": 1.306,
-      "LG": 1.211,
-      "C": 0.23,
-      "RG": 0.869,
-      "RT": 0.23
+      "RB": 2.378,
+      "WR": 0.428,
+      "TE": 0.885,
+      "LT": 0.82,
+      "LG": 0.245,
+      "C": 0.245,
+      "RG": 1.252,
+      "RT": 0.887
     },
     "defense": {
-      "DE": 3.258,
-      "DT": 1.908,
-      "OLB": 2.175,
-      "MLB": 1.789,
-      "CB": 1.458,
-      "FS": 2.758,
+      "DE": 1.923,
+      "DT": 0.524,
+      "OLB": 1.065,
+      "MLB": 1.616,
+      "CB": 0.881,
+      "FS": 0.543,
       "SS": 4.0,
-      "NT": 1.908,
-      "ILB": 1.789
+      "NT": 0.524,
+      "ILB": 1.616
     },
     "special": {
       "K": 4.0,
-      "P": 4.0,
-      "LS": 4.0,
+      "P": 0.901,
+      "LS": 0.429,
       "KR": 0.6
     }
   },
   "overallUnitWeights": {
-    "offense": 0.434,
-    "defense": 0.562,
-    "special": 0.004
+    "offense": 0.388,
+    "defense": 0.52,
+    "special": 0.092
   },
   "letters": [
     [
@@ -98,8 +98,8 @@
   },
   "_fit": {
     "games": 10000,
-    "r": 0.475,
-    "winnerAcc": 0.664,
+    "r": 0.458,
+    "winnerAcc": 0.656,
     "note": "unit/slot weights fitted by tools/import/fit_grade_weights.py from harness games"
   }
 }
