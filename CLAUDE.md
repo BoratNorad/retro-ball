@@ -20,6 +20,8 @@ decisions and milestone status. Keep it updated.
 | Trace one play tick by tick | `pnpm tsx tools/sim/trace.ts four_verts cover3 7` (`ROLES=regex EVERY=n DEBUG_ROLE=FS`) |
 | Summarise one play type over N reps | `pnpm tsx tools/sim/probe.ts slants cover1 300` |
 | Play x coverage yardage table | `pnpm tsx tools/sim/matrix.ts 60` (`KIND=run` for runs) |
+| Every play vs AI-chosen fronts/calls | `pnpm tsx tools/sim/plays.ts 60` (`ONLY=regex`, `BY=formation`) |
+| Trace/probe a formation or front | add `FORM=gun_trips FRONT=nickel PERS=11` to `trace.ts` / `probe.ts` |
 | Re-fit team-grade weights to what wins | `RANDOM_ROSTERS=1 FIT_OUT=/tmp/fit.jsonl pnpm sim:harness --games 10000` then `python3 tools/import/fit_grade_weights.py /tmp/fit.jsonl --write` |
 | Play in the browser (dev server) | `pnpm dev:client` (copies data to `apps/client/public/game-data`, Vite on :5173) |
 | Production build of the client | `pnpm build` → `apps/client/dist` (CI builds it; Render uses `render.yaml`) |
@@ -31,7 +33,7 @@ Data pipeline order after a new ratings week: `data:import` → `data:fit` → `
 ## Layout
 
 ```
-packages/shared   Zod schemas, data/ (players, teams, abilities, icons, pool, playbook/), config/ (all tuning)
+packages/shared   Zod schemas, data/ (players, teams, abilities, icons, pool, playbook/), config/ (all tuning; coach.json = AI play-calling)
 packages/sim      headless core: seeded RNG, Q16.16 fixed-point maths, cards.ts (player cards), team grades,
                   rules.ts (rules engine), roster.ts, engine/play.ts (30 Hz 22-player engine), engine/kicks.ts,
                   coach.ts (AI play calling + clock management), game.ts (full game loop + box score)
@@ -100,6 +102,17 @@ data/raw          source spreadsheet
    slow first connection accepted). SQLite on a persistent disk for v1.
 10. **Data tools stay in Python** (pandas/numpy are the right tools for xlsx import and regression);
     everything that runs in the game is TypeScript.
+11. **Playbook model (M4).** Offense = QB + 5 OL + five eligible roles X/Y/Z/H/RB; a formation places
+    them, a personnel group (10/11/12/13/20/21/22/01/23) says which roster slot fills each, and a play
+    gives routes/blocking per role, so one play works from several formations. Sub-package players
+    (WR4, TE2, FB, CB3, CB4, RB2, TE3, SS2, DT3, MLB2) come from the bench (`Roster.depth`; the Quick
+    Draft's auto-generated backups fill them in M7). **Defensive calls are compiled at the snap**
+    against whatever front is on the field: front rushers + blitz − drop, deep zones, spy, greedy man
+    matching, remaining players take the call's underneath zones left to right. Fronts are drawn for
+    the offense's strength to the right and mirrored, so every call works from every front.
+12. **Defense sees personnel before calling.** `GameSession.previewAiOffense()` decides the AI's call
+    early; the human defense sees the personnel group, never the play. After the whistle the result
+    toast reveals the other side's call.
 
 ## Balance targets (for the M2 harness)
 
@@ -134,16 +147,34 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   the screen. Score bug, down & distance, LOS/first-down lines, result toasts, final box score.
   Verified with Playwright on desktop and iPhone 13 emulation. Render static-site Blueprint ready
   (`render.yaml`).
-- [ ] M4 Full play calling · [ ] M5 Pre-snap layer · [ ] M6 Special teams · [ ] M7 Triple Draft offline
+- [x] **M4 Full play calling** — 9 personnel groups, 16 formations, 62 plays (inside/outside zone,
+  power, counter, trap, iso, toss, draw, QB draw/power/sneak, zone read, inverted veer, 5 RPOs, quick
+  game, 5 screens, dropback concepts, shots, Hail Mary, 7 play-action incl. bootleg), 8 fronts (4-3,
+  3-4, Nickel, Dime, Quarter, 46, Bear, Goal Line), 19 calls (Cover 0/1/1-Spy/2/2-Man/Tampa 2/3 Sky/
+  3 Buzz/4/6, Prevent, man/zone/edge/A-gap/corner/safety blitzes, fire zones, run stunts). Engine:
+  zone combos + climbs, pullers and lead blockers, draws, read option (key crash/squeeze), RPO
+  conflict reads, play-action bites (scaled by the offense's run rate), bootlegs, screens (line
+  releases), stalk blocks, green-dog man defenders, QB spy. AI: personnel/formation by situation,
+  front answers personnel, tendencies per situation tilt calls; Hail Mary at the end of halves.
+  **Defensive control mode** (setting): steer one defender, DIVE / STRIP / SWAT / SWITCH, auto-switch
+  to the man nearest the ball. Client: SUGGESTED / RUN / PASS / RPO tabs, personnel → formation
+  filters, search, SCOUT tendency report, front + call picker, read-option KEEP.
+  **10,000 real-team games: 18/18 metrics in range** — 22.1 pts/team, 67 plays, 59% pass, 61.4% comp,
+  7.6 yds/att, 3.9 ypc, 7.0% sacks, 1.6 TO, 1.0 INT, 39% 3rd down, 357 yds. Grade weights refitted
+  (QB, DE, OLB matter most); grade gap 3–5 wins 74%, 5+ 88%.
+- [ ] M5 Pre-snap layer · [ ] M6 Special teams · [ ] M7 Triple Draft offline
 - [ ] M8 Online (rollback) · [ ] M9 Pro camera + presentation · [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
 
 ## Known issues / todo
 
-- **Balance follow-ups:** 3rd-down conversion slightly high (46%). Re-fit grade weights whenever the
-  engine changes meaningfully (M4 playbook, M6 kicking). Tools:
+- **Balance follow-ups:** re-fit grade weights whenever the engine changes meaningfully (done for M4;
+  next after M6 kicking). Tools:
   `tools/sim/matrix.ts` (pass/run play x coverage table, `KIND=run`), `probe.ts`, `trace.ts`,
   and the harness "per play call" table.
-- Run game: backside LBs are unblocked on zone runs (no climbing/combo blocks yet) — add in M4.
+- Play balance (`tools/sim/plays.ts`): option plays (zone read 2, inverted veer 1, QB power 2 yds) and
+  WR screens (bubble/smoke/tunnel 1–2 yds) are weak; PA shots (~15 ypp) and TE seams/Four Verts
+  (11–13) are strong, so their AI weights are low. Tune further when M5 motion (jet sweeps) lands.
+- The human read-option window is short (0.5 s mesh): plan KEEP before the snap or tap during the mesh.
 - Client bundle is 1.6 MB (Phaser); code-split later (M12). Portraits not yet in the client.
 - Two-point tries pick a random non-deep play; kickoffs/punts are rating models until M6.
 
