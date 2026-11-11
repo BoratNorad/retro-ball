@@ -50,7 +50,7 @@ data/raw          source spreadsheet
 - **Determinism:** anything that runs during a game (draft offers, plays, AI) must use `Rng`
   (xoshiro128**, integer-only) and `Fx` (Q16.16 integers, CORDIC trig, exact `isqrt`). No
   `Math.random`, `Math.sin/cos/exp/pow`, `Date.now()` or float accumulation inside sim ticks.
-  Floats are allowed only at build time (creature derivation) and for rendering.
+  Floats are allowed only at build time (player-card derivation) and for rendering.
 - Tests live in `packages/*/test/*.test.ts` (Vitest).
 
 ## Decisions log
@@ -105,7 +105,8 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
 ## Milestone status
 
 - [x] **M1 Skeleton** — monorepo, CI, schemas, seeded RNG, fixed-point maths, real-player pool with
-  types, rarity, position overalls, abilities, team grades; balance report passes. 23 tests.
+  position overalls, abilities, team grades; balance report passes (its types/rarity layer was
+  later removed — see decision 2).
   Stubbed: client, server (READMEs only).
 - [x] **M2 Headless rules + play engine** — rules engine, rosters, playbook data, 30 Hz fixed-point
   22-player engine, kicking models, AI coach, full games + box score (`pnpm sim:game`), multi-core
