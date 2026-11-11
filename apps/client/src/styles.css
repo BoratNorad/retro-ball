@@ -76,3 +76,4 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 .clock.low { color: var(--red); }
 .slot { display: inline-flex; flex: none; gap: 2px; align-items: center; }
 .slot select { background: #000; color: var(--dim); border: 2px solid #000; font: inherit; font-size: 15px; max-width: 26px; }
+.arrow { display: inline-block; font-family: var(--mono); font-size: 16px; }

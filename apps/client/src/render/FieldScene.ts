@@ -23,6 +23,8 @@ export class FieldScene extends Phaser.Scene {
   private yardText: Phaser.GameObjects.Text[] = [];
   private drag: { x: number; y: number } | null = null;
   private aim: { x: number; y: number; power: number } | null = null;
+  /** kick flick in progress (screen points) */
+  private flick: { x: number; y: number }[] = [];
   private camY = 0;
 
   constructor() { super("field"); }
@@ -101,6 +103,15 @@ export class FieldScene extends Phaser.Scene {
         this.yardText.push(t);
       }
     }
+    // goal posts on both end lines (seen from above: crossbar and the uprights' shadows)
+    for (const y of [110, -10]) {
+      const half = 3.08, cx = FIELD_W / 2;
+      g.lineStyle(Math.max(2, S * 0.3), 0xffe14a, 1).lineBetween(this.wx(cx - half), this.wy(y), this.wx(cx + half), this.wy(y));
+      const up = y > 50 ? -1 : 1;
+      g.lineStyle(Math.max(2, S * 0.22), 0xffe14a, 0.9);
+      g.lineBetween(this.wx(cx - half), this.wy(y), this.wx(cx - half), this.wy(y) + up * 6 * S * 0.45);
+      g.lineBetween(this.wx(cx + half), this.wy(y), this.wx(cx + half), this.wy(y) + up * 6 * S * 0.45);
+    }
     for (const [y, team] of [[105, away], [-5, home]] as const) {
       const t = this.add.text(this.wx(FIELD_W / 2), this.wy(y), team.nick.toUpperCase(), {
         fontFamily: "Press Start 2P, monospace", fontSize: `${Math.round(S * 2.6)}px`,
@@ -121,9 +132,15 @@ export class FieldScene extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------------- input
-  private userControlling(): "throw" | "run" | "defend" | null {
+  private userControlling(): "throw" | "run" | "defend" | "kick" | null {
     const c = this.ctl;
+    if (c.ui.mode === "kick" && c.live?.kick?.userKick) return "kick";
     if (c.ui.mode !== "live" || !c.live || !c.cur) return null;
+    if (c.live.kick) {
+      if (c.live.kick.userReturn && c.cur.userCarrier) return "run";
+      if ((c.cur.kick?.userPlayer ?? -1) >= 0 && c.cur.kick?.phase === "loose") return "defend";
+      return null;
+    }
     if (c.live.userDefense) return c.cur.userDefender >= 0 ? "defend" : null;
     if (!c.live.userOffense) return null;
     if (c.cur.qbCanThrow) return "throw";
@@ -133,12 +150,14 @@ export class FieldScene extends Phaser.Scene {
   private onDown(p: Phaser.Input.Pointer) {
     if (this.ctl.ui.mode === "presnap") { this.ctl.snapBall(); return; }
     const mode = this.userControlling();
+    if (mode === "kick") { this.flick = [{ x: p.x, y: p.y }]; return; }
     if (mode === "throw") { this.drag = { x: p.x, y: p.y }; this.aim = null; }
     else if (mode === "run" || mode === "defend") this.steerTo(p);
   }
   private onMove(p: Phaser.Input.Pointer) {
     if (!p.isDown) return;
     const mode = this.userControlling();
+    if (mode === "kick") { if (this.flick.length) this.flick.push({ x: p.x, y: p.y }); return; }
     if (mode === "throw" && this.drag && this.ctl.cur) {
       // slingshot: pull back from where you touched; the ball goes the other way
       const dx = this.drag.x - p.x, dy = this.drag.y - p.y;
@@ -155,6 +174,13 @@ export class FieldScene extends Phaser.Scene {
     else if (this.drag) { this.drag = null; this.aim = null; }
   }
   private onUp(_p: Phaser.Input.Pointer) {
+    if (this.userControlling() === "kick" && this.flick.length >= 2) {
+      const k = this.flickToKick();
+      this.flick = [];
+      if (k) this.ctl.kickBall(k.aim, k.power, k.curve);
+      return;
+    }
+    this.flick = [];
     if (this.drag && this.aim && this.userControlling() === "throw") {
       const a = this.aim;
       // user offense: the user frame is the offense frame
@@ -164,10 +190,24 @@ export class FieldScene extends Phaser.Scene {
     const m = this.userControlling();
     if (m === "run" || m === "defend") this.ctl.input.move = null;
   }
+  /** Flick -> aim (radians from straight up the screen, + = right), power (length), curve (bend of the path). */
+  private flickToKick(): { aim: number; power: number; curve: number } | null {
+    const a = this.flick[0]!, b = this.flick[this.flick.length - 1]!;
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+    if (dy > -20 || len < 30) return null;
+    const aim = Math.max(-0.6, Math.min(0.6, Math.atan2(dx, -dy)));
+    const power = Math.max(0.05, Math.min(1, len / (this.scale.height * 0.45)));
+    const mid = this.flick[Math.floor(this.flick.length / 2)]!;
+    // signed distance of the middle of the swipe from the straight line, relative to its length
+    const bend = ((mid.x - a.x) * dy - (mid.y - a.y) * dx) / (len * len);
+    const curve = Math.max(-1, Math.min(1, -bend * 6));
+    return { aim, power, curve };
+  }
   private steerTo(p: Phaser.Input.Pointer) {
     const c = this.ctl.cur!;
-    const defend = Boolean(this.ctl.live?.userDefense);
-    const me = c.actors[defend ? c.userDefender : c.carrier];
+    const kickScramble = Boolean(this.ctl.live?.kick && (c.kick?.userPlayer ?? -1) >= 0 && c.kick?.phase === "loose");
+    const defend = Boolean(this.ctl.live?.userDefense) || kickScramble || Boolean(this.ctl.live?.kick?.userReturn);
+    const me = c.actors[kickScramble ? c.kick!.userPlayer : this.ctl.live?.userDefense ? c.userDefender : c.carrier];
     if (!me) return;
     const wp = this.cameras.main.getWorldPoint(p.x, p.y);
     const tx = this.ux(wp.x), ty = this.uy(wp.y);
@@ -227,13 +267,20 @@ export class FieldScene extends Phaser.Scene {
       }
     });
     if (ctl.ui.mode === "presnap") this.drawPresnap(cur, flip);
+    if (ctl.ui.mode === "kick" && cur.kick) this.drawKickGuide(cur, flip);
+    if (ctl.live?.kick && cur.kick && cur.kick.userPlayer >= 0 && cur.kick.phase === "loose") {
+      const a = cur.actors[cur.kick.userPlayer]!, u = this.toUser(a.x, a.y, flip);
+      this.marks.lineStyle(Math.max(2, this.S * 0.25), 0xffd23e, 1).strokeEllipse(this.wx(u.x), this.wy(u.y) + 1, 2.8 * this.S, 1.4 * this.S);
+    }
     // ball
     const b = cur.ball, pb = prev.ball;
     const bx = pb.x + (b.x - pb.x) * alpha, by = pb.y + (b.y - pb.y) * alpha, bh = (pb.h + (b.h - pb.h) * alpha) / 65536;
     const ub = this.toUser(bx, by, flip);
-    this.ball.setPosition(this.wx(ub.x) + (b.state === "air" ? 0 : 0.6 * this.S), this.wy(ub.y) - bh * this.S * 0.7 - (b.state === "air" ? 0 : 0.8 * this.S));
-    this.ball.setSize(0.9 * this.S, 0.6 * this.S).setDisplaySize(0.9 * this.S, 0.6 * this.S);
-    this.ballShadow.setPosition(this.wx(ub.x), this.wy(ub.y) + 0.2 * this.S).setDisplaySize(0.8 * this.S, 0.4 * this.S).setVisible(b.state === "air");
+    const lift = Math.min(bh, 30) * 0.45;
+    const grow = 1 + Math.min(bh, 30) / 25;
+    this.ball.setPosition(this.wx(ub.x) + (b.state === "air" ? 0 : 0.6 * this.S), this.wy(ub.y) - lift * this.S - (b.state === "air" ? 0 : 0.8 * this.S));
+    this.ball.setSize(0.9 * this.S, 0.6 * this.S).setDisplaySize(0.9 * this.S * grow, 0.6 * this.S * grow);
+    this.ballShadow.setPosition(this.wx(ub.x), this.wy(ub.y) + 0.2 * this.S).setDisplaySize(0.8 * this.S, 0.4 * this.S).setVisible(b.state === "air" || b.state === "loose");
     // throw guide
     if (this.aim && this.userControlling() === "throw") {
       const qb = this.qbUser()!;
@@ -251,6 +298,34 @@ export class FieldScene extends Phaser.Scene {
     // camera: keep the ball a little below centre when you attack up, above when the AI attacks down
     const target = b.state === "air" ? this.toUser(b.x, b.y, flip).y : ub.y;
     this.follow(target);
+  }
+
+  /** Kick aiming: the accuracy cone from the kick spot (it widens under pressure and for weaker kickers)
+   *  and, while you flick, the aim line. */
+  private drawKickGuide(cur: PlaySnapshot, flip: boolean) {
+    const g = this.guide, S = this.S, k = cur.kick!;
+    const sp = this.toUser(k.spot.x, k.spot.y, flip);
+    const cone = k.cone / 65536;
+    let aim = 0, power = 0.7;
+    const fk = this.flick.length >= 2 ? this.flickToKick() : null;
+    if (fk) { aim = fk.aim; power = fk.power; }
+    const reach = (k.kind === "punt" || k.kind === "kickoff" ? 55 : k.kind === "squib" ? 25 : k.kind === "onside" ? 12 : 60) * (0.45 + 0.55 * power);
+    const P = (ang: number, d: number) => ({ x: this.wx(sp.x + Math.sin(ang) * d), y: this.wy(sp.y + Math.cos(ang) * d) });
+    const o = { x: this.wx(sp.x), y: this.wy(sp.y) };
+    g.fillStyle(0xffd23e, 0.18);
+    const l = P(aim - cone, reach), r = P(aim + cone, reach);
+    g.fillTriangle(o.x, o.y, l.x, l.y, r.x, r.y);
+    g.lineStyle(Math.max(2, S * 0.2), fk ? 0xff5a4e : 0xffd23e, 0.9);
+    const e = P(aim, reach);
+    g.lineBetween(o.x, o.y, e.x, e.y);
+    // wind arrow next to the kick spot
+    const w = k.wind, wl = Math.hypot(w.x, w.y) / 65536;
+    if (wl > 0) {
+      const ws = this.toUser(k.spot.x + w.x / 4, k.spot.y + w.y / 4, false);
+      const wsx = flip ? -(w.x / 65536) : w.x / 65536, wsy = flip ? -(w.y / 65536) : w.y / 65536;
+      void ws;
+      g.lineStyle(Math.max(2, S * 0.18), 0x9ad8ff, 0.9).lineBetween(o.x + 3 * S, o.y, o.x + 3 * S + wsx * S * 0.4, o.y - wsy * S * 0.4);
+    }
   }
 
   /** Pre-snap overlay: your routes (offense) or your assignments (defense). Never the opponent's. */

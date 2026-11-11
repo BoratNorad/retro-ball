@@ -2,7 +2,7 @@
 // and exposes a small observable UI state for Preact.
 import type { DefenseCall } from "@tdf/shared";
 import {
-  Fx, GameSession, fgDistance, fgMakePerMille, suggestPlays,
+  Fx, GameSession, fgDistance, suggestPlays,
   type GameResult, type LivePlay, type PlayCall, type PlaySnapshot, type PlaySummary, type Side, type UserCall, type UserInput,
   type PreSnapDefense, type PreSnapOffense,
 } from "@tdf/sim";
@@ -13,6 +13,10 @@ export type Mode =
   | "callOffense"   // pick a play (or punt/FG/kneel/spike)
   | "callDefense"   // pick a coverage for the AI's snap
   | "callTry"       // PAT or 2
+  | "callKickoff"   // you kick off: deep, squib or onside
+  | "callReturn"    // they kick off: pick your return wall
+  | "callST"        // they line up to punt / kick a field goal: return side, block or safe
+  | "kick"          // waiting for your kick flick
   | "presnap"       // lined up, waiting for SNAP
   | "live"          // play running
   | "result"        // brief result banner
@@ -41,6 +45,8 @@ export interface UiState {
   playClock: number;
   /** bumps whenever the pre-snap lineup changes (forces a redraw of the panel) */
   lineup: number;
+  /** returns: fair catch / kneel available; loose-ball scramble (onside) under your control */
+  canFairCatch: boolean; canKneel: boolean; scramble: boolean;
 }
 
 export interface Settings {
@@ -86,7 +92,7 @@ export class Controller {
     this.ui = {
       mode: "result", toast: null, bigToast: null, live: false, userOffense: false, qbCanThrow: false, userCarrier: false,
       cooldowns: { juke: 0, spin: 0, burst: 0 }, fg: null, tryForTwo: false, fast: false,
-      userDefense: false, userDefender: -1, canKeep: false, preview: null, playClock: 0, lineup: 0,
+      userDefense: false, userDefender: -1, canKeep: false, preview: null, playClock: 0, lineup: 0, canFairCatch: false, canKneel: false, scramble: false,
     };
     queueMicrotask(() => this.advance());
   }
@@ -102,10 +108,11 @@ export class Controller {
   /** Field-goal distance and make chance from the current spot (for the call sheet). */
   fgInfo() {
     const s = this.state;
-    const k = this.session.teams[s.possession].starters.K!;
     const dist = fgDistance(s.ballOn, this.cd.data);
-    return { dist, pct: Math.round(fgMakePerMille(dist, k, { data: this.cd.data, ratings: this.cd.ratings }) / 10) };
+    return { dist, pct: Math.round(this.session.kickChanceFor("fieldGoal", s.ballOn) / 10) };
   }
+  /** Wind as you feel it attacking up the screen (mph). */
+  windForUser() { return this.session.windFor(this.userSide); }
 
   // ---------------------------------------------------------------- flow
   /** Decide what happens next and either resolve it or ask the player. */
@@ -113,7 +120,11 @@ export class Controller {
     const p = this.session.pending();
     this.live = null;
     if (p.kind === "final") { this.set({ mode: "final", live: false, toast: null }); return; }
-    if (p.kind === "kickoff") { this.handle(this.session.snap({})); return; }
+    if (p.kind === "kickoff") {
+      if (this.state.possession === this.userSide) this.set({ mode: "callKickoff", live: false, userOffense: true, toast: null });
+      else this.set({ mode: "callReturn", live: false, userOffense: false, toast: null });
+      return;
+    }
     const userOff = this.session.isUserOffense();
     if (p.kind === "try") {
       if (userOff) { this.set({ mode: "callTry", live: false, userOffense: true, tryForTwo: !p.options.includes("pat") }); return; }
@@ -123,7 +134,14 @@ export class Controller {
     if (userOff) { this.set({ mode: "callOffense", live: false, userOffense: true, fg: this.fgInfo() }); return; }
     // the AI offense decides first; its personnel comes on the field before you call the defense
     const dec = this.session.previewAiOffense();
-    if (dec && dec.kind !== "play") { this.handle(this.session.snap({})); return; }  // punt, FG, kneel, spike
+    if (dec && (dec.kind === "punt" || dec.kind === "fieldGoal" || dec.kind === "fake")) {
+      // a fake looks like the kick it came out of
+      const as = dec.kind === "fake" ? dec.as ?? "punt" : dec.kind;
+      this.stKind = as;
+      this.set({ mode: "callST", live: false, userOffense: false, toast: null });
+      return;
+    }
+    if (dec && dec.kind !== "play") { this.handle(this.session.snap({})); return; }  // kneel, spike
     this.set({ mode: "callDefense", live: false, userOffense: false, preview: dec ? { personnel: dec.personnel } : null });
   }
 
@@ -144,6 +162,17 @@ export class Controller {
       return;
     }
     this.handle(this.session.snap({ userCall: call, timeout }));
+  }
+  /** what the opponent is lining up for (callST) */
+  stKind: "punt" | "fieldGoal" = "punt";
+  kickoff(kind: "kickoff" | "squib" | "onside") { this.handle(this.session.snap({ kickoffKind: kind })); }
+  receiveKick(side: "L" | "M" | "R") { this.handle(this.session.snap({ returnSide: side })); }
+  callST(mode: "block" | "safe" | "normal", side: "L" | "M" | "R" = "M") { this.handle(this.session.snap({ stDefense: mode, returnSide: side, timeout: this.takeTimeout() })); }
+  /** Your flick: aim (radians, + right), power 0..1, curve -1..1. */
+  kickBall(aim: number, power: number, curve: number) {
+    if (this.ui.mode !== "kick") return;
+    this.input.kick = { aim: Math.round(aim * 1000), power: Math.round(power * 1000), curve: Math.round(curve * 1000) };
+    this.set({ mode: "live", live: true });
   }
   callTry(choice: "pat" | "twoPoint") {
     if (choice === "pat") { this.handle(this.session.snap({ tryChoice: "pat" })); return; }
@@ -171,6 +200,12 @@ export class Controller {
     const snap0 = r.live.sim.snapshot();
     const common = { toast: null, preview: null, userDefense: r.live.userDefense, userDefender: snap0.userDefender, canKeep: snap0.canKeep,
       playClock: this.cd.data.tuning.presnap.playClock, lineup: this.ui.lineup + 1 };
+    if (r.live.kick) {
+      // special teams: your kick waits for the flick; otherwise the play just starts
+      if (r.live.kick.userKick) this.set({ mode: "kick", live: false, userOffense: true, fast: false, ...common });
+      else this.set({ mode: "live", live: true, userOffense: false, fast: false, ...common });
+      return;
+    }
     // both sides get a pre-snap window (offense: motion, audibles...; defense: looks, audibles)
     this.set({ mode: "presnap", live: false, userOffense: r.live.userOffense, fast: false, ...common });
   }
@@ -232,15 +267,21 @@ export class Controller {
       if (this.optionKeep && this.cur?.canKeep && !this.input.action) this.input.action = "keep";
       // the screen is flipped when the AI has the ball: your stick directions turn around
       const mv = this.input.move;
+      const flippedHuman = this.live.userDefense || Boolean(this.live.kick?.userReturn);
       const inp = this.live.userOffense ? this.input
-        : this.live.userDefense ? { ...this.input, move: mv ? { x: -mv.x, y: -mv.y } : null } : null;
+        : flippedHuman ? { ...this.input, move: mv ? { x: -mv.x, y: -mv.y } : null } : null;
       const done = sim.step(inp);
       // one-shot inputs are consumed by the tick
       this.input = { move: this.input.move ?? null };
+      void 0;
       this.cur = sim.snapshot();
       if (done) { this.endLive(); return; }
     }
     const c = this.cur!;
+    const kv = c.kick;
+    if (kv && (kv.canFairCatch !== this.ui.canFairCatch || kv.canKneel !== this.ui.canKneel || (kv.userPlayer >= 0) !== this.ui.scramble)) {
+      this.set({ canFairCatch: kv.canFairCatch, canKneel: kv.canKneel, scramble: kv.userPlayer >= 0 && kv.phase === "loose" });
+    }
     if (c.qbCanThrow !== this.ui.qbCanThrow || c.userCarrier !== this.ui.userCarrier || c.canKeep !== this.ui.canKeep ||
         c.userDefender !== this.ui.userDefender || c.cooldowns.juke !== this.ui.cooldowns.juke || c.cooldowns.burst !== this.ui.cooldowns.burst) {
       this.set({ qbCanThrow: c.qbCanThrow, userCarrier: c.userCarrier, cooldowns: c.cooldowns, canKeep: c.canKeep, userDefender: c.userDefender });
@@ -272,14 +313,15 @@ export class Controller {
     const live = this.live!;
     const sum = this.session.finish(live);
     // after the whistle you get to see what the other side was in
-    this.showResult(sum, live.userOffense ? `vs ${live.call.name}` : `${this.team(live.offSide).abbr} ran ${live.play.name}`);
+    this.showResult(sum, live.kick ? undefined : live.userOffense ? `vs ${live.call.name}` : `${this.team(live.offSide).abbr} ran ${live.play.name}`);
   }
 
   private showResult(sum: PlaySummary, reveal?: string) {
     this.lastSummary = sum;
     const big = bigCallout(sum, this.userSide);
     const text = describe(sum, this) + (reveal ? ` · ${reveal}` : "");
-    this.set({ mode: "result", live: false, toast: text, bigToast: big, qbCanThrow: false, userCarrier: false, canKeep: false, userDefense: false, userDefender: -1 });
+    this.set({ mode: "result", live: false, toast: text, bigToast: big, qbCanThrow: false, userCarrier: false, canKeep: false, userDefense: false, userDefender: -1,
+      canFairCatch: false, canKneel: false, scramble: false });
     if (this.resultTimer) clearTimeout(this.resultTimer);
     this.resultTimer = setTimeout(() => { this.set({ bigToast: null }); this.advance(); }, big ? 1900 : 1300);
   }

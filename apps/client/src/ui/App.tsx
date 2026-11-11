@@ -93,10 +93,18 @@ function Game({ ctl, onExit }: { ctl: Controller; onExit: () => void }) {
         {ui.mode === "callOffense" && <OffenseSheet ctl={ctl} />}
         {ui.mode === "callDefense" && <DefenseSheet ctl={ctl} />}
         {ui.mode === "callTry" && <TrySheet ctl={ctl} />}
+        {ui.mode === "callKickoff" && <KickoffSheet ctl={ctl} />}
+        {ui.mode === "callReturn" && <ReturnSheet ctl={ctl} />}
+        {ui.mode === "callST" && <StSheet ctl={ctl} />}
+        {ui.mode === "kick" && ctl.live?.kick && (
+          <div class="bar"><span class="playname">{ctl.live.kick.kind === "punt" ? "PUNT" : ctl.live.kick.kind === "fieldGoal" ? `${ctl.fgInfo().dist}-YD FIELD GOAL` : ctl.live.kick.kind === "pat" ? "EXTRA POINT" : "KICKOFF"}
+            {" · "}FLICK UP TO KICK · CURVE THE SWIPE TO HOOK IT</span></div>
+        )}
+        {ui.mode === "live" && ctl.live?.kick && <KickControls ctl={ctl} ui={ui} />}
         {ui.mode === "presnap" && ctl.live && <Presnap ctl={ctl} ui={ui} />}
-        {ui.mode === "live" && ui.userOffense && <LiveControls ctl={ctl} ui={ui} />}
+        {ui.mode === "live" && ui.userOffense && !ctl.live?.kick && <LiveControls ctl={ctl} ui={ui} />}
         {ui.mode === "live" && !ui.userOffense && ui.userDefense && <DefenseControls ctl={ctl} />}
-        {ui.mode === "live" && !ui.userOffense && !ui.userDefense && (
+        {ui.mode === "live" && !ui.userOffense && !ui.userDefense && !ctl.live?.kick && (
           <div class="bar"><span class="playname">{ctl.team(ctl.live!.offSide).abbr} offense · you: {ctl.live?.call.name}</span>
             <button class="chip" onClick={() => ctl.fastForward()}>SKIP ▶▶</button></div>
         )}
@@ -200,6 +208,10 @@ function OffenseSheet({ ctl }: { ctl: Controller }) {
       {!twoPt && (
         <div class="tabs">
           {s.down === 4 && <button class="chip" onClick={() => ctl.callOffense({ kind: "punt" })}>PUNT</button>}
+          {s.down === 4 && (["fake_punt_pass", "fake_punt_run", "fake_fg_pass"] as const).map((id) => {
+            const p = data.offense.plays.find((x) => x.id === id);
+            return p && (id !== "fake_fg_pass" || (fg && fg.pct > 0)) ? <button class="chip" onClick={() => ctl.callOffense({ kind: "fake", play: p })}>{p.name.toUpperCase()}</button> : null;
+          })}
           {fg && fg.pct > 0 && <button class="chip" onClick={() => ctl.callOffense({ kind: "fieldGoal" })}>FG {fg.dist} YD · {fg.pct}%</button>}
           <button class="chip" onClick={() => ctl.callOffense({ kind: "kneel" })}>KNEEL</button>
           <button class="chip" onClick={() => ctl.callOffense({ kind: "spike" })}>SPIKE</button>
@@ -271,6 +283,76 @@ function DefenseSheet({ ctl }: { ctl: Controller }) {
       </div>
     </div>
   );
+}
+
+function WindTag({ ctl }: { ctl: Controller }) {
+  const w = ctl.windForUser();
+  const mph = Math.round(Math.hypot(w.x, w.y) / 65536);
+  if (!mph) return <span class="tag">WIND CALM</span>;
+  // screen up = the way you attack
+  const ang = Math.atan2(w.x, w.y) * 180 / Math.PI;
+  return <span class="tag">WIND {mph} MPH <span class="arrow" style={{ transform: `rotate(${ang}deg)` }}>↑</span></span>;
+}
+function KickoffSheet({ ctl }: { ctl: Controller }) {
+  return (
+    <div class="sheet">
+      <div class="tabs"><span class="tag">KICKOFF</span><WindTag ctl={ctl} /></div>
+      <div class="plays">
+        <button class="play" onClick={() => ctl.kickoff("kickoff")}><b>Deep kick</b><small>touchback or return</small></button>
+        <button class="play" onClick={() => ctl.kickoff("squib")}><b>Squib</b><small>low, bouncing, hard to return</small></button>
+        <button class="play" onClick={() => ctl.kickoff("onside")}><b>Onside</b><small>recover it after 10 yards</small></button>
+      </div>
+    </div>
+  );
+}
+function ReturnSheet({ ctl }: { ctl: Controller }) {
+  return (
+    <div class="sheet">
+      <div class="tabs"><span class="tag">KICK RETURN · {ctl.team(ctl.state.possession).abbr} kicks off</span><WindTag ctl={ctl} /></div>
+      <div class="plays">
+        <button class="play" onClick={() => ctl.receiveKick("L")}><b>Return left</b><small>wall on the left</small></button>
+        <button class="play" onClick={() => ctl.receiveKick("M")}><b>Return middle</b><small>wedge</small></button>
+        <button class="play" onClick={() => ctl.receiveKick("R")}><b>Return right</b><small>wall on the right</small></button>
+      </div>
+    </div>
+  );
+}
+function StSheet({ ctl }: { ctl: Controller }) {
+  const punt = ctl.stKind === "punt";
+  const [side, setSide] = useState<"L" | "M" | "R">("M");
+  return (
+    <div class="sheet">
+      <div class="tabs"><span class="tag">{ctl.team(ctl.state.possession).abbr} lines up to {punt ? "PUNT" : "KICK A FIELD GOAL"}</span><WindTag ctl={ctl} /></div>
+      {punt && (
+        <div class="tabs"><span class="lbl">RETURN</span>
+          {(["L", "M", "R"] as const).map((x) => <button class={`chip ${side === x ? "on" : ""}`} onClick={() => setSide(x)}>{x === "L" ? "LEFT" : x === "R" ? "RIGHT" : "MIDDLE"}</button>)}
+        </div>
+      )}
+      <div class="plays">
+        <button class="play" onClick={() => ctl.callST("normal", side)}><b>{punt ? "Punt return" : "Field goal block"}</b><small>{punt ? "hold up the gunners" : "standard rush"}</small></button>
+        <button class="play" onClick={() => ctl.callST("block", side)}><b>All-out block</b><small>more rushers, weaker return / fake risk</small></button>
+        <button class="play" onClick={() => ctl.callST("safe", side)}><b>Safe</b><small>watch for the fake</small></button>
+      </div>
+      {ctl.state.timeouts[ctl.userSide] > 0 && <div class="tabs"><button class={`chip ${ctl.timeoutQueued ? "on" : ""}`} onClick={() => ctl.callTimeout()}>ICE · TIMEOUT</button></div>}
+    </div>
+  );
+}
+function KickControls({ ctl, ui }: { ctl: Controller; ui: UiState }) {
+  const act = (a: "fairCatch" | "kneel" | "dive" | "juke" | "spin" | "burst") => (e: Event) => { e.preventDefault(); ctl.input.action = a; };
+  if (ui.canFairCatch) return <div class="bar acts"><span class="playname">BALL IN THE AIR · GET UNDER IT</span><button class="act alt" onPointerDown={act("fairCatch")}>FAIR CATCH</button></div>;
+  if (ui.canKneel) return <div class="bar acts"><button class="act alt" onPointerDown={act("kneel")}>KNEEL</button><button class="act" onPointerDown={act("burst")}>BURST</button></div>;
+  if (ui.scramble) return <div class="bar acts"><span class="playname">LOOSE BALL · DRAG TO MOVE</span><button class="act" onPointerDown={act("dive")}>DIVE</button></div>;
+  if (ui.userCarrier) {
+    const cd = ui.cooldowns;
+    return (
+      <div class="bar acts">
+        <button class={`act ${cd.juke ? "cool" : ""}`} onPointerDown={act("juke")}>JUKE</button>
+        <button class={`act ${cd.spin ? "cool" : ""}`} onPointerDown={act("spin")}>SPIN</button>
+        <button class={`act ${cd.burst ? "cool" : ""}`} onPointerDown={act("burst")}>BURST</button>
+      </div>
+    );
+  }
+  return <div class="bar"><span class="playname">…</span><button class="chip" onClick={() => ctl.fastForward()}>SKIP ▶▶</button></div>;
 }
 
 function TrySheet({ ctl }: { ctl: Controller }) {
