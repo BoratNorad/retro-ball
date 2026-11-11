@@ -1,46 +1,876 @@
 {
-  "_doc": "Defensive calls. Each role: rush | man (target offensive role) | zone (zones key) | spy. Zones are landmarks relative to the ball: [x, y], radius r (yards), deep = plays over the top.",
-  "zones": {
-    "deepL":  { "at": [-14, 18], "r": 12, "deep": true },
-    "deepR":  { "at": [14, 18],  "r": 12, "deep": true },
-    "deepML": { "at": [-17, 16], "r": 10, "deep": true },
-    "deepMM": { "at": [0, 18],   "r": 12, "deep": true },
-    "deepMR": { "at": [17, 16],  "r": 10, "deep": true },
-    "qL":     { "at": [-20, 15], "r": 9,  "deep": true },
-    "qML":    { "at": [-7, 16],  "r": 9,  "deep": true },
-    "qMR":    { "at": [7, 16],   "r": 9,  "deep": true },
-    "qR":     { "at": [20, 15],  "r": 9,  "deep": true },
-    "flatL":  { "at": [-19, 4],  "r": 7 },
-    "flatR":  { "at": [19, 4],   "r": 7 },
-    "curlL":  { "at": [-11, 9],  "r": 7 },
-    "curlR":  { "at": [11, 9],   "r": 7 },
-    "hookL":  { "at": [-5, 8],   "r": 6 },
-    "hookM":  { "at": [0, 9],    "r": 6 },
-    "hookR":  { "at": [5, 8],    "r": 6 }
+ "_doc": "Defensive calls: a coverage shell plus pressure, compiled at the snap against the front on the field (any front, drawn for the offense's strength to the right; zones mirror with it). Selectors pick defenders: a role name (FS, MLB) or class:pick (CB:L, S:deep, LB:M, NB) where pick is L, R, M, S (strong), W (weak), deep or low; a list is fallbacks. Order: front rushers (formation rush) + blitz - drop; deep zones; spy; man coverage on the eligibles (if man); everyone left takes the first N 'under' zones, matched left to right. Zones: [x, y] from the ball, r yards, deep = plays over the top.",
+ "zones": {
+  "deepL": {
+   "at": [
+    -14,
+    18
+   ],
+   "r": 12,
+   "deep": true
   },
-  "calls": [
-    { "id": "cover1", "name": "Cover 1", "formation": "base43", "weight": 3, "tags": ["man"],
-      "roles": { "LDE": "rush", "LDT": "rush", "RDT": "rush", "RDE": "rush",
-                 "LCB": { "man": "X" }, "RCB": { "man": "Z" }, "SS": { "man": "TE" }, "WLB": { "man": "SLOT" }, "SLB": { "man": "RB" },
-                 "MLB": { "zone": "hookM" }, "FS": { "zone": "deepMM" } } },
-    { "id": "cover2", "name": "Cover 2", "formation": "base43", "weight": 3, "tags": ["zone"],
-      "roles": { "LDE": "rush", "LDT": "rush", "RDT": "rush", "RDE": "rush",
-                 "LCB": { "zone": "flatL" }, "RCB": { "zone": "flatR" }, "WLB": { "zone": "curlL" }, "SLB": { "zone": "curlR" },
-                 "MLB": { "zone": "hookM" }, "FS": { "zone": "deepL" }, "SS": { "zone": "deepR" } } },
-    { "id": "cover3", "name": "Cover 3", "formation": "base43", "weight": 4, "tags": ["zone"],
-      "roles": { "LDE": "rush", "LDT": "rush", "RDT": "rush", "RDE": "rush",
-                 "LCB": { "zone": "deepML" }, "RCB": { "zone": "deepMR" }, "FS": { "zone": "deepMM" },
-                 "SS": { "zone": "curlR" }, "WLB": { "zone": "curlL" }, "MLB": { "zone": "hookM" }, "SLB": { "zone": "flatR" } } },
-    { "id": "cover4", "name": "Cover 4", "formation": "base43", "weight": 2, "tags": ["zone", "prevent"],
-      "roles": { "LDE": "rush", "LDT": "rush", "RDT": "rush", "RDE": "rush",
-                 "LCB": { "zone": "qL" }, "FS": { "zone": "qML" }, "SS": { "zone": "qMR" }, "RCB": { "zone": "qR" },
-                 "WLB": { "zone": "curlL" }, "MLB": { "zone": "hookM" }, "SLB": { "zone": "curlR" } } },
-    { "id": "cover0", "name": "Cover 0 Blitz", "formation": "base43", "weight": 1, "tags": ["man", "blitz"],
-      "roles": { "LDE": "rush", "LDT": "rush", "RDT": "rush", "RDE": "rush", "MLB": "rush", "WLB": "rush",
-                 "LCB": { "man": "X" }, "RCB": { "man": "Z" }, "SS": { "man": "TE" }, "FS": { "man": "SLOT" }, "SLB": { "man": "RB" } } },
-    { "id": "run_stop", "name": "Cover 3 Run Stop", "formation": "base43", "weight": 2, "tags": ["zone", "run"],
-      "roles": { "LDE": "rush", "LDT": "rush", "RDT": "rush", "RDE": "rush", "SS": "rush",
-                 "LCB": { "zone": "deepML" }, "RCB": { "zone": "deepMR" }, "FS": { "zone": "deepMM" },
-                 "WLB": { "zone": "curlL" }, "MLB": { "zone": "hookM" }, "SLB": { "zone": "curlR" } } }
-  ]
+  "deepR": {
+   "at": [
+    14,
+    18
+   ],
+   "r": 12,
+   "deep": true
+  },
+  "deepML": {
+   "at": [
+    -17,
+    16
+   ],
+   "r": 10,
+   "deep": true
+  },
+  "deepMM": {
+   "at": [
+    0,
+    18
+   ],
+   "r": 12,
+   "deep": true
+  },
+  "deepMR": {
+   "at": [
+    17,
+    16
+   ],
+   "r": 10,
+   "deep": true
+  },
+  "qL": {
+   "at": [
+    -20,
+    15
+   ],
+   "r": 9,
+   "deep": true
+  },
+  "qML": {
+   "at": [
+    -7,
+    16
+   ],
+   "r": 9,
+   "deep": true
+  },
+  "qMR": {
+   "at": [
+    7,
+    16
+   ],
+   "r": 9,
+   "deep": true
+  },
+  "qR": {
+   "at": [
+    20,
+    15
+   ],
+   "r": 9,
+   "deep": true
+  },
+  "tampaM": {
+   "at": [
+    0,
+    15
+   ],
+   "r": 8,
+   "deep": true
+  },
+  "flatL": {
+   "at": [
+    -19,
+    4
+   ],
+   "r": 7
+  },
+  "flatR": {
+   "at": [
+    19,
+    4
+   ],
+   "r": 7
+  },
+  "curlL": {
+   "at": [
+    -11,
+    9
+   ],
+   "r": 7
+  },
+  "curlR": {
+   "at": [
+    11,
+    9
+   ],
+   "r": 7
+  },
+  "hookL": {
+   "at": [
+    -5,
+    8
+   ],
+   "r": 6
+  },
+  "hookM": {
+   "at": [
+    0,
+    9
+   ],
+   "r": 6
+  },
+  "hookR": {
+   "at": [
+    5,
+    8
+   ],
+   "r": 6
+  },
+  "robber": {
+   "at": [
+    0,
+    11
+   ],
+   "r": 6
+  }
+ },
+ "calls": [
+  {
+   "id": "cover1",
+   "name": "Cover 1",
+   "group": "Man",
+   "weight": 3,
+   "tags": [
+    "man"
+   ],
+   "deep": [
+    {
+     "zone": "deepMM",
+     "who": [
+      "FS",
+      "S:deep"
+     ]
+    }
+   ],
+   "man": true,
+   "under": [
+    "robber",
+    "hookM"
+   ]
+  },
+  {
+   "id": "cover1_spy",
+   "name": "Cover 1 Spy",
+   "group": "Man",
+   "weight": 0.8,
+   "tags": [
+    "man",
+    "spy"
+   ],
+   "deep": [
+    {
+     "zone": "deepMM",
+     "who": [
+      "FS",
+      "S:deep"
+     ]
+    }
+   ],
+   "man": true,
+   "spy": [
+    "MLB",
+    "LB:M",
+    "S:low"
+   ],
+   "under": [
+    "robber"
+   ]
+  },
+  {
+   "id": "cover2man",
+   "name": "2-Man Under",
+   "group": "Man",
+   "weight": 1.5,
+   "tags": [
+    "man"
+   ],
+   "deep": [
+    {
+     "zone": "deepL",
+     "who": [
+      "S:L",
+      "FS"
+     ]
+    },
+    {
+     "zone": "deepR",
+     "who": [
+      "S:R",
+      "SS"
+     ]
+    }
+   ],
+   "man": true,
+   "under": [
+    "robber"
+   ]
+  },
+  {
+   "id": "cover0",
+   "name": "Cover 0 Blitz",
+   "group": "Blitz",
+   "weight": 0.8,
+   "tags": [
+    "man",
+    "blitz"
+   ],
+   "blitz": [
+    [
+     "MLB",
+     "LB:M"
+    ],
+    [
+     "WLB",
+     "LB:W",
+     "DB",
+     "S:low"
+    ]
+   ],
+   "man": true,
+   "under": [
+    "robber"
+   ]
+  },
+  {
+   "id": "a_gap",
+   "name": "A-Gap Blitz",
+   "group": "Blitz",
+   "weight": 0.8,
+   "tags": [
+    "man",
+    "blitz"
+   ],
+   "blitz": [
+    [
+     "MLB",
+     "LB:M",
+     "WILB"
+    ]
+   ],
+   "deep": [
+    {
+     "zone": "deepMM",
+     "who": [
+      "FS",
+      "S:deep"
+     ]
+    }
+   ],
+   "man": true,
+   "under": [
+    "robber"
+   ]
+  },
+  {
+   "id": "edge_blitz",
+   "name": "Nickel Edge Blitz",
+   "group": "Blitz",
+   "weight": 0.8,
+   "tags": [
+    "man",
+    "blitz"
+   ],
+   "blitz": [
+    [
+     "NB",
+     "SLB",
+     "LB:S",
+     "ROLB"
+    ]
+   ],
+   "deep": [
+    {
+     "zone": "deepMM",
+     "who": [
+      "FS",
+      "S:deep"
+     ]
+    }
+   ],
+   "man": true,
+   "under": [
+    "robber"
+   ]
+  },
+  {
+   "id": "cover2",
+   "name": "Cover 2",
+   "group": "Zone",
+   "weight": 3,
+   "tags": [
+    "zone"
+   ],
+   "deep": [
+    {
+     "zone": "deepL",
+     "who": [
+      "S:L",
+      "FS"
+     ]
+    },
+    {
+     "zone": "deepR",
+     "who": [
+      "S:R",
+      "SS"
+     ]
+    }
+   ],
+   "under": [
+    "flatL",
+    "flatR",
+    "hookM",
+    "curlL",
+    "curlR",
+    "hookL",
+    "hookR",
+    "robber"
+   ]
+  },
+  {
+   "id": "tampa2",
+   "name": "Tampa 2",
+   "group": "Zone",
+   "weight": 1.5,
+   "tags": [
+    "zone"
+   ],
+   "deep": [
+    {
+     "zone": "deepL",
+     "who": [
+      "S:L",
+      "FS"
+     ]
+    },
+    {
+     "zone": "deepR",
+     "who": [
+      "S:R",
+      "SS"
+     ]
+    },
+    {
+     "zone": "tampaM",
+     "who": [
+      "MLB",
+      "LB:M"
+     ]
+    }
+   ],
+   "under": [
+    "flatL",
+    "flatR",
+    "curlL",
+    "curlR",
+    "hookL",
+    "hookR"
+   ]
+  },
+  {
+   "id": "cover3",
+   "name": "Cover 3 Sky",
+   "group": "Zone",
+   "weight": 4,
+   "tags": [
+    "zone"
+   ],
+   "deep": [
+    {
+     "zone": "deepML",
+     "who": [
+      "CB:L"
+     ]
+    },
+    {
+     "zone": "deepMR",
+     "who": [
+      "CB:R"
+     ]
+    },
+    {
+     "zone": "deepMM",
+     "who": [
+      "FS",
+      "S:deep"
+     ]
+    }
+   ],
+   "under": [
+    "flatR",
+    "flatL",
+    "hookL",
+    "hookR",
+    "hookM",
+    "curlR",
+    "curlL"
+   ]
+  },
+  {
+   "id": "cover3_buzz",
+   "name": "Cover 3 Buzz",
+   "group": "Zone",
+   "weight": 2,
+   "tags": [
+    "zone"
+   ],
+   "deep": [
+    {
+     "zone": "deepML",
+     "who": [
+      "CB:L"
+     ]
+    },
+    {
+     "zone": "deepMR",
+     "who": [
+      "CB:R"
+     ]
+    },
+    {
+     "zone": "deepMM",
+     "who": [
+      "FS",
+      "S:deep"
+     ]
+    }
+   ],
+   "under": [
+    "flatL",
+    "flatR",
+    "hookR",
+    "hookL",
+    "hookM",
+    "curlL",
+    "curlR"
+   ]
+  },
+  {
+   "id": "cover4",
+   "name": "Cover 4 Quarters",
+   "group": "Zone",
+   "weight": 2,
+   "tags": [
+    "zone"
+   ],
+   "deep": [
+    {
+     "zone": "qL",
+     "who": [
+      "CB:L"
+     ]
+    },
+    {
+     "zone": "qML",
+     "who": [
+      "S:L",
+      "FS"
+     ]
+    },
+    {
+     "zone": "qMR",
+     "who": [
+      "S:R",
+      "SS"
+     ]
+    },
+    {
+     "zone": "qR",
+     "who": [
+      "CB:R"
+     ]
+    }
+   ],
+   "under": [
+    "flatL",
+    "flatR",
+    "hookM",
+    "curlL",
+    "curlR",
+    "hookL"
+   ]
+  },
+  {
+   "id": "cover6",
+   "name": "Cover 6",
+   "group": "Zone",
+   "weight": 1.5,
+   "tags": [
+    "zone"
+   ],
+   "deep": [
+    {
+     "zone": "qMR",
+     "who": [
+      "S:R",
+      "SS"
+     ]
+    },
+    {
+     "zone": "qR",
+     "who": [
+      "CB:R"
+     ]
+    },
+    {
+     "zone": "deepL",
+     "who": [
+      "S:L",
+      "FS"
+     ]
+    }
+   ],
+   "under": [
+    "flatL",
+    "curlR",
+    "hookM",
+    "curlL",
+    "flatR",
+    "hookL"
+   ]
+  },
+  {
+   "id": "prevent",
+   "name": "Prevent",
+   "group": "Zone",
+   "weight": 0.5,
+   "tags": [
+    "zone",
+    "prevent"
+   ],
+   "drop": [
+    [
+     "RE",
+     "EDGE:R",
+     "ROLB"
+    ]
+   ],
+   "deep": [
+    {
+     "zone": "qL",
+     "who": [
+      "CB:L"
+     ]
+    },
+    {
+     "zone": "qML",
+     "who": [
+      "S:L",
+      "FS"
+     ]
+    },
+    {
+     "zone": "qMR",
+     "who": [
+      "S:R",
+      "SS"
+     ]
+    },
+    {
+     "zone": "qR",
+     "who": [
+      "CB:R"
+     ]
+    }
+   ],
+   "under": [
+    "hookM",
+    "curlL",
+    "curlR",
+    "flatL",
+    "flatR",
+    "robber"
+   ]
+  },
+  {
+   "id": "fire_zone",
+   "name": "Fire Zone",
+   "group": "Zone blitz",
+   "weight": 1,
+   "tags": [
+    "zone",
+    "blitz"
+   ],
+   "blitz": [
+    [
+     "SLB",
+     "LB:S",
+     "ROLB"
+    ],
+    [
+     "NB",
+     "SS",
+     "S:low"
+    ]
+   ],
+   "drop": [
+    [
+     "LE",
+     "EDGE:L"
+    ]
+   ],
+   "deep": [
+    {
+     "zone": "deepML",
+     "who": [
+      "CB:L"
+     ]
+    },
+    {
+     "zone": "deepMR",
+     "who": [
+      "CB:R"
+     ]
+    },
+    {
+     "zone": "deepMM",
+     "who": [
+      "FS",
+      "S:deep"
+     ]
+    }
+   ],
+   "under": [
+    "curlL",
+    "hookM",
+    "curlR",
+    "flatL",
+    "flatR"
+   ]
+  },
+  {
+   "id": "mike_fire",
+   "name": "Mike Fire",
+   "group": "Zone blitz",
+   "weight": 1,
+   "tags": [
+    "zone",
+    "blitz"
+   ],
+   "blitz": [
+    [
+     "MLB",
+     "LB:M",
+     "WILB"
+    ]
+   ],
+   "drop": [
+    [
+     "LT",
+     "NT",
+     "DL:L"
+    ]
+   ],
+   "deep": [
+    {
+     "zone": "deepML",
+     "who": [
+      "CB:L"
+     ]
+    },
+    {
+     "zone": "deepMR",
+     "who": [
+      "CB:R"
+     ]
+    },
+    {
+     "zone": "deepMM",
+     "who": [
+      "FS",
+      "S:deep"
+     ]
+    }
+   ],
+   "under": [
+    "hookM",
+    "curlL",
+    "curlR",
+    "flatL",
+    "flatR"
+   ]
+  },
+  {
+   "id": "corner_blitz",
+   "name": "Corner Blitz",
+   "group": "Zone blitz",
+   "weight": 0.6,
+   "tags": [
+    "zone",
+    "blitz"
+   ],
+   "blitz": [
+    [
+     "CB:L"
+    ]
+   ],
+   "deep": [
+    {
+     "zone": "deepML",
+     "who": [
+      "S:L",
+      "FS"
+     ]
+    },
+    {
+     "zone": "deepMM",
+     "who": [
+      "S:R",
+      "SS"
+     ]
+    },
+    {
+     "zone": "deepMR",
+     "who": [
+      "CB:R"
+     ]
+    }
+   ],
+   "under": [
+    "flatL",
+    "curlR",
+    "hookM",
+    "curlL",
+    "flatR"
+   ]
+  },
+  {
+   "id": "ss_blitz",
+   "name": "Safety Blitz 3",
+   "group": "Zone blitz",
+   "weight": 0.8,
+   "tags": [
+    "zone",
+    "blitz"
+   ],
+   "blitz": [
+    [
+     "SS",
+     "S:low"
+    ]
+   ],
+   "deep": [
+    {
+     "zone": "deepML",
+     "who": [
+      "CB:L"
+     ]
+    },
+    {
+     "zone": "deepMR",
+     "who": [
+      "CB:R"
+     ]
+    },
+    {
+     "zone": "deepMM",
+     "who": [
+      "FS",
+      "S:deep"
+     ]
+    }
+   ],
+   "under": [
+    "flatR",
+    "flatL",
+    "hookL",
+    "hookR",
+    "hookM",
+    "curlR",
+    "curlL"
+   ]
+  },
+  {
+   "id": "run_stop",
+   "name": "Cover 3 Run Stop",
+   "group": "Run",
+   "weight": 2,
+   "tags": [
+    "zone",
+    "run"
+   ],
+   "blitz": [
+    [
+     "SS",
+     "S:low"
+    ]
+   ],
+   "deep": [
+    {
+     "zone": "deepML",
+     "who": [
+      "CB:L"
+     ]
+    },
+    {
+     "zone": "deepMR",
+     "who": [
+      "CB:R"
+     ]
+    },
+    {
+     "zone": "deepMM",
+     "who": [
+      "FS",
+      "S:deep"
+     ]
+    }
+   ],
+   "under": [
+    "hookM",
+    "curlL",
+    "curlR",
+    "flatL",
+    "flatR"
+   ]
+  },
+  {
+   "id": "run_blitz",
+   "name": "Run Blitz",
+   "group": "Run",
+   "weight": 0.8,
+   "tags": [
+    "man",
+    "run",
+    "blitz"
+   ],
+   "blitz": [
+    [
+     "SS",
+     "S:low"
+    ],
+    [
+     "MLB",
+     "LB:M"
+    ]
+   ],
+   "deep": [
+    {
+     "zone": "deepMM",
+     "who": [
+      "FS",
+      "S:deep"
+     ]
+    }
+   ],
+   "man": true,
+   "under": [
+    "robber"
+   ]
+  }
+ ]
 }

@@ -1,19 +1,525 @@
 {
-  "_doc": "Route waypoints relative to the receiver's alignment: [out, depth] where out = yards toward HIS sideline (negative = inside). settle: stop and sit at the end (find space). Otherwise he keeps running in the last direction.",
-  "routes": {
-    "go":       { "points": [[1, 4], [1, 45]] },
-    "seam":     { "points": [[0, 4], [-1, 45]] },
-    "slant":    { "points": [[0, 2], [-6, 8], [-16, 16]] },
-    "out":      { "points": [[0, 10], [10, 10]], "settle": true },
-    "dig":      { "points": [[0, 13], [-14, 13], [-24, 14]] },
-    "curl":     { "points": [[0, 13], [-1.5, 11]], "settle": true },
-    "comeback": { "points": [[0, 16], [2.5, 13]], "settle": true },
-    "post":     { "points": [[0, 12], [-7, 22], [-12, 40]] },
-    "corner":   { "points": [[0, 11], [8, 20], [11, 26]] },
-    "drag":     { "points": [[0, 2], [-22, 5], [-30, 6]] },
-    "flat":     { "points": [[3, 1], [10, 2]], "settle": true },
-    "hitch":    { "points": [[0, 6], [0, 5]], "settle": true },
-    "swing":    { "points": [[4, -1], [9, 1]], "settle": true },
-    "block":    { "points": [], "block": true }
+ "_doc": "Route waypoints relative to the receiver: [out, depth], out = yards toward HIS sideline (negative = inside). A role can force a side with :L / :R (backs aligned in the middle), mirrored on FLIP. settle: stop at the end (find space); otherwise keep running. block: pass = pass protection, stalk = block the nearest defensive back. delay: seconds spent blocking before releasing.",
+ "routes": {
+  "go": {
+   "points": [
+    [
+     1,
+     4
+    ],
+    [
+     1,
+     45
+    ]
+   ]
+  },
+  "seam": {
+   "points": [
+    [
+     0,
+     4
+    ],
+    [
+     -1,
+     45
+    ]
+   ]
+  },
+  "fade": {
+   "points": [
+    [
+     2.5,
+     4
+    ],
+    [
+     4.5,
+     30
+    ],
+    [
+     5,
+     45
+    ]
+   ]
+  },
+  "slant": {
+   "points": [
+    [
+     0,
+     2
+    ],
+    [
+     -6,
+     8
+    ],
+    [
+     -16,
+     16
+    ]
+   ]
+  },
+  "glance": {
+   "points": [
+    [
+     0,
+     3
+    ],
+    [
+     -2.5,
+     8
+    ],
+    [
+     -5,
+     20
+    ]
+   ]
+  },
+  "out": {
+   "points": [
+    [
+     0,
+     10
+    ],
+    [
+     10,
+     10
+    ]
+   ],
+   "settle": true
+  },
+  "speed_out": {
+   "points": [
+    [
+     0,
+     4.5
+    ],
+    [
+     9,
+     5
+    ]
+   ],
+   "settle": true
+  },
+  "deep_out": {
+   "points": [
+    [
+     0,
+     15
+    ],
+    [
+     11,
+     14.5
+    ]
+   ],
+   "settle": true
+  },
+  "in": {
+   "points": [
+    [
+     0,
+     6
+    ],
+    [
+     -12,
+     6.5
+    ],
+    [
+     -20,
+     7
+    ]
+   ]
+  },
+  "dig": {
+   "points": [
+    [
+     0,
+     13
+    ],
+    [
+     -14,
+     13
+    ],
+    [
+     -24,
+     14
+    ]
+   ]
+  },
+  "curl": {
+   "points": [
+    [
+     0,
+     13
+    ],
+    [
+     -1.5,
+     11
+    ]
+   ],
+   "settle": true
+  },
+  "comeback": {
+   "points": [
+    [
+     0,
+     14
+    ],
+    [
+     2.5,
+     11.5
+    ]
+   ],
+   "settle": true
+  },
+  "hitch": {
+   "points": [
+    [
+     0,
+     6
+    ],
+    [
+     0,
+     5
+    ]
+   ],
+   "settle": true
+  },
+  "stick": {
+   "points": [
+    [
+     0,
+     6
+    ],
+    [
+     -0.5,
+     5.5
+    ]
+   ],
+   "settle": true
+  },
+  "snag": {
+   "points": [
+    [
+     0,
+     4.5
+    ],
+    [
+     -3.5,
+     6
+    ]
+   ],
+   "settle": true
+  },
+  "post": {
+   "points": [
+    [
+     0,
+     12
+    ],
+    [
+     -7,
+     22
+    ],
+    [
+     -12,
+     40
+    ]
+   ]
+  },
+  "corner": {
+   "points": [
+    [
+     0,
+     11
+    ],
+    [
+     8,
+     20
+    ],
+    [
+     11,
+     26
+    ]
+   ]
+  },
+  "post_corner": {
+   "points": [
+    [
+     0,
+     10
+    ],
+    [
+     -3,
+     15
+    ],
+    [
+     7,
+     24
+    ],
+    [
+     11,
+     32
+    ]
+   ]
+  },
+  "out_up": {
+   "points": [
+    [
+     0,
+     6
+    ],
+    [
+     3,
+     6
+    ],
+    [
+     4,
+     11
+    ],
+    [
+     4,
+     40
+    ]
+   ]
+  },
+  "sluggo": {
+   "points": [
+    [
+     0,
+     2
+    ],
+    [
+     -3,
+     5
+    ],
+    [
+     -3,
+     7
+    ],
+    [
+     -2,
+     40
+    ]
+   ]
+  },
+  "drag": {
+   "points": [
+    [
+     0,
+     2
+    ],
+    [
+     -22,
+     5
+    ],
+    [
+     -30,
+     6
+    ]
+   ]
+  },
+  "shallow": {
+   "points": [
+    [
+     0,
+     1.5
+    ],
+    [
+     -20,
+     3
+    ],
+    [
+     -30,
+     4
+    ]
+   ]
+  },
+  "deep_cross": {
+   "points": [
+    [
+     0,
+     6
+    ],
+    [
+     -16,
+     15
+    ],
+    [
+     -30,
+     18
+    ]
+   ]
+  },
+  "flat": {
+   "points": [
+    [
+     3,
+     1
+    ],
+    [
+     10,
+     2
+    ]
+   ],
+   "settle": true
+  },
+  "swing": {
+   "points": [
+    [
+     4,
+     -1
+    ],
+    [
+     9,
+     1
+    ]
+   ],
+   "settle": true
+  },
+  "flare": {
+   "points": [
+    [
+     3,
+     -1
+    ],
+    [
+     8,
+     0.5
+    ],
+    [
+     10,
+     2
+    ]
+   ],
+   "settle": true
+  },
+  "wheel": {
+   "points": [
+    [
+     3,
+     0
+    ],
+    [
+     7,
+     3
+    ],
+    [
+     8,
+     10
+    ],
+    [
+     8,
+     40
+    ]
+   ]
+  },
+  "angle": {
+   "points": [
+    [
+     2,
+     1
+    ],
+    [
+     3,
+     2.5
+    ],
+    [
+     -3,
+     7
+    ],
+    [
+     -6,
+     8
+    ]
+   ],
+   "settle": true
+  },
+  "check": {
+   "points": [
+    [
+     3,
+     1
+    ],
+    [
+     8,
+     3
+    ]
+   ],
+   "settle": true,
+   "delay": 1.1
+  },
+  "hail": {
+   "points": [
+    [
+     1,
+     4
+    ],
+    [
+     0,
+     20
+    ],
+    [
+     -4,
+     48
+    ]
+   ]
+  },
+  "screen": {
+   "points": [
+    [
+     2,
+     -1.5
+    ],
+    [
+     6,
+     -1.5
+    ]
+   ],
+   "settle": true,
+   "delay": 0.9
+  },
+  "bubble": {
+   "points": [
+    [
+     2,
+     -1.5
+    ],
+    [
+     5,
+     -2
+    ]
+   ],
+   "settle": true
+  },
+  "smoke": {
+   "points": [
+    [
+     0,
+     0.6
+    ]
+   ],
+   "settle": true
+  },
+  "tunnel": {
+   "points": [
+    [
+     -1.5,
+     -1
+    ],
+    [
+     -9,
+     -2
+    ]
+   ],
+   "settle": true,
+   "delay": 0.25
+  },
+  "block": {
+   "points": [],
+   "block": "pass"
+  },
+  "stalk": {
+   "points": [],
+   "block": "stalk"
   }
+ }
 }

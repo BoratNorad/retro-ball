@@ -7,9 +7,49 @@ import type { Roster } from "./roster.js";
 import { fgDistance, fgMakePerMille } from "./engine/kicks.js";
 import type { Stats } from "./engine/play.js";
 
+/** A full offensive call: play, formation and personnel, plus the defense's answer. */
+export interface PlayCall { play: OffensePlay; formation: string; personnel: string; flip: boolean }
+export interface DefCall { call: DefenseCall; front: string }
 export type ScrimmageDecision =
-  | { kind: "play"; play: OffensePlay; call: DefenseCall; flip: boolean }
+  | ({ kind: "play" } & PlayCall & DefCall)
   | { kind: "punt" } | { kind: "fieldGoal" } | { kind: "kneel" } | { kind: "spike" };
+
+/** What each side has shown this game (the AI reads it; the UI shows it as a scouting report). */
+export interface Tendencies {
+  /** run/pass calls by situation bucket */
+  calls: Record<string, { run: number; pass: number }>;
+  formations: Record<string, number>;
+  personnel: Record<string, number>;
+  /** defense: snaps, blitzes, man coverage */
+  defSnaps: number; blitz: number; man: number;
+}
+export const emptyTendencies = (): Tendencies => ({ calls: {}, formations: {}, personnel: {}, defSnaps: 0, blitz: 0, man: 0 });
+export function situation(s: GameState): string {
+  const togo = s.toGo / ONE;
+  if (s.down === 1) return "1st";
+  const d = s.down === 2 ? "2nd" : "3rd";
+  return togo <= 3 ? `${d} & short` : togo >= 7 ? `${d} & long` : `${d} & medium`;
+}
+export function recordOffense(t: Tendencies, s: GameState, c: PlayCall) {
+  const b = (t.calls[situation(s)] ??= { run: 0, pass: 0 });
+  if (c.play.kind === "pass") b.pass++; else b.run++;
+  t.formations[c.formation] = (t.formations[c.formation] ?? 0) + 1;
+  t.personnel[c.personnel] = (t.personnel[c.personnel] ?? 0) + 1;
+}
+export function recordDefense(t: Tendencies, c: DefenseCall) {
+  t.defSnaps++;
+  if (c.tags.includes("blitz")) t.blitz++;
+  if (c.man) t.man++;
+}
+/** Observed run rate overall, or in one situation, shrunk toward the league default. */
+export function runRate(t: Tendencies | undefined, data: GameData, sit?: string): number {
+  const prior = data.coach.tendency.prior;
+  const base = 0.45;
+  if (!t) return base;
+  let run = 0, pass = 0;
+  for (const [k, v] of Object.entries(t.calls)) if (!sit || k === sit) { run += v.run; pass += v.pass; }
+  return (run + base * prior) / (run + pass + prior);
+}
 
 const yds = (fx: number) => fx / ONE;
 const lead = (s: GameState, side: Side) => s.score[side] - s.score[other(side)];
@@ -52,7 +92,7 @@ function passRate(s: GameState, data: GameData): number {
   return Math.max(100, Math.min(970, p));
 }
 
-export function chooseScrimmage(s: GameState, offense: Roster, defense: Roster, data: GameData, ratings: (id: number) => Stats, rng: Rng): ScrimmageDecision {
+export function chooseScrimmage(s: GameState, offense: Roster, defense: Roster, data: GameData, ratings: (id: number) => Stats, rng: Rng, offTend?: Tendencies, oppDefense?: Tendencies): ScrimmageDecision {
   const t = secondsLeft(s, data.rules);
   const l = lead(s, s.possession);
   const ballOn = yds(s.ballOn), togo = yds(s.toGo);
@@ -87,31 +127,93 @@ export function chooseScrimmage(s: GameState, offense: Roster, defense: Roster, 
   return goForIt();
 
   function goForIt(): ScrimmageDecision {
-    const pass = rng.int(1000) < passRate(s, data);
-    const short = togo <= 2;
-    let plays = data.offense.plays.filter((p) => p.kind === (pass ? "pass" : "run") && p.weight > 0);
-    if (!pass && short) plays = plays.filter((p) => p.tags.includes("short") || p.tags.includes("inside"));
-    if (pass && togo >= 12) plays = plays.filter((p) => p.tags.some((t2) => t2 === "deep" || t2 === "medium")).concat(plays.filter(() => false));
-    if (pass && ballOn >= 90) plays = plays.filter((p) => !p.tags.includes("deep"));
-    if (!plays.length) plays = data.offense.plays.filter((p) => p.kind === (pass ? "pass" : "run"));
-    if (!pass && short && togo <= 1 && rng.int(1000) < 250) plays = data.offense.plays.filter((p) => p.tags.includes("sneak"));
-    const play = weightedPick(plays.length ? plays : data.offense.plays, rng);
-    return { kind: "play", play, call: chooseDefense(s, data, rng), flip: rng.int(2) === 1 };
+    const c = chooseOffensePlay(s, offense, data, ratings, rng, oppDefense);
+    return { kind: "play", ...c, ...chooseDefense(s, data, rng, c.personnel, defense, offTend) };
   }
 }
 
-export function chooseDefense(s: GameState, data: GameData, rng: Rng): DefenseCall {
-  const togo = yds(s.toGo), d = s.down, t = secondsLeft(s, data.rules);
-  const defLead = lead(s, other(s.possession));
-  const calls = data.defense.calls.map((c) => {
-    let w = c.weight;
-    if (d >= 3 && togo >= 7) { if (c.tags.includes("run")) w *= 0.2; if (c.tags.includes("blitz") || c.id === "cover2" || c.id === "cover4") w *= 1.8; }
-    if (togo <= 2) { if (c.tags.includes("run")) w *= 2.5; if (c.id === "cover4") w *= 0.3; }
-    if (d === 1) { if (c.tags.includes("run")) w *= 1.3; }
-    if (s.quarter >= 4 && t <= 120 && defLead > 0) { if (c.tags.includes("prevent")) w *= 3; if (c.tags.includes("blitz")) w *= 0.2; }
-    return { ...c, weight: w };
+/** Pick a play, then a formation and personnel group that fit it and the situation. */
+export function chooseOffensePlay(s: GameState, offense: Roster, data: GameData, ratings: (id: number) => Stats, rng: Rng, oppDefense?: Tendencies): PlayCall {
+  const t = secondsLeft(s, data.rules);
+  const l = lead(s, s.possession);
+  const ballOn = yds(s.ballOn), togo = yds(s.toGo);
+  const C = data.coach;
+  const all = data.offense.plays;
+  // Hail Mary at the end of a half from midfield
+  const HM = C.hailMary;
+  if (!s.ot && (s.quarter === 2 || (s.quarter >= 4 && l < 0 && l >= -8)) && t <= HM.maxSeconds && ballOn >= HM.minBallOn && ballOn <= HM.maxBallOn) {
+    const hm = all.find((p) => p.tags.includes("hailMary"));
+    if (hm) return withFormation(hm, "passing");
+  }
+  const pass = rng.int(1000) < passRate(s, data);
+  const short = togo <= 2;
+  const qbSpeed = ratings(offense.starters.QB!.id).speed ?? 60;
+  const qbRun = Math.max(C.qbRun.min, Math.min(C.qbRun.max, 1 + (qbSpeed - C.qbRun.speedRef) * C.qbRun.speedPer));
+  const blitzy = oppDefense && oppDefense.defSnaps >= 6 ? oppDefense.blitz / oppDefense.defSnaps : 0.2;
+  const isRunish = (p: OffensePlay) => p.kind !== "pass";
+  let plays = all.filter((p) => isRunish(p) !== pass && p.weight > 0);
+  if (!pass && short) plays = plays.filter((p) => p.tags.includes("short") || p.tags.includes("inside"));
+  if (pass && togo >= 12) plays = plays.filter((p) => p.tags.some((t2) => t2 === "deep" || t2 === "medium"));
+  if (pass && ballOn >= 90) plays = plays.filter((p) => !p.tags.includes("deep"));
+  if (ballOn >= 95) plays = plays.filter((p) => !p.tags.includes("screen"));
+  if (!plays.length) plays = all.filter((p) => isRunish(p) !== pass && p.weight > 0);
+  if (!pass && short && togo <= 1 && rng.int(1000) < 250) plays = all.filter((p) => p.tags.includes("sneak"));
+  const weighted = plays.map((p) => {
+    let w = p.weight;
+    if (p.tags.includes("qbRun") || p.tags.includes("option")) w *= qbRun;
+    // a blitz-happy defense gets screens and quick throws
+    if (p.tags.includes("screen") || p.tags.includes("quick")) w *= 0.7 + blitzy * 2;
+    if (p.tags.includes("redzone")) w *= ballOn >= 80 ? 3 : 0.3;
+    if (p.tags.includes("goalLine")) w *= ballOn >= 95 ? 3 : 1;
+    return { ...p, weight: w, orig: p };
   });
-  return weightedPick(calls, rng);
+  const play = weightedPick(weighted.length ? weighted : all.map((p) => ({ ...p, orig: p })), rng).orig;
+  const sitKey = ballOn >= 96 ? "goalLine" : togo <= 3 && !pass ? "short" : pass && (togo >= 8 || t <= 120) ? "passing" : "normal";
+  return withFormation(play, sitKey);
+
+  function withFormation(play: OffensePlay, sitKey: keyof GameData["coach"]["personnel"]): PlayCall {
+    const pref = C.personnel[sitKey];
+    const opts: { f: string; p: string; weight: number }[] = [];
+    for (const fid of play.formations) {
+      const f = data.formations.offense.find((x) => x.id === fid);
+      if (!f) continue;
+      for (const p of f.personnel) opts.push({ f: fid, p, weight: (pref[p] ?? 0.5) / 10 });
+    }
+    const o = weightedPick(opts, rng);
+    return { play, formation: o.f, personnel: o.p, flip: rng.int(2) === 1 };
+  }
+}
+
+/** The defense's front (answering the offense's personnel) and call. */
+export function chooseDefense(s: GameState, data: GameData, rng: Rng, personnel = "11", defense?: Roster, offTend?: Tendencies): DefCall {
+  const togo = yds(s.toGo), d = s.down, t = secondsLeft(s, data.rules);
+  const ballOn = yds(s.ballOn);
+  const defLead = lead(s, other(s.possession));
+  const C = data.coach;
+  const prevent = s.quarter >= 4 && t <= 120 && defLead > 0 && defLead <= 8 && ballOn < 60;
+  let front: string;
+  if (ballOn >= 97 || (togo <= 1 && ["22", "23", "13"].includes(personnel))) front = C.goalLineFront;
+  else if (prevent && rng.int(1000) < 500) front = C.preventFront;
+  else if (d >= 3 && togo >= 8 && ["10", "11", "01", "20"].includes(personnel)) front = C.passingDownFront;
+  else {
+    const opts = C.frontFor[personnel] ?? ["base"];
+    front = opts[rng.int(opts.length)]!;
+  }
+  if (front === "base") front = defense?.baseFront ?? C.baseFront;
+  // the opponent's observed run rate in this situation tilts run vs pass calls
+  const rr = runRate(offTend, data, situation(s));
+  const runBias = Math.max(1 / C.tendency.runBiasMax, Math.min(C.tendency.runBiasMax, rr / 0.45));
+  const calls = data.defense.calls.filter((c) => !c.notFrom.includes(front)).map((c) => {
+    let w = c.weight;
+    if (d >= 3 && togo >= 7) { if (c.tags.includes("run")) w *= 0.2; if (c.tags.includes("blitz") || c.id === "cover2" || c.id === "cover4") w *= 1.6; }
+    if (togo <= 2) { if (c.tags.includes("run")) w *= 2.5; if (c.id === "cover4" || c.tags.includes("prevent")) w *= 0.2; }
+    if (d === 1) { if (c.tags.includes("run")) w *= 1.3; }
+    if (c.tags.includes("run")) w *= runBias;
+    if (c.tags.includes("prevent")) w *= prevent ? 8 : 0.1;
+    if (c.tags.includes("blitz") && prevent) w *= 0.2;
+    return { ...c, weight: w, orig: c };
+  });
+  return { call: weightedPick(calls, rng).orig, front };
 }
 
 /** Extra point or two-point try, from a standard chart. */

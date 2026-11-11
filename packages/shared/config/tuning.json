@@ -65,7 +65,7 @@
   "catch": {
     "reach": 1.5,
     "contestRange": 1.6,
-    "baseCatch": 672,
+    "baseCatch": 715,
     "catchPer": 5.44,
     "contestPenalty": 420,
     "contestSkillPer": 9.0,
@@ -85,14 +85,15 @@
     "zoneSwitchRange": 3.0,
     "ballReactBase": 0.3,
     "ballReactPerMissing": 0.008,
-    "runReadBase": 0.7,
+    "runReadBase": 0.3,
     "runReadPerMissing": 0.012,
     "pursuitLead": 1.0,
     "pursuitMaxTime": 1.2,
     "deepCushion": 4.0,
     "manReactBase": 0.15,
     "manReactPerMissing": 0.0108,
-    "manBailCushion": 3.0
+    "manBailCushion": 3.0,
+    "zoneDriftStep": 0.45
   },
   "tackle": {
     "range": 1.65,
@@ -208,5 +209,54 @@
     "lobSpeedMult": 0.62,
     "lobApex": 6.0,
     "bulletApex": 1.6
+  },
+  "schemes": {
+    "_doc": "Run schemes and option/RPO timing. pullStep = yards a puller drops before running the line; drawHandoff = seconds of pass-set before the draw handoff; keyCrashPerMille = how often the option key crashes on the back; readMisread* = QB misreads the option/RPO key (per awareness point missing below 99); comboSeconds = zone double team before climbing; screenRelease = when the line lets rushers through.",
+    "pullStep": 0.6,
+    "drawHandoff": 0.8,
+    "drawDrop": 2,
+    "drawRecognize": 0.0,
+    "optionMesh": 0.5,
+    "rpoMesh": 0.5,
+    "rpoConflictRange": 9,
+    "rpoConflictDepth": 3.5,
+    "keyCrashPerMille": 500,
+    "readMisreadBase": 0.06,
+    "readMisreadPerMissing": 0.006,
+    "comboSeconds": 0.5,
+    "screenRelease": 1.1,
+    "gapPatience": 0.5,
+    "gapPatienceMult": 0.6,
+    "keyCommit": 0.45,
+    "drawShedBase": 0.35,
+    "drawShedPerMissing": 0.02,
+    "screenThrowAfter": 0.3
+  },
+  "pa": {
+    "_doc": "Play action: fakeSeconds = QB/RB fake; defenders who aren't rushing bite for biteBase + bitePerMissing x (99 - play recognition) seconds (x the game's run-tendency multiplier, x cornerMult for corners), stepping biteStep yards toward the line; bootleg roll-out width/depth in yards.",
+    "fakeSeconds": 0.45,
+    "biteBase": 0.15,
+    "bitePerMissing": 0.025,
+    "cornerMult": 0.2,
+    "biteStep": 2.5,
+    "bootWidth": 7,
+    "bootDepth": 6,
+    "safetyMult": 0.4
+  },
+  "userDefense": {
+    "_doc": "Defensive control mode (a human controls one defender). dive: tackle attempt from diveRange yards with diveBonus per-mille; a miss stuns diveMissStun s, a dive at nothing diveWhiffStun s. strip: for stripSeconds the tackle chance drops stripTacklePenalty but fumble chance x stripFumbleMult. swat: within swatRange of the catch point during swatSeconds, catch chance -swatCatchPenalty and INT chance +swatIntBonus. manualHold: seconds after a manual switch before auto-switch resumes.",
+    "diveRange": 2.4,
+    "diveBonus": 120,
+    "diveMissStun": 1.0,
+    "diveWhiffStun": 0.7,
+    "stripSeconds": 0.6,
+    "stripTacklePenalty": 160,
+    "stripFumbleMult": 3.0,
+    "swatRange": 2.2,
+    "swatSeconds": 0.6,
+    "swatCatchPenalty": 260,
+    "swatIntBonus": 60,
+    "actionCooldown": 0.8,
+    "manualHold": 1.5
   }
 }

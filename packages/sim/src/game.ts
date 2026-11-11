@@ -12,7 +12,10 @@ import {
   type Foul, type GameEvent, type GameState, type PlayOutcome, type Side,
 } from "./rules.js";
 import type { Roster } from "./roster.js";
-import { chooseDefense, chooseScrimmage, chooseTry, tempoFor, timeoutFor } from "./coach.js";
+import {
+  chooseDefense, chooseOffensePlay, chooseScrimmage, chooseTry, emptyTendencies, recordDefense, recordOffense, runRate, tempoFor, timeoutFor,
+  type Tendencies,
+} from "./coach.js";
 import { createPlay, type PlayResult, type PlaySim, type StatEvent, type Stats } from "./engine/play.js";
 import { fieldGoal, kickoff, pat, punt } from "./engine/kicks.js";
 
@@ -71,13 +74,16 @@ export type Pending =
 
 /** A human offensive decision. */
 export type UserCall =
-  | { kind: "play"; play: OffensePlay; flip: boolean }
+  | { kind: "play"; play: OffensePlay; flip: boolean; formation?: string; personnel?: string }
   | { kind: "punt" } | { kind: "fieldGoal" } | { kind: "kneel" } | { kind: "spike" };
 
 export interface SnapOptions {
   userCall?: UserCall;               // human offense
   tryChoice?: "pat" | "twoPoint";    // human try decision
   defCall?: DefenseCall;             // human defense
+  defFront?: string;                 // human defense: front (default: the AI's answer to the personnel)
+  /** human defense: control one defender during the play */
+  controlDefender?: boolean;
   timeout?: boolean;                 // human calls a timeout before this snap
 }
 
@@ -85,6 +91,7 @@ export interface SnapOptions {
 export interface LivePlay {
   sim: PlaySim; offSide: Side; userOffense: boolean;
   play: OffensePlay; call: DefenseCall; twoPoint: boolean;
+  formation: string; personnel: string; front: string; userDefense: boolean;
   /** internal bookkeeping for finish() */
   ctx: { before: GameState; at: GameState };
 }
@@ -98,6 +105,8 @@ export class GameSession {
   state: GameState;
   readonly box: [TeamBox, TeamBox] = [emptyBox(), emptyBox()];
   readonly log: PlayLog[] = [];
+  /** what each side has shown this game */
+  readonly tend: [Tendencies, Tendencies] = [emptyTendencies(), emptyTendencies()];
   private readonly cfg: GameData["rules"];
   private readonly rng: Rng;
   private readonly ratings: (id: number) => Stats;
@@ -169,15 +178,13 @@ export class GameSession {
         this.ballX = this.mid;
         return { done: this.apply(before, s, k.outcome, [], "Extra point", "", k.log.join(", "), "try") };
       }
-      const goal = data.offense.plays.filter((p) => p.weight > 0 && !p.tags.includes("deep"));
-      let play = goal[rng.int(goal.length)]!;
-      let call = data.defense.calls[rng.int(data.defense.calls.length)]!;
-      let flip = rng.int(2) === 1;
-      if (userOff && opts.userCall?.kind === "play") { play = opts.userCall.play; flip = opts.userCall.flip; }
-      if (!userOff && this.userSide !== null && opts.defCall) call = opts.defCall;
-      const sim = createPlay({ data, ratings, offense, defense, offSide: off, ballOn: s.ballOn, ballX: this.mid, toGo: s.toGo, play, call, flip, rng, twoPoint: true, userOffense: userOff });
-      this.ballX = this.mid;
-      return { live: { sim, offSide: off, userOffense: userOff, play, call, twoPoint: true, ctx: { before, at: s } } };
+      const goal = data.offense.plays.filter((p) => p.weight > 0 && !p.tags.includes("deep") && !p.tags.includes("screen"));
+      const p0 = goal[rng.int(goal.length)]!;
+      let pc = { play: p0, formation: p0.formations[0]!, personnel: data.formations.offense.find((f) => f.id === p0.formations[0])!.personnel[0]!, flip: rng.int(2) === 1 };
+      if (userOff && opts.userCall?.kind === "play") pc = this.userPlayCall(opts.userCall);
+      let dc = chooseDefense(s, data, rng, pc.personnel, defense, this.tend[off]);
+      if (!userOff && this.userSide !== null && opts.defCall) dc = { call: opts.defCall, front: opts.defFront ?? dc.front };
+      return { live: this.start(s, before, pc, dc, opts, true) };
     }
 
     // scrimmage: timeouts and runoff
@@ -193,9 +200,11 @@ export class GameSession {
       return { done: { entry, events: pre.events, state: s } };
     }
     let dec = userOff && opts.userCall
-      ? (opts.userCall.kind === "play" ? { ...opts.userCall, call: chooseDefense(s, data, rng) } : opts.userCall)
-      : chooseScrimmage(s, offense, defense, data, ratings, rng);
-    if (dec.kind === "play" && !userOff && this.userSide !== null && opts.defCall) dec = { ...dec, call: opts.defCall };
+      ? (opts.userCall.kind === "play"
+        ? (() => { const pc = this.userPlayCall(opts.userCall); return { kind: "play" as const, ...pc, ...chooseDefense(s, data, rng, pc.personnel, defense, this.tend[off]) }; })()
+        : opts.userCall)
+      : chooseScrimmage(s, offense, defense, data, ratings, rng, this.tend[off], this.tend[def]);
+    if (dec.kind === "play" && !userOff && this.userSide !== null && opts.defCall) dec = { ...dec, call: opts.defCall, front: opts.defFront ?? dec.front };
     if (dec.kind === "punt") {
       const k = punt(kin, s.ballOn);
       this.box[off].punts++; this.box[off].puntYds += Math.round(F.min(k.outcome.endY, fx(100)) / ONE - s.ballOn / ONE);
@@ -221,8 +230,36 @@ export class GameSession {
     if (preFoul) {
       return { done: this.apply(before, s, { play: "scrimmage", endY: s.ballOn, elapsedTicks: 0, foul: preFoul }, [], dec.play.name, "", preFoul.name) };
     }
-    const sim = createPlay({ data, ratings, offense, defense, offSide: off, ballOn: s.ballOn, ballX: this.ballX, toGo: s.toGo, play: dec.play, call: dec.call, flip: dec.flip, rng, userOffense: userOff });
-    return { live: { sim, offSide: off, userOffense: userOff, play: dec.play, call: dec.call, twoPoint: false, ctx: { before, at: s } } };
+    recordOffense(this.tend[off], s, dec);
+    recordDefense(this.tend[def], dec.call);
+    return { live: this.start(s, before, dec, dec, opts, false) };
+  }
+
+  /** The offense's call when only the play is given: the first formation, its first personnel. */
+  private userPlayCall(c: Extract<UserCall, { kind: "play" }>) {
+    const formation = c.formation && c.play.formations.includes(c.formation) ? c.formation : c.play.formations[0]!;
+    const f = this.data.formations.offense.find((x) => x.id === formation)!;
+    const personnel = c.personnel && f.personnel.includes(c.personnel) ? c.personnel : f.personnel[0]!;
+    return { play: c.play, formation, personnel, flip: c.flip };
+  }
+
+  /** Line up and create the live play. */
+  private start(s: GameState, before: GameState, pc: { play: OffensePlay; formation: string; personnel: string; flip: boolean },
+    dc: { call: DefenseCall; front: string }, opts: SnapOptions, twoPoint: boolean): LivePlay {
+    const { data, rng, ratings, teams } = this;
+    const off = s.possession, def = other(off);
+    const userOff = this.userSide === off;
+    const userDefense = !userOff && this.userSide === def && Boolean(opts.controlDefender);
+    if (twoPoint) this.ballX = this.mid;
+    const C = data.coach.tendency;
+    const paBiteMult = C.paBiteBase + C.paBitePerRunRate * runRate(this.tend[off], data);
+    const sim = createPlay({
+      data, ratings, offense: teams[off], defense: teams[def], offSide: off, ballOn: s.ballOn, ballX: this.ballX, toGo: s.toGo,
+      play: pc.play, formation: pc.formation, personnel: pc.personnel, call: dc.call, front: dc.front, flip: pc.flip, rng,
+      twoPoint, userOffense: userOff, userDefense, paBiteMult,
+    });
+    return { sim, offSide: off, userOffense: userOff, userDefense, play: pc.play, call: dc.call, formation: pc.formation, personnel: pc.personnel,
+      front: dc.front, twoPoint, ctx: { before, at: s } };
   }
 
   /** Apply a finished live play. */

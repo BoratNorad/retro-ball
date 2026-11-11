@@ -47,7 +47,7 @@ describe("interactive play engine", () => {
       if (snap.qbCanThrow) waited++;
       if (!snap.qbCanThrow) continue;
       // throw a bullet at the slot receiver running the flat
-      const slot = snap.actors.find((a) => a.side === "O" && a.role === "SLOT")!;
+      const slot = snap.actors.find((a) => a.side === "O" && a.role === "H")!;
       sim.step({ throwAt: { x: slot.x + slot.vx / 3, y: slot.y + slot.vy / 3, power: 1 } });
       while (!sim.step());
       if (sim.result().log.some((l) => l.startsWith("caught by"))) caught++;
@@ -74,5 +74,49 @@ describe("interactive play engine", () => {
       sim.step({ action: "juke" });
       expect(sim.snapshot().cooldowns.juke).toBe(cd - 1); // second juke ignored while cooling down
     }
+  });
+});
+
+describe("M4 play calling", () => {
+  it("defensive calls compile against any front: Cover 0 sends 6+, Cover 3 drops 3 deep", () => {
+    for (const front of ["base43", "nickel", "dime", "base34", "bear"]) {
+      for (const [callId, minRush, deep] of [["cover0", 6, 0], ["cover3", 4, 3], ["cover2", 3, 2]] as const) {
+        const sim = createPlay(input("slants", callId, "c" + front, { front }));
+        const tasks = sim.assignments().map((a) => a.task);
+        expect(tasks.filter((t) => t === "rush").length, `${front} ${callId}`).toBeGreaterThanOrEqual(minRush);
+        expect(tasks.filter((t) => t.startsWith("deep")).length, `${front} ${callId}`).toBe(deep);
+      }
+    }
+  });
+
+  it("read option: a human can keep it; the AI gives or keeps", () => {
+    let kept = 0;
+    for (let i = 0; i < 6; i++) {
+      const sim = createPlay(input("zone_read", "cover3", "opt" + i, { userOffense: true }));
+      expect(sim.snapshot().canKeep).toBe(true);
+      sim.step({ action: "keep" });
+      while (!sim.step({})) { /* run */ }
+      if (sim.result().log.some((l) => l.includes("keeps it"))) kept++;
+    }
+    expect(kept).toBe(6);
+  });
+
+  it("defensive control mode: the human defender dives at a carrier in range", () => {
+    let opps = 0, dives = 0;
+    for (let i = 0; i < 30; i++) {
+      const sim = createPlay(input(i % 2 ? "outside_zone" : "slants", "cover3", "dv" + i, { userDefense: true }));
+      let t = 0, done = false, tried = false;
+      while (!done && t++ < 400) {
+        const sn = sim.snapshot();
+        expect(sn.userDefender).toBeGreaterThanOrEqual(11);
+        const me = sn.actors[sn.userDefender]!, c = sn.actors[sn.carrier];
+        const close = !tried && c && c.side === "O" && !sn.qbCanThrow && Math.hypot(c.x - me.x, c.y - me.y) < fx(2.3);
+        if (close) { opps++; tried = true; }
+        done = sim.step(close ? { action: "dive" } : {});
+      }
+      if (sim.result().log.some((l) => l.includes("dives"))) dives++;
+    }
+    expect(opps).toBeGreaterThan(0);
+    expect(dives).toBeGreaterThanOrEqual(Math.floor(opps * 0.8)); // an engaged or stunned defender cannot dive
   });
 });

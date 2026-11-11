@@ -1,7 +1,10 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { PoolFileSchema, type PlayerCard, type GameData } from "@tdf/shared";
 import { nodeGameData, readShared } from "@tdf/shared/node";
-import { ALL_SLOTS, nflRoster, slotPos } from "../src/roster.js";
+import { ALL_SLOTS, PACKAGE_SLOTS, nflRoster, slotPos } from "../src/roster.js";
+import { simulatePlay } from "../src/engine/play.js";
+import { Rng } from "../src/rng.js";
+import { fx } from "../src/fixed.js";
 import { slotOverall } from "../src/cards.js";
 
 let data: GameData;
@@ -32,43 +35,66 @@ describe("rosters", () => {
 });
 
 describe("playbook cross-references", () => {
-  it("formations cover every role", () => {
-    const offRoles = Object.keys(data.formations.roles.offense).sort();
-    const defRoles = Object.keys(data.formations.roles.defense).sort();
-    for (const f of data.formations.offense) expect(Object.keys(f.spots).sort()).toEqual(offRoles);
-    for (const f of data.formations.defense) expect(Object.keys(f.spots).sort()).toEqual(defRoles);
-    for (const slot of [...Object.values(data.formations.roles.offense), ...Object.values(data.formations.roles.defense)])
-      expect(ALL_SLOTS).toContain(slot);
+  const ELIG = ["X", "Y", "Z", "H", "RB"];
+  it("formations place QB, the line and five eligibles; personnel and fronts use real roster slots", () => {
+    const want = ["QB", "LT", "LG", "C", "RG", "RT", ...ELIG].sort();
+    for (const f of data.formations.offense) {
+      expect(Object.keys(f.spots).sort(), f.id).toEqual(want);
+      for (const p of f.personnel) expect(data.formations.personnel[p], `${f.id}: personnel ${p}`).toBeTruthy();
+    }
+    const slots = new Set<string>([...ALL_SLOTS, ...PACKAGE_SLOTS]);
+    for (const p of Object.values(data.formations.personnel)) for (const r of ELIG) expect(slots.has(p[r]!), `personnel slot ${p[r]}`).toBe(true);
+    for (const f of data.formations.defense) {
+      expect(Object.keys(f.roles).length, f.id).toBe(11);
+      for (const r of Object.values(f.roles)) expect(slots.has(r.slot), `${f.id}: ${r.slot}`).toBe(true);
+      for (const r of f.rush) expect(f.roles[r], `${f.id}: rush ${r}`).toBeTruthy();
+    }
+    expect(data.formations.offense.length).toBeGreaterThanOrEqual(15);
+    expect(data.formations.defense.map((f) => f.id)).toEqual(expect.arrayContaining(["base43", "base34", "nickel", "dime", "quarter", "46", "bear", "goal_line"]));
   });
 
-  it("offensive plays reference real formations, routes and roles", () => {
+  it("60+ offensive plays reference real formations, routes and roles", () => {
     const fids = new Set(data.formations.offense.map((f) => f.id));
-    const roles = new Set(Object.keys(data.formations.roles.offense));
+    expect(data.offense.plays.length).toBeGreaterThanOrEqual(60);
+    expect(new Set(data.offense.plays.map((p) => p.id)).size).toBe(data.offense.plays.length);
     for (const p of data.offense.plays) {
       for (const f of p.formations) expect(fids.has(f), `${p.id}: formation ${f}`).toBe(true);
-      if (p.kind === "pass") {
-        expect(p.routes && p.read && p.drop).toBeTruthy();
+      if (p.kind !== "run") {
+        expect(p.routes && p.read && p.drop, p.id).toBeTruthy();
         for (const [role, route] of Object.entries(p.routes!)) {
-          expect(roles.has(role), `${p.id}: role ${role}`).toBe(true);
-          expect(data.routes.routes[route], `${p.id}: route ${route}`).toBeTruthy();
+          expect(ELIG.includes(role), `${p.id}: role ${role}`).toBe(true);
+          expect(data.routes.routes[route.split(":")[0]!], `${p.id}: route ${route}`).toBeTruthy();
         }
-        for (const r of p.read!) expect(p.routes![r] && p.routes![r] !== "block", `${p.id}: read ${r} must run a route`).toBeTruthy();
-      } else {
-        expect(roles.has(p.carrier!) && p.aim && p.block).toBeTruthy();
+        for (const r of p.read!) expect(p.routes![r] && !data.routes.routes[p.routes![r]!.split(":")[0]!]!.block, `${p.id}: read ${r} must run a route`).toBeTruthy();
       }
+      if (p.kind !== "pass") expect(["QB", ...ELIG].includes(p.carrier!) && p.aim && p.block, p.id).toBeTruthy();
     }
   });
 
-  it("defensive calls assign every role and reference real zones/targets", () => {
-    const defRoles = Object.keys(data.formations.roles.defense).sort();
-    const offRoles = new Set(Object.keys(data.formations.roles.offense));
+  it("defensive calls reference real zones", () => {
     for (const c of data.defense.calls) {
-      expect(Object.keys(c.roles).sort(), c.id).toEqual(defRoles);
-      for (const a of Object.values(c.roles)) {
-        if (typeof a === "object" && "zone" in a) expect(data.defense.zones[a.zone], `${c.id}: zone ${a.zone}`).toBeTruthy();
-        if (typeof a === "object" && "man" in a) expect(offRoles.has(a.man), `${c.id}: man ${a.man}`).toBe(true);
-      }
-      expect(Object.values(c.roles).filter((a) => a === "rush").length).toBeGreaterThanOrEqual(4);
+      for (const z of [...c.deep.map((d) => d.zone), ...c.under]) expect(data.defense.zones[z], `${c.id}: zone ${z}`).toBeTruthy();
+      for (const f of c.notFrom) expect(data.formations.defense.find((x) => x.id === f), `${c.id}: front ${f}`).toBeTruthy();
     }
+    expect(data.defense.calls.length).toBeGreaterThanOrEqual(15);
+  });
+
+  it("every play runs from every formation against every front (smoke)", () => {
+    const byId = new Map(data.players.players.map((p) => [p.id, p.stats]));
+    const ratings = (id: number) => byId.get(id) ?? {};
+    const o = nflRoster("PHI", pool, data), d = nflRoster("BAL", pool, data);
+    let n = 0;
+    for (const p of data.offense.plays) for (const f of p.formations) {
+      const fo = data.formations.offense.find((x) => x.id === f)!;
+      for (const pers of fo.personnel) {
+        const front = data.formations.defense[n % data.formations.defense.length]!.id;
+        const call = data.defense.calls[(n * 7) % data.defense.calls.length]!;
+        const r = simulatePlay({ data, ratings, offense: o, defense: d, offSide: 0, ballOn: fx(35), ballX: fx(26.67), toGo: fx(10),
+          play: p, formation: f, personnel: pers, call, front, flip: n % 2 === 1, rng: new Rng("smoke" + n) });
+        expect(r.outcome.elapsedTicks, `${p.id}/${f}/${pers}`).toBeGreaterThan(0);
+        n++;
+      }
+    }
+    expect(n).toBeGreaterThan(200);
   });
 });

@@ -8,7 +8,7 @@ import * as F from "../fixed.js";
 import type { Fx, V2 } from "../fixed.js";
 import { Rng } from "../rng.js";
 import type { Foul, PlayOutcome } from "../rules.js";
-import type { Roster } from "../roster.js";
+import { slotPlayer, type Roster } from "../roster.js";
 
 const { fx, mul, div, idiv, ONE, vsub, vadd, vlen, vnorm, vscale, vdist } = F;
 
@@ -27,12 +27,20 @@ export interface PlayInput {
   ballOn: Fx; ballX: Fx;
   toGo: Fx;
   play: OffensePlay; call: DefenseCall;
+  /** offensive formation id (default: the play's first), personnel id (default: the formation's first) */
+  formation?: string; personnel?: string;
+  /** defensive front id (default base43) */
+  front?: string;
   flip: boolean;
+  /** how hard the defense bites on play action (1 = normal; the game raises it for run-heavy offenses) */
+  paBiteMult?: number;
   rng: Rng;
   twoPoint?: boolean;
   record?: boolean;
   /** a human controls the offense: the QB waits for throwAt, the carrier follows move */
   userOffense?: boolean;
+  /** a human controls one defender (defensive control mode) */
+  userDefense?: boolean;
 }
 export interface Frame { t: number; p: number[]; ball: [number, number, number] } // positions as [x,y,...] in Fx
 
@@ -42,7 +50,8 @@ export interface UserInput {
   move?: V2 | null;
   /** throw now at this field point; power 0..1 (0 = soft lob, 1 = bullet) */
   throwAt?: { x: Fx; y: Fx; power: number } | null;
-  action?: "juke" | "spin" | "burst" | "scramble" | null;
+  /** offense: juke/spin/burst/scramble, keep (read option); defense: dive, strip, swat, switch */
+  action?: "juke" | "spin" | "burst" | "scramble" | "keep" | "dive" | "strip" | "swat" | "switch" | null;
 }
 export interface ActorView { x: Fx; y: Fx; vx: Fx; vy: Fx; side: "O" | "D"; role: string; num: number | null; id: number; down: boolean }
 export interface PlaySnapshot {
@@ -50,6 +59,10 @@ export interface PlaySnapshot {
   actors: ActorView[];
   ball: { x: Fx; y: Fx; h: Fx; state: "held" | "air" | "dead" | "loose"; holder: number };
   qbCanThrow: boolean; carrier: number; userCarrier: boolean;
+  /** actor index the human controls on defense (-1 = none) */
+  userDefender: number;
+  /** read option: the QB still has the choice to keep */
+  canKeep: boolean;
   cooldowns: { juke: number; spin: number; burst: number };
   log: string[];
 }
@@ -57,20 +70,32 @@ export interface PlaySim {
   step(input?: UserInput | null): boolean;
   snapshot(): PlaySnapshot;
   result(): PlayResult;
+  /** each defender's assignment at the snap: rush, man:<role>, spy, or the zone name */
+  assignments(): { role: string; task: string }[];
 }
 export interface PlayResult { outcome: PlayOutcome; stats: StatEvent[]; endX: Fx; frames?: Frame[]; log: string[]; debug?: { tries: number; missed: number; minDist: number } }
 
-type Task = "block" | "route" | "qb" | "carry" | "rush" | "man" | "zone" | "pursue" | "idle";
+type Task = "block" | "route" | "qb" | "carry" | "rush" | "man" | "zone" | "spy" | "pull" | "lead" | "idle";
 interface Actor {
   i: number; c: PlayerCard; st: Stats; side: "O" | "D"; role: string;
+  /** defensive class (DL, EDGE, LB, NB, CB, S); "" on offense */
+  cls: string;
   pos: V2; vel: V2; maxSpeed: Fx; accel: Fx;
   task: Task;
   // blocking
   blockTarget: number; engagedWith: number; shedTick: number; stunTil: number;
   // routes
   route: V2[]; routeIdx: number; settle: boolean; isBlocker: boolean;
+  /** blocks (pass pro) until this tick, then runs the route */
+  releaseAt: number;
+  /** stalk blocker: blocks defensive backs, not rushers */
+  stalk: boolean;
+  /** zone combo: help on this defender until comboUntil, then climb to blockTarget */
+  comboOn: number; comboUntil: number;
+  /** play action: this defender bites on the fake until this tick */
+  biteUntil: number;
   // coverage
-  manTarget: number; zone: { at: V2; r: Fx; deep: boolean } | null; reactTicks: number;
+  manTarget: number; zone: { at: V2; r: Fx; deep: boolean } | null; zoneName: string; reactTicks: number;
   lastTackleTry: number;
   history: V2[];
   brake: boolean;
@@ -103,92 +128,211 @@ export function createPlay(inp: PlayInput): PlaySim {
   const stats: StatEvent[] = [];
   const defSide = (inp.offSide === 0 ? 1 : 0) as 0 | 1;
 
-  const off = data.formations.offense.find((f) => inp.play.formations.includes(f.id))!;
-  const dfm = data.formations.defense.find((f) => f.id === inp.call.formation)!;
+  const off = data.formations.offense.find((f) => f.id === (inp.formation ?? inp.play.formations[0]))
+    ?? data.formations.offense.find((f) => inp.play.formations.includes(f.id))!;
+  const persId = inp.personnel && off.personnel.includes(inp.personnel) ? inp.personnel : off.personnel[0]!;
+  const pers = data.formations.personnel[persId]!;
+  const dfm = data.formations.defense.find((f) => f.id === (inp.front ?? "base43")) ?? data.formations.defense[0]!;
   const flipX = inp.flip ? -1 : 1;
   const los = inp.ballOn;
   const bx = inp.ballX;
+  const kind = inp.play.kind;
+  const isPass = kind === "pass";
+  const isRpo = kind === "rpo";
+  const scheme = inp.play.block ?? "zone";
+  const isDraw = kind === "run" && scheme === "draw";
+  const isOption = kind === "run" && Boolean(inp.play.option);
+  const gapRun = kind === "run" && (scheme === "power" || scheme === "counter");
+  /** the line pass-protects at the snap (passes, draws) */
+  const passSet = isPass || isDraw;
+  const S = T.schemes;
 
   // ------------------------------------------------------------------ actors
   const actors: Actor[] = [];
-  const mk = (c: PlayerCard, side: "O" | "D", role: string, at: V2): Actor => {
+  const mk = (c: PlayerCard, side: "O" | "D", role: string, at: V2, cls = ""): Actor => {
     const st = inp.ratings(c.id);
     const g = (k: string) => st[k] ?? 50;
     return {
-      i: actors.length, c, st, side, role, pos: at, vel: { x: 0, y: 0 },
+      i: actors.length, c, st, side, role, cls, pos: at, vel: { x: 0, y: 0 },
       maxSpeed: fx(T.movement.speedBase + T.movement.speedPer * g("speed")),
       accel: fx(T.movement.accelBase + T.movement.accelPer * g("acceleration")),
       task: "idle", blockTarget: -1, engagedWith: -1, shedTick: 0, stunTil: 0,
-      route: [], routeIdx: 0, settle: false, isBlocker: false,
-      manTarget: -1, zone: null, reactTicks: 0, lastTackleTry: -999, history: [], brake: false,
+      route: [], routeIdx: 0, settle: false, isBlocker: false, releaseAt: 0, stalk: false, comboOn: -1, comboUntil: 0, biteUntil: 0,
+      manTarget: -1, zone: null, zoneName: "", reactTicks: 0, lastTackleTry: -999, history: [], brake: false,
     };
   };
   const place = (dx: number, dy: number, mirror: number): V2 => ({
     x: F.clamp(bx + fx(dx * mirror), fx(1), W - fx(1)), y: los + fx(dy),
   });
   const roleIdx = new Map<string, number>();
-  for (const [role, slot] of Object.entries(data.formations.roles.offense)) {
+  const takenO = new Set<number>();
+  for (const role of ["QB", "LT", "LG", "C", "RG", "RT", "X", "Y", "Z", "H", "RB"]) {
+    const slot = ["QB", "LT", "LG", "C", "RG", "RT"].includes(role) ? role : pers[role]!;
+    const card = slotPlayer(inp.offense, slot, data, takenO);
+    takenO.add(card.id);
     const [dx, dy] = off.spots[role]!;
-    const a = mk(inp.offense.starters[slot]!, "O", role, place(dx, dy, flipX));
+    const a = mk(card, "O", role, place(dx, dy, flipX));
     roleIdx.set("O:" + role, a.i);
     actors.push(a);
   }
-  for (const [role, slot] of Object.entries(data.formations.roles.defense)) {
-    const [dx, dy] = dfm.spots[role]!;
-    let at = place(dx, dy, 1);
-    const alignOn = dfm.alignOn?.[role];
-    if (alignOn) at = { x: actors[roleIdx.get("O:" + alignOn)!]!.pos.x, y: los + fx(dy) };
-    const a = mk(inp.defense.starters[slot]!, "D", role, at);
+  const O = actors.filter((a) => a.side === "O");
+  const ELIG = O.filter((a) => ["X", "Y", "Z", "H", "RB"].includes(a.role));
+  // strength: the side with more eligibles (ties go to the Y)
+  let leftN = 0, rightN = 0;
+  for (const e of ELIG) { if (e.pos.x < bx - fx(0.5)) leftN++; else if (e.pos.x > bx + fx(0.5)) rightN++; }
+  const yAct = actors[roleIdx.get("O:Y")!]!;
+  const m = rightN > leftN ? 1 : leftN > rightN ? -1 : yAct.pos.x >= bx ? 1 : -1;
+  /** x relative to the ball in the strength-right frame */
+  const fr = (a: { pos: V2 } | V2) => (("pos" in a ? a.pos.x : a.x) - bx) * m;
+  const wideOn = (side: number, nth: number) => {
+    const list = ELIG.filter((e) => fr(e) * side > fx(3)).sort((p, q) => F.abs(fr(q)) - F.abs(fr(p)));
+    return list[nth] ?? null;
+  };
+  const takenD = new Set<number>();
+  for (const [role, r] of Object.entries(dfm.roles)) {
+    const card = slotPlayer(inp.defense, r.slot, data, takenD);
+    takenD.add(card.id);
+    let at = place(r.at[0], r.at[1], m);
+    if (r.alignOn) {
+      const side = r.at[0] * m >= 0 ? 1 : -1;
+      const over = wideOn(side * m, r.alignOn === "wide" ? 0 : 1);
+      if (over && (r.alignOn === "wide" || F.abs(over.pos.x - bx) > fx(5))) at = { x: over.pos.x + (r.alignOn === "slot" ? fx(-0.8 * side * m) : 0), y: at.y };
+    }
+    const a = mk(card, "D", role, at, r.cls);
     roleIdx.set("D:" + role, a.i);
     actors.push(a);
   }
-  const O = actors.filter((a) => a.side === "O");
   const D = actors.filter((a) => a.side === "D");
   const byRole = (side: "O" | "D", role: string) => actors[roleIdx.get(side + ":" + role)!]!;
   const R = (a: Actor, k: string) => a.st[k] ?? 50;
   const qb = byRole("O", "QB");
+  const carrierRole = inp.play.carrier ?? "RB";
+  const runner = kind === "pass" ? null : byRole("O", carrierRole);
+  // a lead blocker only from the backfield (an H split out in this formation just blocks normally)
+  const leadCand = inp.play.lead && inp.play.lead !== carrierRole ? byRole("O", inp.play.lead) : null;
+  const leadBlocker = leadCand && leadCand.pos.y < los - fx(2.5) ? leadCand : null;
 
   // ------------------------------------------------------------------ assignments
-  const isPass = inp.play.kind === "pass";
   const OL_ROLES = ["LT", "LG", "C", "RG", "RT"];
-  for (const a of O) {
-    if (OL_ROLES.includes(a.role)) { a.task = "block"; a.isBlocker = true; continue; }
-    if (a.role === "QB") { a.task = "qb"; continue; }
-    if (isPass) {
-      const routeId = inp.play.routes?.[a.role] ?? "block";
-      const rdef = data.routes.routes[routeId]!;
-      if (rdef.block) { a.task = "block"; a.isBlocker = true; continue; }
-      const sx = a.pos.x >= bx ? 1 : -1;
-      a.route = rdef.points.map(([o, d]) => ({ x: F.clamp(a.pos.x + fx(o * sx), fx(0.5), W - fx(0.5)), y: a.pos.y + fx(d) }));
-      a.settle = Boolean(rdef.settle);
-      a.task = "route";
-    } else {
-      a.task = a.role === inp.play.carrier ? "carry" : "block";
-      if (a.task === "block") a.isBlocker = true;
-    }
+  const aimSide = (inp.play.aim?.[0] ?? 1) * flipX >= 0 ? 1 : -1;
+  const pullers: Actor[] = [];
+  if (!passSet && (scheme === "power" || scheme === "counter")) {
+    pullers.push(byRole("O", aimSide > 0 ? "LG" : "RG"));
+    if (scheme === "counter") pullers.push(byRole("O", aimSide > 0 ? "LT" : "RT"));
   }
-  for (const d of D) {
-    const asg = inp.call.roles[d.role]!;
-    d.reactTicks = sec(T.coverage.reactBase + T.coverage.reactPerMissing * (99 - R(d, "playRecognition")));
-    if (asg === "rush" || asg === "spy") d.task = "rush";
-    else if ("man" in asg) {
-      d.task = "man"; d.manTarget = byRole("O", asg.man).i;
-      // mirroring a receiver is a man-coverage skill, not general play recognition
-      d.reactTicks = sec(T.coverage.manReactBase + T.coverage.manReactPerMissing * (99 - R(d, "manCoverage")));
+  const setRoute = (a: Actor, routeId: string) => {
+    const [rid, force] = routeId.split(":") as [string, string | undefined];
+    const rdef = data.routes.routes[rid]!;
+    if (rdef.block) { a.task = "block"; a.isBlocker = true; a.stalk = rdef.block === "stalk"; return; }
+    const sx = force ? (force === "L" ? -1 : 1) * flipX : a.pos.x >= bx ? 1 : -1;
+    a.route = rdef.points.map(([o, d]) => ({ x: F.clamp(a.pos.x + fx(o * sx), fx(0.5), W - fx(0.5)), y: a.pos.y + fx(d) }));
+    a.settle = Boolean(rdef.settle);
+    a.task = "route";
+    if (rdef.delay) { a.releaseAt = sec(rdef.delay); a.isBlocker = true; }
+  };
+  for (const a of O) {
+    if (OL_ROLES.includes(a.role)) { a.task = pullers.includes(a) ? "pull" : "block"; a.isBlocker = true; continue; }
+    if (a.role === "QB" && a !== runner) { a.task = "qb"; continue; }
+    if (a === runner) { a.task = "carry"; continue; }
+    if (a === leadBlocker) { a.task = "lead"; a.isBlocker = true; continue; }
+    const routeId = inp.play.routes?.[a.role];
+    if ((isPass || isRpo) && routeId) { setRoute(a, routeId); continue; }
+    a.task = "block"; a.isBlocker = true;
+    // wide receivers on runs block the nearest defensive back
+    if (!passSet && ["X", "Z"].includes(a.role) || (!passSet && F.abs(a.pos.x - bx) > fx(8))) a.stalk = true;
+  }
+  if (qb === runner) qb.task = isDraw ? "qb" : "carry";
+  // pullers: step back, run along the line to the hole, turn up into it
+  const holeX = bx + fx((inp.play.aim?.[0] ?? 0) * flipX);
+  for (const [k, pl] of pullers.entries()) {
+    pl.route = [{ x: holeX - fx(aimSide * (1.2 - k * 1.2)), y: los - fx(S.pullStep) }, { x: holeX + fx(aimSide * k), y: los + fx(1.5) }];
+  }
+  if (leadBlocker) leadBlocker.route = [{ x: holeX, y: los - fx(0.5) }, { x: holeX, y: los + fx(2) }];
+
+  // ------------------------------------------------------------------ defensive call -> assignments
+  let assignmentsAtSnap: { role: string; task: string }[] = [];
+  compileCall();
+  function compileCall() {
+    const call = inp.call;
+    const free = new Set(D);
+    const sel = (opts: readonly string[], pool: Iterable<Actor>): Actor | null => {
+      const list = [...pool];
+      for (const o of opts) {
+        const named = list.find((d) => d.role === o);
+        if (named) return named;
+        const [cls, pick] = o.split(":") as [string, string | undefined];
+        const c = list.filter((d) => d.cls === cls);
+        if (!c.length) continue;
+        const by = (f: (d: Actor) => number) => c.reduce((b, d) => (f(d) < f(b) ? d : b));
+        switch (pick) {
+          case "L": case "W": return by((d) => fr(d));
+          case "R": case "S": return by((d) => -fr(d));
+          case "M": return by((d) => F.abs(fr(d)));
+          case "deep": return by((d) => -d.pos.y);
+          case "low": return by((d) => d.pos.y);
+          default: return c[0]!;
+        }
+      }
+      return null;
+    };
+    const rushSet = new Set(dfm.rush.map((r) => byRole("D", r)));
+    for (const b of call.blitz) { const d = sel(b, [...free].filter((x) => !rushSet.has(x))); if (d) rushSet.add(d); }
+    for (const dr of call.drop) { const d = sel(dr, rushSet); if (d && rushSet.size > 3) rushSet.delete(d); }
+    for (const d of rushSet) { d.task = "rush"; free.delete(d); }
+    const zoneAt = (id: string) => {
+      const z = data.defense.zones[id]!;
+      return { at: { x: F.clamp(bx + fx(z.at[0] * m), fx(2), W - fx(2)), y: los + fx(z.at[1]) }, r: fx(z.r), deep: Boolean(z.deep) };
+    };
+    for (const dz of call.deep) {
+      const d = sel(dz.who, free);
+      if (!d) continue;
+      d.task = "zone"; d.zone = zoneAt(dz.zone); d.zoneName = dz.zone; free.delete(d);
     }
-    else {
-      const z = data.defense.zones[asg.zone]!;
-      d.task = "zone";
-      d.zone = { at: { x: F.clamp(bx + fx(z.at[0]), fx(2), W - fx(2)), y: los + fx(z.at[1]) }, r: fx(z.r), deep: Boolean(z.deep) };
+    if (call.spy) { const d = sel(call.spy, free); if (d) { d.task = "spy"; free.delete(d); } }
+    if (call.man) {
+      // greedy matching: corners take the wide receivers, then the closest fits for the rest
+      const recv = [...ELIG];
+      const cost = (d: Actor, r: Actor) => {
+        const wide = F.abs(r.pos.x - bx) > fx(12);
+        const back = r.pos.y < los - fx(3);
+        const pref = d.cls === "CB" ? (back ? 12 : 0) : d.cls === "NB" ? (wide ? 4 : 0) : d.cls === "LB" ? (wide ? 14 : back ? 0 : 3) : d.cls === "S" ? (wide ? 6 : 1) : 20;
+        return F.abs(d.pos.x - r.pos.x) / ONE + 0.4 * F.abs(d.pos.y - r.pos.y) / ONE + pref;
+      };
+      const pairs: { d: Actor; r: Actor; c: number }[] = [];
+      for (const d of free) for (const r of recv) pairs.push({ d, r, c: cost(d, r) });
+      pairs.sort((p, q) => p.c - q.c || p.d.i - q.d.i || p.r.i - q.r.i);
+      const usedR = new Set<number>();
+      for (const pr of pairs) {
+        if (!free.has(pr.d) || usedR.has(pr.r.i)) continue;
+        pr.d.task = "man"; pr.d.manTarget = pr.r.i; usedR.add(pr.r.i); free.delete(pr.d);
+      }
+    }
+    const left = [...free].sort((p, q) => fr(p) - fr(q) || p.i - q.i);
+    const zones = call.under.slice(0, left.length);
+    while (zones.length < left.length) zones.push("robber");
+    zones.sort((p, q) => data.defense.zones[p]!.at[0] - data.defense.zones[q]!.at[0]);
+    left.forEach((d, k) => { d.task = "zone"; d.zone = zoneAt(zones[k]!); d.zoneName = zones[k]!; });
+    assignmentsAtSnap = D.map((d) => ({ role: d.role, task: d.task === "man" ? `man:${actors[d.manTarget]!.role}` : d.task === "zone" ? d.zoneName : d.task }));
+    for (const d of D) {
+      d.reactTicks = sec(T.coverage.reactBase + T.coverage.reactPerMissing * (99 - R(d, "playRecognition")));
+      // mirroring a receiver is a man-coverage skill, not general play recognition
+      if (d.task === "man") d.reactTicks = sec(T.coverage.manReactBase + T.coverage.manReactPerMissing * (99 - R(d, "manCoverage")));
+      // play action: second-level defenders step up on the fake; low play recognition bites longer
+      if (inp.play.pa && d.task !== "rush") {
+        const k = (T.pa.biteBase + T.pa.bitePerMissing * (99 - R(d, "playRecognition"))) * (inp.paBiteMult ?? 1) * (d.cls === "CB" ? T.pa.cornerMult : d.cls === "S" ? T.pa.safetyMult : 1);
+        d.biteUntil = sec(T.pa.fakeSeconds + k);
+      }
     }
   }
   const rushers = () => D.filter((d) => d.task === "rush");
 
   /** Claim one defender per blocker (no two blockers on the same man until everyone is covered). */
   const claimed = new Map<number, number>(); // defender -> blocker
+  let optionKey: Actor | null = null;
   function claimTarget(b: Actor): Actor | null {
-    const box = (d: Actor) => F.abs(d.pos.x - b.pos.x) < fx(isPass ? 9 : 7) && d.pos.y - los < fx(isPass ? 6 : 8);
-    const cands = D.filter((d) => (isPass ? d.task === "rush" : true) && box(d) && d.stunTil <= 0);
+    const pp = passSet && !screenOn;
+    const box = (d: Actor) => F.abs(d.pos.x - b.pos.x) < fx(pp ? 9 : 7) && d.pos.y - los < fx(pp ? 6 : 8);
+    const cands = D.filter((d) => (pp && !b.stalk ? d.task === "rush" : true) && d !== optionKey && box(d) && d.stunTil <= 0);
     const free = cands.filter((d) => !claimed.has(d.i));
     const pool = free.length ? free : cands;
     let best: Actor | null = null, bd = fx(1e4);
@@ -204,10 +348,33 @@ export function createPlay(inp: PlayInput): PlaySim {
   }
 
   // ------------------------------------------------------------------ ball
-  const carrierStart = isPass ? qb : actors[roleIdx.get("O:" + inp.play.carrier)!]!;
-  const ball: Ball = { state: "held", holder: carrierStart.i, from: carrierStart.pos, to: carrierStart.pos, t0: 0, t1: 0, target: -1, thrower: -1 };
-  let qbHasBall = isPass;              // QB still deciding (sack possible, throw possible)
-  let runRecognizedAt = isPass ? 1 << 30 : 0;
+  // the QB holds it on passes, RPOs, draws and options until he throws or hands off
+  const qbHolds = isPass || isRpo || isDraw || isOption || runner === qb;
+  const ball: Ball = { state: "held", holder: (qbHolds ? qb : runner!).i, from: qb.pos, to: qb.pos, t0: 0, t1: 0, target: -1, thrower: -1 };
+  let qbHasBall = isPass || isRpo;     // QB can still throw (and be sacked)
+  let runRecognizedAt = passSet ? 1 << 30 : 0;
+  /** tick the QB hands off (draw, option mesh, RPO decision); -1 = no handoff pending */
+  let handoffAt = isDraw ? sec(S.drawHandoff) : isOption ? sec(S.optionMesh) : isRpo ? sec(S.rpoMesh) : -1;
+  /** the run starts (for run-read timing) */
+  let runStart = isDraw ? 1 << 30 : 0;
+  let keepPressed = false;
+  let kept = false;
+  // option: the backside end is left unblocked and read; he either crashes on the back or plays the QB
+  if (isOption) {
+    const back = D.filter((d) => (d.cls === "EDGE" || d.cls === "DL") && (d.pos.x - bx) * aimSide < 0 && d.pos.y - los < fx(3));
+    optionKey = back.sort((p, q) => F.abs(q.pos.x - bx) - F.abs(p.pos.x - bx))[0] ?? null;
+  }
+  const keyCrashes = optionKey ? rng.int(1000) < S.keyCrashPerMille : false;
+  const optionKeyX = optionKey ? optionKey.pos.x : bx;
+  let screenOn = false;
+  const screenTarget = inp.play.screen ? byRole("O", inp.play.read?.[0] ?? "RB") : null;
+  // RPO: the conflict defender is the nearest second-level player to the first read
+  const rpoRead = isRpo ? byRole("O", inp.play.read?.[0] ?? "X") : null;
+  let rpoConflict: Actor | null = null;
+  if (rpoRead) {
+    let bd = fx(S.rpoConflictRange);
+    for (const d of D) if (d.task !== "rush" && d.cls !== "CB") { const dd = vdist(d.pos, rpoRead.pos); if (dd < bd) { bd = dd; rpoConflict = d; } }
+  }
   let scramble = false;
   type End = { reason: string; y: Fx; x: Fx; oob?: boolean; incomplete?: boolean; td?: "O" | "D"; sack?: boolean };
   type Turnover = "interception" | "fumble" | null;
@@ -220,9 +387,19 @@ export function createPlay(inp: PlayInput): PlaySim {
   let pressureAtThrow = false;
   let pressureSince = -1;
   let misreadRolled = false;
-  const dropDepth = fx(Math.max(0, (inp.play.drop ?? 0) - (los - qb.pos.y > fx(3) ? 4 : 0)));
-  const dropPoint = { x: qb.pos.x, y: qb.pos.y - dropDepth };
-  const readStart = sec((inp.play.drop ?? 3) / T.qb.dropSpeed + T.qb.readStartAfterDrop);
+  const gun = los - qb.pos.y > fx(3);
+  const dropYds = isDraw ? S.drawDrop : isOption ? 0 : (inp.play.drop ?? 0);
+  const dropDepth = fx(Math.max(0, dropYds - (gun ? 4 : 0)));
+  const boot = Boolean(inp.play.boot);
+  const dropPoint = boot ? { x: F.clamp(qb.pos.x - fx(T.pa.bootWidth * flipX), fx(3), W - fx(3)), y: los - fx(T.pa.bootDepth) } : { x: qb.pos.x, y: qb.pos.y - dropDepth };
+  const dropDist = vdist(qb.pos, dropPoint) / ONE;
+  const fakeSecs = inp.play.pa ? T.pa.fakeSeconds : 0;
+  // timing follows the called drop (a shotgun 5-step is still a 5-step rhythm)
+  const readStart = sec(((isPass ? (inp.play.drop ?? 3) : 1) + (boot ? T.pa.bootWidth / 2 : 0)) / T.qb.dropSpeed + T.qb.readStartAfterDrop + fakeSecs);
+  void dropDist;
+  const fakePoint = { x: qb.pos.x + fx(2 * flipX), y: los - fx(1.5) };
+  const runner0 = byRole("O", "RB");
+  let handedOff = false;
   const frames: Frame[] = [];
   const dbg = { tries: 0, missed: 0, minDist: 1e9 };
 
@@ -240,6 +417,8 @@ export function createPlay(inp: PlayInput): PlaySim {
       if (stopDist > dist) speedMult = mul(speedMult, F.max(fx(0.2), div(dist, F.max(stopDist, ONE))));
     }
     let maxV = mul(a.maxSpeed, speedMult);
+    // gap runs: the back is patient while the pullers get there
+    if (gapRun && a === runner && curTick - runStart < sec(S.gapPatience)) maxV = mul(maxV, fx(S.gapPatienceMult));
     if (a.engagedWith >= 0) maxV = mul(maxV, fx(T.movement.engagedSpeedMult));
     if (ball.state === "held" && ball.holder === a.i) {
       maxV = mul(maxV, fx(completion && completion.rec === a ? T.movement.receiverCarrySpeedMult : T.movement.carryingSpeedMult));
@@ -289,6 +468,29 @@ export function createPlay(inp: PlayInput): PlaySim {
 
   // ------------------------------------------------------------------ AI
   function blockerGoal(a: Actor, now: number): V2 {
+    // zone combo: help on the down lineman first, then climb to the linebacker
+    if (a.comboOn >= 0) {
+      if (now < a.comboUntil && actors[a.comboOn]!.engagedWith >= 0) return actors[a.comboOn]!.pos;
+      if (a.engagedWith === a.comboOn) disengage(a);
+      a.comboOn = -1;
+    }
+    if (a.stalk && a.engagedWith < 0) {
+      // stalk block: the nearest defensive back to the ball (or to the screen), stay between him and it
+      const focus = (carrier()?.side === "O" && carrier() !== qb ? carrier()! : screenTarget ?? a).pos;
+      let t = a.blockTarget >= 0 ? actors[a.blockTarget]! : null;
+      if (!t || t.stunTil > now || vdist(t.pos, focus) > fx(12)) {
+        t = null; let bd = fx(14);
+        for (const d of D) {
+          if (d.engagedWith >= 0 || d.stunTil > now || (claimed.has(d.i) && claimed.get(d.i) !== a.i)) continue;
+          const dd = vdist(d.pos, a.pos) + idiv(vdist(d.pos, focus), 2);
+          if (dd < bd) { bd = dd; t = d; }
+        }
+        a.blockTarget = t ? t.i : -1;
+        if (t) claimed.set(t.i, a.i);
+      }
+      if (!t) return vadd(focus, { x: 0, y: fx(4) });
+      return vadd(t.pos, vscale(vnorm(vsub(focus, t.pos)), fx(1.0)));
+    }
     if (a.engagedWith >= 0) {
       const d = actors[a.engagedWith]!;
       // stay between the defender and the ball
@@ -298,7 +500,7 @@ export function createPlay(inp: PlayInput): PlaySim {
     if (a.stunTil > now) return a.pos;
     let tgt = a.blockTarget >= 0 ? actors[a.blockTarget]! : null;
     if (!tgt) tgt = claimTarget(a);
-    if (!tgt) return isPass ? { x: a.pos.x, y: F.max(qb.pos.y + fx(1.5), a.pos.y - fx(0.5)) } : { x: a.pos.x, y: a.pos.y + fx(2) };
+    if (!tgt) return passSet && !screenOn ? { x: a.pos.x, y: F.max(qb.pos.y + fx(1.5), a.pos.y - fx(0.5)) } : { x: a.pos.x, y: a.pos.y + fx(2) };
     const protect = carrier()?.pos ?? qb.pos;
     return vadd(tgt.pos, vscale(vnorm(vsub(protect, tgt.pos)), fx(1.0)));
   }
@@ -316,13 +518,20 @@ export function createPlay(inp: PlayInput): PlaySim {
 
   function tryThrow(now: number) {
     const t = now / hz;
-    const reads = (inp.play.read ?? []).map((role) => byRole("O", role));
+    const reads = (inp.play.read ?? []).map((role) => byRole("O", role)).filter((r) => r.task === "route" && now >= r.releaseAt);
+    if (!reads.length) return;
     // pressure only registers after the QB has had time to feel it (awareness); until then a free
     // rusher can get home for a sack
     const raw = rushers().some((d) => d.engagedWith < 0 && vdist(d.pos, qb.pos) < fx(T.qb.pressureRange));
     if (!raw) pressureSince = -1; else if (pressureSince < 0) pressureSince = now;
     const pressure = raw && now - pressureSince >= sec(T.qb.pressureReactBase + T.qb.pressureReactPerMissing * (99 - R(qb, "awareness")));
     if (now < readStart && !pressure) return;
+    // screens: get it out as soon as the target has released
+    if (inp.play.tags.includes("screen")) {
+      const r = reads[0]!;
+      if (now >= r.releaseAt + sec(T.schemes.screenThrowAfter)) return throwTo(r, now, pressure);
+      return;
+    }
     const span = Math.max(0.1, T.qb.maxHold - readStart / hz);
     const k = Math.min(1, Math.max(0, (t - readStart / hz) / span));
     // a high-awareness QB anticipates and throws into tighter windows
@@ -393,7 +602,7 @@ export function createPlay(inp: PlayInput): PlaySim {
     if (pressure) acc = Math.round((acc + R(qb, "throwUnderPressure")) / 2);
     let err = T.throw.errBase + T.throw.errPerMissingAcc * (99 - acc) * (1 + yds * T.throw.errPerYard);
     if (pressure) err *= T.throw.pressureErrMult;
-    if (scramble) err *= (2 - R(qb, "throwOnTheRun") / 99) * (T.throw.onRunErrMult / 1.35);
+    if (scramble || boot) err *= (2 - R(qb, "throwOnTheRun") / 99) * (T.throw.onRunErrMult / 1.35);
     const errFx = mul(fx(err), fx(rng.int(1000) / 1000));
     const angle = fx(((rng.int(360) - 180) * Math.PI) / 180);
     aim = vadd(aim, F.vfromAngle(angle, errFx));
@@ -432,8 +641,15 @@ export function createPlay(inp: PlayInput): PlaySim {
   }
   function pickLane(a: Actor, now: number): V2 {
     const dir = a.side === "O" ? 1 : -1;
-    if (a.side === "O" && !isPass && now < sec(T.carrier.followAimFor) && inp.play.aim) {
+    if (a.side === "O" && !completion && !scramble && now - runStart < sec(T.carrier.followAimFor) && inp.play.aim) {
       const [ax, ay] = inp.play.aim;
+      // a QB who keeps on the read option heads the other way (inside on a veer)
+      if (kept && a === qb) {
+        if (F.abs(ax) > 6) return { x: bx + fx(aimSide * 1.5), y: los + fx(4) };
+        // bend around the read end: get outside him first, then turn upfield
+        const kx = optionKey ? optionKeyX - fx(aimSide * 3) : bx - fx(aimSide * 7);
+        return a.pos.y < los - fx(0.5) ? { x: kx, y: los - fx(0.3) } : { x: kx - fx(aimSide), y: los + fx(5) };
+      }
       return { x: bx + fx(ax * flipX), y: los + fx(ay) };
     }
     const look = fx(T.carrier.lookAhead), perpW = fx(T.carrier.lanePerp);
@@ -468,21 +684,40 @@ export function createPlay(inp: PlayInput): PlaySim {
   function defenderGoalInner(d: Actor, now: number): V2 {
     if (d.engagedWith >= 0) { lastBranch = "engaged"; const tgt = carrier() ?? qb; return tgt.pos; }
     if (d.stunTil > now) { lastBranch = "stunned"; return d.pos; }
-    const c = carrier();
+    // during a mesh (option, RPO, draw) the threat is the back as much as the QB
+    const c = handoffAt >= 0 && runner && runner !== qb && !isDraw ? runner : carrier();
+    // option key: crash on the back or squeeze the QB
+    if (d === optionKey && handoffAt >= 0) return keyCrashes ? intercept(d, runner!) : qb.pos;
+    // play action: step up on the fake
+    if (d.biteUntil > now && ball.state === "held" && carrier() === qb) { lastBranch = "bite"; return { x: d.pos.x + (fakePoint.x > d.pos.x ? fx(0.6) : -fx(0.6)), y: F.max(los + fx(1), d.pos.y - fx(T.pa.biteStep)) }; }
     // ball in the air: break on it after a reaction delay
     if (ball.state === "air" && ball.target >= 0) {
       const react = sec(T.coverage.ballReactBase + T.coverage.ballReactPerMissing * (99 - R(d, "awareness")));
       if (now - ball.t0 >= react) { lastBranch = "ball"; return ball.to; }
     }
-    const pursuing = c && (c.side === "D" ? true : c !== qb || scramble || !isPass) && (now >= runRecognizedAt || c.side === "D" || completion);
-    if (c && c.side === "O" && c.task === "carry" && !isPass) {
+    const pursuing = c && (c.side === "D" ? true : c !== qb || scramble || !(isPass || (isRpo && qbHasBall))) && (now >= runRecognizedAt || c.side === "D" || completion);
+    if (c && c.side === "O" && (c.task === "carry" || handoffAt >= 0) && !isPass && !completion && !scramble && !(isDraw && !handedOff)) {
       const read = sec(T.coverage.runReadBase + T.coverage.runReadPerMissing * (99 - R(d, "playRecognition")));
-      if (now >= read) return intercept(d, c);
+      if (now - runStart >= read) return intercept(d, c);
+      // still reading: second-level players flow with the ball at their depth, the rest play their assignment
+      if (d.task !== "rush" && (d.cls === "LB" || d.pos.y - los < fx(7))) { lastBranch = "flow"; return { x: c.pos.x, y: F.max(los + fx(1.5), d.pos.y - fx(0.4)) }; }
+      if (d.task !== "rush") return assignmentGoal(d, now);
     }
     if (pursuing && c && c.side !== d.side) { lastBranch = "pursue"; return intercept(d, c); }
+    return assignmentGoal(d, now);
+  }
+  function assignmentGoal(d: Actor, now: number): V2 {
+    const c = carrier();
     if (d.task === "rush") return qbHasBall ? qb.pos : c ? intercept(d, c) : qb.pos;
+    if (d.task === "spy") {
+      lastBranch = "spy";
+      if (c === qb && (scramble || qb.task === "carry")) return intercept(d, qb);
+      return { x: qb.pos.x, y: F.max(los + fx(4), d.pos.y - fx(0.3)) };
+    }
     if (d.task === "man") {
       const r = actors[d.manTarget]!;
+      // his man stayed in to block: green-dog rush
+      if (r.task === "block" && r.isBlocker && !r.stalk && now > d.reactTicks + sec(0.4) && passSet) { d.task = "rush"; return qb.pos; }
       // what the defender has seen (reaction lag), and where that says the receiver is heading
       const seen = delayedPos(r, d.reactTicks);
       const before = delayedPos(r, d.reactTicks + 6);
@@ -518,7 +753,13 @@ export function createPlay(inp: PlayInput): PlaySim {
           if (dd < td) { td = dd; threat = o; }
         }
       }
-      if (!threat) { lastBranch = "zone-empty"; return z.at; }
+      if (!threat) {
+        lastBranch = "zone-empty";
+        if (z.deep) return z.at;
+        // nobody to cover yet: drift toward the landmark with eyes on the QB
+        const to = vsub(z.at, d.pos), dist = vlen(to);
+        return dist < fx(0.5) ? z.at : vadd(d.pos, vscale(vnorm(to), fx(T.coverage.zoneDriftStep)));
+      }
       lastBranch = "zone:" + threat.role;
       const seen = anticipate(threat, d.reactTicks);
       // deep zones: stay over the top of the deepest threat (turn and run, no backpedal)
@@ -538,9 +779,24 @@ export function createPlay(inp: PlayInput): PlaySim {
 
   function offenseGoal(a: Actor, now: number): V2 {
     const c = carrier();
+    // mesh: the QB rides the ball while the back runs his path
+    if (handoffAt >= 0 && a === qb) return isDraw ? dropPoint : a.pos;
+    if (handoffAt >= 0 && a === runner && runner !== qb) { const [ax, ay] = inp.play.aim ?? [0, 3]; return { x: bx + fx(ax * flipX), y: los + fx(ay) }; }
     if (c === a && !(a === qb && qbHasBall)) return carrierGoal(a, now);
     if (a.side === "O" && c && c.side === "D") return intercept(a, c);   // turnover: chase
-    if (a.task === "block") return blockerGoal(a, now);
+    if (a.task === "pull" || a.task === "lead") {
+      // pulling guard / lead back: run the path to the hole, then block whoever shows up there
+      const wp = a.route[a.routeIdx];
+      if (wp && vdist(a.pos, wp) < fx(1.6)) a.routeIdx++;
+      const nx = a.route[a.routeIdx];
+      if (nx) return nx;
+      a.task = "block"; a.blockTarget = -1;
+      return blockerGoal(a, now);
+    }
+    if (a.task === "block") {
+      if (inp.play.pa && a === runner0 && now < sec(T.pa.fakeSeconds)) return fakePoint;
+      return blockerGoal(a, now);
+    }
     if (a.task === "qb") {
       if (!qbHasBall) return a.pos;
       if (now < readStart) return dropPoint;
@@ -551,6 +807,12 @@ export function createPlay(inp: PlayInput): PlaySim {
       return a.pos;
     }
     if (a.task === "route") {
+      if (now < a.releaseAt) return blockerGoal(a, now);
+      if (a.isBlocker) {
+        // release from the block into the route
+        a.isBlocker = false;
+        disengage(a);
+      }
       if (ball.state === "air" && ball.target === a.i) return ball.to;
       if (completion && c && c.side === "O") return blockerGoalFree(a);  // block downfield after a catch
       if (a.routeIdx < a.route.length) {
@@ -581,11 +843,16 @@ export function createPlay(inp: PlayInput): PlaySim {
   function engage(now: number) {
     for (const b of O) {
       if (!b.isBlocker || b.engagedWith >= 0 || b.stunTil > now) continue;
+      const pulling = b.task === "pull" || b.task === "lead";
+      if (pulling && b.routeIdx === 0) continue;
+      if (inp.play.pa && b === runner0 && now < sec(T.pa.fakeSeconds)) continue;
+      const want = b.comboOn >= 0 && now < b.comboUntil ? b.comboOn : b.blockTarget;
+      const passing = passSet && !scramble && !handedOff && !screenOn && !b.stalk;
       for (const d of D) {
         if (d.stunTil > now || vdist(b.pos, d.pos) > fx(T.blocking.engageRange)) continue;
-        if (b.blockTarget >= 0 && b.blockTarget !== d.i) continue;
-        if (isPass && d.task !== "rush" && !scramble) continue;
-        const passing = isPass && !scramble;
+        if (want >= 0 && want !== d.i && !pulling) continue;
+        if (pulling && (d.engagedWith >= 0 || d.pos.y < los - fx(1))) continue;
+        if (passSet && !b.stalk && !screenOn && d.task !== "rush" && !scramble && !handedOff) continue;
         const blk = passing ? (R(b, "passBlock") * 2 + R(b, "passBlockPower") + R(b, "passBlockFinesse")) / 4
           : (R(b, "runBlock") * 2 + R(b, "runBlockPower") + R(b, "impactBlocking")) / 4;
         const rush = passing ? (Math.max(R(d, "powerMoves"), R(d, "finesseMoves")) * 2 + R(d, "blockShedding") + R(d, "strength")) / 4
@@ -603,6 +870,7 @@ export function createPlay(inp: PlayInput): PlaySim {
           break;
         }
         hold = Math.max(0.15, hold);
+        if (pulling) { b.task = "block"; b.blockTarget = d.i; claimed.set(d.i, b.i); }
         b.engagedWith = d.i; d.engagedWith = b.i;
         if (inp.record) log.push(`t=${(now / hz).toFixed(2)} engage ${b.role}-${d.role} hold ${hold.toFixed(2)}s`);
         b.shedTick = d.shedTick = now + sec(hold);
@@ -620,6 +888,14 @@ export function createPlay(inp: PlayInput): PlaySim {
     }
   }
 
+  /** a blocker lets go (route release, combo climb, screen release) */
+  function disengage(b: Actor) {
+    if (b.engagedWith < 0) return;
+    const d = actors[b.engagedWith]!;
+    b.engagedWith = -1;
+    if (d.engagedWith === b.i) d.engagedWith = O.find((x) => x.engagedWith === d.i)?.i ?? -1;
+  }
+
   function tackles(now: number) {
     const c = carrier();
     if (!c) return;
@@ -628,7 +904,15 @@ export function createPlay(inp: PlayInput): PlaySim {
     const near = defenders.filter((d) => d.engagedWith < 0 && d.stunTil <= now && vdist(d.pos, c.pos) < fx(T.tackle.range));
     for (const d of near) {
       if (now - d.lastTackleTry < sec(0.5)) continue;
+      if (attempt(d, c, now, near.length - 1, 0)) return;
+    }
+  }
+  /** One tackle (or sack) attempt; bonus = extra per-mille (a human dive). Returns true if the play ended. */
+  function attempt(d: Actor, c: Actor, now: number, gang: number, bonus: number): boolean {
+    {
       d.lastTackleTry = now;
+      const U = T.userDefense;
+      const strip = d.i === udef && stripUntil > now;
       if (c === qb && qbHasBall) {
         // sack attempt
         const p = clampPm(T.tackle.sackBase - T.tackle.sackPer * (R(c, "breakSack") - 60) + T.tackle.per * (R(d, "tackle") - 70) / 2);
@@ -636,27 +920,27 @@ export function createPlay(inp: PlayInput): PlaySim {
           stats.push({ k: "sack", id: d.c.id, team: defSide }, { k: "tackle", id: d.c.id, team: defSide });
           log.push(`SACK by ${d.c.name}`);
           ended = { reason: "sack", y: c.pos.y, x: c.pos.x, sack: true };
-          return;
+          return true;
         }
         d.stunTil = now + sec(T.tackle.missStun);
-        continue;
+        return false;
       }
       const moves = [R(c, "breakTackle"), (R(c, "jukeMove") + R(c, "agility")) / 2, (R(c, "trucking") + R(c, "strength")) / 2,
         R(c, "stiffArm") * 0.92, (R(c, "spinMove") + R(c, "agility")) / 2];
       const best = Math.max(...moves), avg = moves.reduce((x, y) => x + y, 0) / moves.length;
       const elusive = best * T.tackle.elusiveMaxWeight + avg * (1 - T.tackle.elusiveMaxWeight);
-      const gang = near.length - 1;
       // a well-timed juke or spin (human-controlled carrier) makes this tackle harder
       let moveBonus = 0;
       if (moveUntil.juke > now) moveBonus = T.user.moveBonusBase + T.user.moveBonusPer * (R(c, "jukeMove") - 60);
       else if (moveUntil.spin > now) moveBonus = T.user.moveBonusBase + T.user.moveBonusPer * (R(c, "spinMove") - 60);
       const p = clampPm(T.tackle.base + T.tackle.per * (R(d, "tackle") - elusive) + T.tackle.powerPer * (R(d, "hitPower") - R(c, "strength")) +
-        gang * T.tackle.gangBonus - moveBonus);
+        gang * T.tackle.gangBonus - moveBonus + bonus - (strip ? U.stripTacklePenalty : 0));
       dbg.tries++;
       if (rng.int(1000) < p) {
         stats.push({ k: "tackle", id: d.c.id, team: c.side === "O" ? defSide : inp.offSide });
         // fumble?
-        const fp = Math.max(T.tackle.fumbleMin, Math.min(T.tackle.fumbleMax, T.tackle.fumbleBase + T.tackle.fumblePer * (R(d, "hitPower") - R(c, "carrying"))));
+        let fp = Math.max(T.tackle.fumbleMin, Math.min(T.tackle.fumbleMax, T.tackle.fumbleBase + T.tackle.fumblePer * (R(d, "hitPower") - R(c, "carrying"))));
+        if (strip) fp = Math.round(fp * U.stripFumbleMult);
         if (rng.int(1000) < fp) {
           const offenseKeeps = rng.int(1000) < (c.side === "O" ? T.tackle.fumbleOffenseRecover : 1000 - T.tackle.fumbleOffenseRecover);
           stats.push({ k: "fumble", id: c.c.id, team: c.side === "O" ? inp.offSide : defSide });
@@ -678,11 +962,12 @@ export function createPlay(inp: PlayInput): PlaySim {
           T.tackle.fallForwardBase + fwd * T.tackle.fallForwardPerSpeed * 0.5 + power * T.tackle.afterContactPowerPer + gang * -0.6));
         const ff = completion && completion.rec === c ? extra * T.tackle.fallForwardReceiverMult : extra;
         ended = { reason: "tackle", y: c.pos.y + fx(ff) * dirY, x: c.pos.x };
-        return;
+        return true;
       }
-      d.stunTil = now + sec(T.tackle.missStun);
+      d.stunTil = now + sec(bonus > 0 ? U.diveMissStun : T.tackle.missStun);
       c.vel = vscale(c.vel, fx(1 - T.tackle.carrierSlowOnMiss));
       dbg.missed++;
+      return false;
     }
   }
   const clampPm = (p: number) => Math.round(Math.max(T.tackle.min, Math.min(T.tackle.max, p)));
@@ -704,6 +989,10 @@ export function createPlay(inp: PlayInput): PlaySim {
     const reach = fx(T.catch.reach), contest = fx(T.catch.contestRange);
     let def: Actor | null = null, dd = contest;
     for (const d of D) { const x = vdist(d.pos, L); if (x < dd) { dd = x; def = d; } }
+    // a human defender who timed a swat/jump near the catch point
+    const ud = udef >= 0 ? actors[udef]! : null;
+    const swat = Boolean(ud && swatUntil >= now && vdist(ud.pos, L) <= fx(T.userDefense.swatRange));
+    if (swat && ud) { def = ud; dd = F.min(vdist(ud.pos, L), contest - 1); }
     const inReach = vdist(r.pos, L) <= reach;
     const att = { k: "pass" as const, id: qb.c.id, team: inp.offSide, att: 1 };
     stats.push({ k: "rec", id: r.c.id, team: inp.offSide, target: 1 });
@@ -721,6 +1010,7 @@ export function createPlay(inp: PlayInput): PlaySim {
         const closeness = 1 - dd / contest;
         pCatch -= (T.catch.contestPenalty - T.catch.contestSkillPer * (skill - cov)) * closeness;
       }
+      if (swat) pCatch -= T.userDefense.swatCatchPenalty;
     }
     const roll = rng.int(1000);
     if (roll < Math.max(0, Math.min(980, pCatch))) {
@@ -734,7 +1024,7 @@ export function createPlay(inp: PlayInput): PlaySim {
       // a defender in the contest window can jump the throw; the closer he is, the likelier
       const closeness = 1 - dd / contest;
       const deepMult = (L.y - los) / ONE > T.catch.deepCatchFrom ? T.catch.deepIntMult : 1;
-      const pInt = (T.catch.intBase + T.catch.intPer * (R(def, "catching") - 50) + (inReach ? 0 : 60)) * (0.35 + 0.65 * closeness) * deepMult;
+      const pInt = (T.catch.intBase + T.catch.intPer * (R(def, "catching") - 50) + (inReach ? 0 : 60)) * (0.35 + 0.65 * closeness) * deepMult + (swat ? T.userDefense.swatIntBonus : 0);
       if (rng.int(1000) < pInt) {
         ball.state = "held"; ball.holder = def.i;
         turnover = "interception";
@@ -755,13 +1045,14 @@ export function createPlay(inp: PlayInput): PlaySim {
   // at the snap: global nearest-pair matching (closest blocker/defender pairs first), so tackles take
   // ends, guards take tackles and the centre climbs to a linebacker instead of everyone doubling the DL
   {
-    const blockers = O.filter((b) => b.isBlocker);
-    const isWr = (b: Actor) => ["X", "Z", "SLOT"].includes(b.role);
+    const blockers = O.filter((b) => b.isBlocker && b.task !== "pull" && b.task !== "lead");
+    const back = (d: Actor) => d.cls === "CB" || d.cls === "S" || d.cls === "NB";
     const eligible = (b: Actor, d: Actor) => {
-      if (isPass && d.task !== "rush") return false;
+      if (d === optionKey) return false;
       const depth = d.pos.y - los;
-      if (isWr(b)) return depth > fx(3) && F.abs(d.pos.x - b.pos.x) < fx(7);
-      return F.abs(d.pos.x - b.pos.x) < fx(isPass ? 9 : 8) && depth < fx(9);
+      if (b.stalk) return back(d) && depth > fx(2) && F.abs(d.pos.x - b.pos.x) < fx(9);
+      if (passSet && d.task !== "rush") return false;
+      return F.abs(d.pos.x - b.pos.x) < fx(passSet ? 9 : 8) && depth < fx(9);
     };
     const pairs: { b: Actor; d: Actor; dist: Fx }[] = [];
     for (const b of blockers) for (const d of D) if (eligible(b, d)) {
@@ -776,7 +1067,22 @@ export function createPlay(inp: PlayInput): PlaySim {
       if (inp.record) log.push(`block: ${pr.b.role} -> ${pr.d.role}`);
     }
     // leftover blockers help on the nearest claimed rusher (double team)
-    for (const b of blockers) if (!usedB.has(b.i)) claimTarget(b);
+    for (const b of blockers) if (!usedB.has(b.i) && !b.stalk) claimTarget(b);
+    // zone runs: a lineman assigned to a linebacker first combos the down lineman next to him
+    if (!passSet && scheme === "zone") {
+      for (const b of blockers) {
+        if (!OL_ROLES.includes(b.role) || b.blockTarget < 0) continue;
+        const t = actors[b.blockTarget]!;
+        if (t.pos.y - los <= fx(3)) continue;
+        let help: Actor | null = null, hd = fx(3.2);
+        for (const d of D) {
+          if (d.pos.y - los > fx(2.5) || !claimed.has(d.i) || claimed.get(d.i) === b.i) continue;
+          const dx = F.abs(d.pos.x - b.pos.x);
+          if (dx < hd) { hd = dx; help = d; }
+        }
+        if (help) { b.comboOn = help.i; b.comboUntil = sec(S.comboSeconds); }
+      }
+    }
   }
 
   // ------------------------------------------------------------------ human input
@@ -785,13 +1091,57 @@ export function createPlay(inp: PlayInput): PlaySim {
   let curTick = 0;
   const moveUntil = { juke: -1, spin: -1, burst: -1 };
   const moveReady = { juke: 0, spin: 0, burst: 0 };
+  // defensive control mode
+  let udef = -1, udefMove: V2 | null = null, stripUntil = -1, swatUntil = -1, defReady = 0, manualAt = -999;
+  let lastBallKey = "";
+  if (inp.userDefense && !inp.userOffense) udef = nearestDefender({ x: bx, y: los + fx(5) }, -1, true);
+  function nearestDefender(p: V2, except: number, offLine = false): number {
+    let best = -1, bd = fx(1e4);
+    for (const d of D) {
+      if (d.i === except || (offLine && (d.cls === "DL" || d.cls === "EDGE"))) continue;
+      const dd = vdist(d.pos, p);
+      if (dd < bd) { bd = dd; best = d.i; }
+    }
+    return best;
+  }
+  const ballSpot = (): V2 => ball.state === "air" ? ball.to : (carrier()?.pos ?? qb.pos);
+  function applyDefense(u: UserInput | null | undefined, now: number) {
+    if (udef < 0) return;
+    const key = `${ball.state}:${ball.holder}`;
+    if (key !== lastBallKey) {
+      // the ball changed hands (throw, catch, handoff): switch to the man nearest it unless the player just switched
+      if (lastBallKey && now - manualAt > sec(T.userDefense.manualHold)) udef = nearestDefender(ballSpot(), -1);
+      lastBallKey = key;
+    }
+    udefMove = u?.move ?? null;
+    const act = u?.action;
+    if (!act) return;
+    if (act === "switch") { udef = nearestDefender(ballSpot(), udef); manualAt = now; return; }
+    if (now < defReady) return;
+    const d = actors[udef]!;
+    if (d.stunTil > now || d.engagedWith >= 0) return;
+    defReady = now + sec(T.userDefense.actionCooldown);
+    if (act === "swat") { swatUntil = now + sec(T.userDefense.swatSeconds); log.push(`${d.c.name} goes up for it`); return; }
+    if (act === "strip") { stripUntil = now + sec(T.userDefense.stripSeconds); return; }
+    if (act === "dive") {
+      const c = carrier();
+      if (c && c.side === "O" && vdist(c.pos, d.pos) <= fx(T.userDefense.diveRange)) {
+        log.push(`${d.c.name} dives`);
+        attempt(d, c, now, 0, T.userDefense.diveBonus);
+      } else {
+        d.stunTil = now + sec(T.userDefense.diveWhiffStun);
+      }
+    }
+  }
   function applyUser(u: UserInput | null | undefined, now: number) {
-    if (!inp.userOffense || !u) { userMove = null; return; }
+    if (!inp.userOffense) { applyDefense(u, now); userMove = null; return; }
+    if (!u) { userMove = null; return; }
     userMove = u.move ?? null;
     if (u.throwAt && qbHasBall) userThrowAt(u.throwAt, now);
     const c = carrier();
-    if (u.action === "scramble" && qbHasBall) { startScramble(now); return; }
-    if (u.action && u.action !== "scramble" && c && c.side === "O" && !(c === qb && qbHasBall) && now >= moveReady[u.action]) {
+    if (u.action === "keep" && isOption && handoffAt >= 0) { keepPressed = true; return; }
+    if (u.action === "scramble" && qbHasBall && !isRpo) { startScramble(now); return; }
+    if ((u.action === "juke" || u.action === "spin" || u.action === "burst") && c && c.side === "O" && !(c === qb && qbHasBall) && now >= moveReady[u.action]) {
       const k = u.action;
       moveUntil[k] = now + sec(k === "burst" ? T.user.burstSeconds : T.user.moveSeconds);
       moveReady[k] = now + sec(k === "burst" ? T.user.burstCooldown : T.user.moveCooldown);
@@ -813,7 +1163,7 @@ export function createPlay(inp: PlayInput): PlaySim {
     if (raw) acc = Math.round((acc + R(qb, "throwUnderPressure")) / 2);
     let err = T.throw.errBase + T.throw.errPerMissingAcc * (99 - acc) * (1 + yds * T.throw.errPerYard);
     if (raw) err *= T.throw.pressureErrMult;
-    if (scramble) err *= (2 - R(qb, "throwOnTheRun") / 99) * (T.throw.onRunErrMult / 1.35);
+    if (scramble || boot) err *= (2 - R(qb, "throwOnTheRun") / 99) * (T.throw.onRunErrMult / 1.35);
     aim = vadd(aim, F.vfromAngle(fx(((rng.int(360) - 180) * Math.PI) / 180), mul(fx(err), fx(rng.int(1000) / 1000))));
     const power = Math.max(0, Math.min(1, t.power));
     const speed = fx((T.throw.ballSpeedBase + T.throw.ballSpeedPer * R(qb, "throwPower")) * (T.user.lobSpeedMult + (1 - T.user.lobSpeedMult) * power));
@@ -828,6 +1178,43 @@ export function createPlay(inp: PlayInput): PlaySim {
   }
   let ballApex = fx(2.5);
 
+  /** The mesh resolves: hand off, keep (read option) or throw (RPO). */
+  function handoff(now: number) {
+    handoffAt = -1; handedOff = true;
+    const misread = () => rng.int(1000) < Math.round(1000 * (S.readMisreadBase + S.readMisreadPerMissing * (99 - R(qb, "awareness"))));
+    if (isOption) {
+      let keep = keyCrashes;
+      if (inp.userOffense) keep = keepPressed; else if (misread()) keep = !keep;
+      if (keep) {
+        kept = true; qb.task = "carry"; runStart = now; laneOwner = -1;
+        // a key who crashed on the back is out of position for a moment
+        if (optionKey && keyCrashes) optionKey.stunTil = now + sec(S.keyCommit);
+        if (runner && runner !== qb) { runner.task = "block"; runner.isBlocker = true; }
+        log.push(`${qb.c.name} keeps it`);
+        return;
+      }
+    }
+    if (isRpo && qbHasBall) {
+      if (!inp.userOffense && rpoRead && rpoConflict) {
+        let bit = rpoConflict.pos.y - los < fx(S.rpoConflictDepth) || rpoConflict.vel.y < -fx(1);
+        if (misread()) bit = !bit;
+        if (bit && rpoRead.task === "route") { throwTo(rpoRead, now, false); return; }
+      }
+      qbHasBall = false;
+    }
+    if (!runner) return;
+    if (isDraw) {
+      runRecognizedAt = now + sec(S.drawRecognize);
+      // rushers feel the draw and fight off their pass sets
+      if (runner !== qb) for (const d of D) if (d.engagedWith >= 0) d.shedTick = Math.min(d.shedTick, now + sec(S.drawShedBase + S.drawShedPerMissing * (99 - R(d, "playRecognition"))));
+      for (const b of O) if (b.engagedWith >= 0) b.shedTick = actors[b.engagedWith]!.shedTick;
+    }
+    runStart = now;
+    if (runner === qb) { qb.task = "carry"; laneOwner = -1; return; }
+    ball.holder = runner.i; runner.task = "carry"; laneOwner = -1;
+    if (isDraw || isOption) log.push(`handoff to ${runner.c.name}`);
+  }
+
   // ------------------------------------------------------------------ main loop (one tick per step)
   const maxTicks = sec(T.field.maxPlaySeconds);
   let tick = 0;
@@ -837,6 +1224,14 @@ export function createPlay(inp: PlayInput): PlaySim {
     if (tick >= maxTicks || ended) { done = true; return true; }
     curTick = tick;
     applyUser(input, tick);
+    if (ended) { done = true; return true; }
+    if (handoffAt >= 0 && tick >= handoffAt) handoff(tick);
+    if (inp.play.screen && !screenOn && tick >= sec(S.screenRelease)) {
+      // screen: the line lets its rushers go and releases to block in front of the catch
+      screenOn = true;
+      claimed.clear();
+      for (const b of O) if (OL_ROLES.includes(b.role)) { disengage(b); b.stalk = true; b.blockTarget = -1; }
+    }
     for (const a of actors) {
       let goal: V2;
       let mult: Fx = ONE;
@@ -844,13 +1239,14 @@ export function createPlay(inp: PlayInput): PlaySim {
       else {
         const c = carrier();
         goal = c === a ? carrierGoal(a, tick) : defenderGoal(a, tick);
-        if (d_backpedal(a)) mult = fx(T.movement.backpedalMult);
+        if (a.i === udef && udefMove && (udefMove.x !== 0 || udefMove.y !== 0) && c !== a) goal = vadd(a.pos, vscale(vnorm(udefMove), fx(5)));
+        if (d_backpedal(a) && a.i !== udef) mult = fx(T.movement.backpedalMult);
       }
       steer(a, goal, mult);
     }
     for (const a of actors) integrate(a);
     engage(tick);
-    if (qbHasBall && !inp.userOffense) tryThrow(tick);
+    if (qbHasBall && !inp.userOffense && !isRpo) tryThrow(tick);
     if (ball.state === "air" && tick >= ball.t1) resolveCatch(tick);
     if (ended) { done = true; return true; }
     const c = carrier();
@@ -891,7 +1287,9 @@ export function createPlay(inp: PlayInput): PlaySim {
       ball: { x: bx2, y: by2, h, state: ball.state, holder: ball.holder },
       qbCanThrow: qbHasBall,
       carrier: c ? c.i : -1,
-      userCarrier: Boolean(inp.userOffense && c && c.side === "O" && !(c === qb && qbHasBall)),
+      userCarrier: Boolean(inp.userOffense && c && c.side === "O" && !(c === qb && qbHasBall) && handoffAt < 0),
+      userDefender: udef,
+      canKeep: isOption && handoffAt >= 0 && Boolean(inp.userOffense),
       cooldowns: { juke: Math.max(0, moveReady.juke - tick), spin: Math.max(0, moveReady.spin - tick), burst: Math.max(0, moveReady.burst - tick) },
       log,
     };
@@ -961,7 +1359,7 @@ export function createPlay(inp: PlayInput): PlaySim {
   cached = res;
   return res;
   }
-  return { step, snapshot, result };
+  return { step, snapshot, result, assignments: () => assignmentsAtSnap };
 }
 
 

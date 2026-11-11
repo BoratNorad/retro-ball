@@ -1,13 +1,369 @@
 {
- "_doc": "Offensive plays. pass: routes per role, read = QB progression, drop = dropback depth (yards). run: carrier, aim = [x, y] the back aims at first (x mirrored when flip), block = scheme. weight = how often the AI calls it by default.",
+ "_doc": "Offensive playbook. kind run | pass | rpo. Runs: carrier role, aim = [x, y] the carrier heads for first (x mirrored on FLIP), block = scheme (zone, man, power = backside guard pulls, counter = guard + tackle pull, toss, draw = pass set then handoff), option = QB reads the backside end, lead = lead blocker through the hole. Passes: routes per role, read = QB progression, drop = dropback depth in yards (shotgun QBs drop 4 less), pa = play-action fake, boot = QB rolls away from the fake, screen = line releases downfield. RPO = run blocking + routes; the QB reads the conflict defender and throws or hands off. weight = how often the AI calls it; group = playbook section.",
  "plays": [
   {
    "id": "inside_zone",
    "name": "Inside Zone",
    "kind": "run",
+   "group": "Inside run",
    "formations": [
     "gun_doubles",
+    "gun_trips",
+    "gun_spread",
+    "gun_wing",
+    "singleback",
+    "singleback_ace",
+    "pistol"
+   ],
+   "weight": 4,
+   "tags": [
+    "short",
+    "inside"
+   ],
+   "carrier": "RB",
+   "aim": [
+    2.5,
+    4
+   ],
+   "block": "zone"
+  },
+  {
+   "id": "outside_zone",
+   "name": "Outside Zone",
+   "kind": "run",
+   "group": "Outside run",
+   "formations": [
+    "singleback",
+    "singleback_ace",
+    "pistol",
+    "gun_doubles",
+    "gun_wing",
+    "iform_pro",
+    "strong_i",
+    "jumbo"
+   ],
+   "weight": 3,
+   "tags": [
+    "outside"
+   ],
+   "carrier": "RB",
+   "aim": [
+    7,
+    2.5
+   ],
+   "block": "zone"
+  },
+  {
+   "id": "zone_lead",
+   "name": "Zone Lead",
+   "kind": "run",
+   "group": "Inside run",
+   "formations": [
+    "singleback_ace",
+    "gun_wing",
+    "pistol",
+    "iform_pro",
+    "strong_i"
+   ],
+   "weight": 2,
+   "tags": [
+    "short",
+    "inside"
+   ],
+   "carrier": "RB",
+   "aim": [
+    2,
+    4
+   ],
+   "block": "zone",
+   "lead": "H"
+  },
+  {
+   "id": "duo",
+   "name": "Duo",
+   "kind": "run",
+   "group": "Inside run",
+   "formations": [
+    "singleback",
+    "singleback_ace",
+    "iform_tight",
+    "jumbo",
+    "iform_pro"
+   ],
+   "weight": 1.5,
+   "tags": [
+    "short",
+    "inside"
+   ],
+   "carrier": "RB",
+   "aim": [
+    1.5,
+    4
+   ],
+   "block": "man"
+  },
+  {
+   "id": "iso",
+   "name": "Iso",
+   "kind": "run",
+   "group": "Inside run",
+   "formations": [
+    "iform_pro",
+    "strong_i",
+    "weak_i",
+    "iform_tight",
+    "goal_line"
+   ],
+   "weight": 2.5,
+   "tags": [
+    "short",
+    "inside",
+    "goalLine"
+   ],
+   "carrier": "RB",
+   "aim": [
+    1.2,
+    4
+   ],
+   "block": "man",
+   "lead": "H"
+  },
+  {
+   "id": "power",
+   "name": "Power O",
+   "kind": "run",
+   "group": "Gap run",
+   "formations": [
+    "iform_pro",
+    "strong_i",
+    "singleback",
+    "singleback_ace",
+    "gun_doubles",
+    "jumbo",
+    "pistol"
+   ],
+   "weight": 3,
+   "tags": [
+    "short",
+    "inside"
+   ],
+   "carrier": "RB",
+   "aim": [
+    3.5,
+    3.5
+   ],
+   "block": "power",
+   "lead": "H"
+  },
+  {
+   "id": "counter",
+   "name": "Counter",
+   "kind": "run",
+   "group": "Gap run",
+   "formations": [
+    "singleback",
+    "singleback_ace",
+    "gun_doubles",
+    "gun_trips",
+    "pistol",
+    "weak_i"
+   ],
+   "weight": 2.5,
+   "tags": [
+    "inside"
+   ],
+   "carrier": "RB",
+   "aim": [
+    4,
+    3
+   ],
+   "block": "counter"
+  },
+  {
+   "id": "trap",
+   "name": "Trap",
+   "kind": "run",
+   "group": "Gap run",
+   "formations": [
+    "singleback",
+    "gun_doubles",
+    "gun_spread",
+    "iform_pro"
+   ],
+   "weight": 1,
+   "tags": [
+    "inside"
+   ],
+   "carrier": "RB",
+   "aim": [
+    0.8,
+    4
+   ],
+   "block": "power"
+  },
+  {
+   "id": "toss",
+   "name": "Toss",
+   "kind": "run",
+   "group": "Outside run",
+   "formations": [
+    "iform_pro",
+    "strong_i",
+    "singleback",
+    "singleback_ace",
+    "jumbo",
+    "pistol"
+   ],
+   "weight": 2,
+   "tags": [
+    "outside"
+   ],
+   "carrier": "RB",
+   "aim": [
+    10,
+    2
+   ],
+   "block": "toss",
+   "lead": "H"
+  },
+  {
+   "id": "dive",
+   "name": "Dive",
+   "kind": "run",
+   "group": "Short yardage",
+   "formations": [
+    "iform_pro",
+    "singleback",
+    "goal_line",
+    "jumbo",
+    "iform_tight"
+   ],
+   "weight": 1,
+   "tags": [
+    "short",
+    "goalLine",
+    "inside"
+   ],
+   "carrier": "RB",
+   "aim": [
+    1,
+    3
+   ],
+   "block": "man"
+  },
+  {
+   "id": "fb_dive",
+   "name": "FB Dive",
+   "kind": "run",
+   "group": "Short yardage",
+   "formations": [
+    "iform_pro",
+    "strong_i",
+    "weak_i",
+    "iform_tight",
+    "goal_line"
+   ],
+   "weight": 0.8,
+   "tags": [
+    "short",
+    "goalLine",
+    "inside"
+   ],
+   "carrier": "H",
+   "aim": [
+    0.8,
+    3
+   ],
+   "block": "man"
+  },
+  {
+   "id": "qb_sneak",
+   "name": "QB Sneak",
+   "kind": "run",
+   "group": "Short yardage",
+   "formations": [
+    "singleback",
+    "singleback_ace",
+    "jumbo",
+    "goal_line",
+    "iform_pro",
+    "iform_tight"
+   ],
+   "weight": 0,
+   "tags": [
+    "sneak",
+    "short"
+   ],
+   "carrier": "QB",
+   "aim": [
+    0,
+    2
+   ],
+   "block": "man"
+  },
+  {
+   "id": "draw",
+   "name": "HB Draw",
+   "kind": "run",
+   "group": "Draw",
+   "formations": [
+    "gun_doubles",
+    "gun_trips",
+    "gun_spread",
+    "gun_bunch",
     "singleback"
+   ],
+   "weight": 1.0,
+   "tags": [
+    "draw",
+    "inside"
+   ],
+   "carrier": "RB",
+   "aim": [
+    0.5,
+    5
+   ],
+   "block": "draw"
+  },
+  {
+   "id": "qb_draw",
+   "name": "QB Draw",
+   "kind": "run",
+   "group": "Draw",
+   "formations": [
+    "gun_spread",
+    "gun_empty",
+    "gun_trips",
+    "gun_doubles"
+   ],
+   "weight": 0.6,
+   "tags": [
+    "draw",
+    "qbRun"
+   ],
+   "carrier": "QB",
+   "aim": [
+    0.5,
+    5
+   ],
+   "block": "draw"
+  },
+  {
+   "id": "zone_read",
+   "name": "Zone Read",
+   "kind": "run",
+   "group": "Option",
+   "formations": [
+    "gun_doubles",
+    "gun_spread",
+    "gun_trips",
+    "pistol",
+    "gun_split"
+   ],
+   "weight": 1.4,
+   "tags": [
+    "option",
+    "inside"
    ],
    "carrier": "RB",
    "aim": [
@@ -15,259 +371,1427 @@
     4
    ],
    "block": "zone",
-   "weight": 4,
-   "tags": [
-    "short",
-    "inside"
-   ]
+   "option": true
   },
   {
-   "id": "outside_zone",
-   "name": "Outside Zone",
+   "id": "inverted_veer",
+   "name": "Inverted Veer",
    "kind": "run",
+   "group": "Option",
    "formations": [
-    "singleback",
-    "gun_doubles"
+    "gun_doubles",
+    "gun_spread",
+    "pistol"
    ],
-   "carrier": "RB",
-   "aim": [
-    7,
-    2.5
-   ],
-   "block": "zone",
-   "weight": 3,
+   "weight": 0.4,
    "tags": [
+    "option",
     "outside"
-   ]
-  },
-  {
-   "id": "dive",
-   "name": "Dive",
-   "kind": "run",
-   "formations": [
-    "singleback"
    ],
    "carrier": "RB",
    "aim": [
-    -1.5,
-    4
+    9,
+    1
    ],
-   "block": "zone",
-   "weight": 0,
-   "tags": [
-    "goalLine"
-   ]
+   "block": "power",
+   "option": true
   },
   {
-   "id": "qb_sneak",
-   "name": "QB Sneak",
+   "id": "qb_power",
+   "name": "QB Power",
    "kind": "run",
+   "group": "Gap run",
    "formations": [
-    "singleback"
+    "gun_doubles",
+    "gun_trips",
+    "gun_spread",
+    "gun_split",
+    "pistol"
+   ],
+   "weight": 0.4,
+   "tags": [
+    "qbRun",
+    "inside"
    ],
    "carrier": "QB",
    "aim": [
-    0,
-    2
+    3,
+    3.5
    ],
-   "block": "man",
-   "weight": 0,
+   "block": "power",
+   "lead": "RB"
+  },
+  {
+   "id": "rpo_bubble",
+   "name": "RPO Bubble",
+   "kind": "rpo",
+   "group": "RPO",
+   "formations": [
+    "gun_doubles",
+    "gun_spread",
+    "pistol"
+   ],
+   "weight": 2,
    "tags": [
-    "sneak"
-   ]
+    "rpo",
+    "short"
+   ],
+   "carrier": "RB",
+   "aim": [
+    2.5,
+    4
+   ],
+   "block": "zone",
+   "routes": {
+    "H": "bubble",
+    "X": "stalk",
+    "Z": "stalk",
+    "Y": "block"
+   },
+   "read": [
+    "H"
+   ],
+   "drop": 1
+  },
+  {
+   "id": "rpo_slant",
+   "name": "RPO Slant",
+   "kind": "rpo",
+   "group": "RPO",
+   "formations": [
+    "gun_doubles",
+    "gun_trips",
+    "gun_spread",
+    "pistol",
+    "singleback"
+   ],
+   "weight": 2,
+   "tags": [
+    "rpo",
+    "short"
+   ],
+   "carrier": "RB",
+   "aim": [
+    2.5,
+    4
+   ],
+   "block": "zone",
+   "routes": {
+    "X": "slant",
+    "H": "stalk",
+    "Z": "stalk",
+    "Y": "block"
+   },
+   "read": [
+    "X"
+   ],
+   "drop": 1
+  },
+  {
+   "id": "rpo_glance",
+   "name": "RPO Glance",
+   "kind": "rpo",
+   "group": "RPO",
+   "formations": [
+    "gun_doubles",
+    "gun_spread",
+    "pistol"
+   ],
+   "weight": 1.5,
+   "tags": [
+    "rpo",
+    "medium"
+   ],
+   "carrier": "RB",
+   "aim": [
+    2.5,
+    4
+   ],
+   "block": "zone",
+   "routes": {
+    "H": "glance",
+    "X": "go",
+    "Z": "stalk",
+    "Y": "block"
+   },
+   "read": [
+    "H"
+   ],
+   "drop": 1
+  },
+  {
+   "id": "rpo_stick",
+   "name": "RPO Stick",
+   "kind": "rpo",
+   "group": "RPO",
+   "formations": [
+    "gun_trips",
+    "gun_doubles"
+   ],
+   "weight": 1.5,
+   "tags": [
+    "rpo",
+    "short"
+   ],
+   "carrier": "RB",
+   "aim": [
+    -2.5,
+    4
+   ],
+   "block": "zone",
+   "routes": {
+    "Y": "stick",
+    "H": "flat",
+    "Z": "go",
+    "X": "stalk"
+   },
+   "read": [
+    "Y",
+    "H"
+   ],
+   "drop": 1
+  },
+  {
+   "id": "rpo_pop",
+   "name": "RPO Pop Pass",
+   "kind": "rpo",
+   "group": "RPO",
+   "formations": [
+    "singleback",
+    "singleback_ace",
+    "pistol",
+    "gun_wing"
+   ],
+   "weight": 1,
+   "tags": [
+    "rpo",
+    "medium"
+   ],
+   "carrier": "RB",
+   "aim": [
+    2.5,
+    4
+   ],
+   "block": "zone",
+   "routes": {
+    "Y": "seam",
+    "X": "stalk",
+    "Z": "stalk",
+    "H": "block"
+   },
+   "read": [
+    "Y"
+   ],
+   "drop": 1
   },
   {
    "id": "slants",
    "name": "Slants",
    "kind": "pass",
+   "group": "Quick",
    "formations": [
     "gun_doubles",
-    "singleback"
-   ],
-   "drop": 3,
-   "routes": {
-    "X": "slant",
-    "Z": "slant",
-    "SLOT": "flat",
-    "TE": "drag",
-    "RB": "block"
-   },
-   "read": [
-    "Z",
-    "X",
-    "SLOT",
-    "TE"
+    "gun_spread",
+    "singleback",
+    "pistol"
    ],
    "weight": 3.5,
    "tags": [
     "short",
     "quick"
+   ],
+   "drop": 3,
+   "routes": {
+    "X": "slant",
+    "Z": "slant",
+    "H": "flat",
+    "Y": "drag",
+    "RB": "block"
+   },
+   "read": [
+    "Z",
+    "X",
+    "H",
+    "Y"
    ]
+  },
+  {
+   "id": "quick_outs",
+   "name": "Quick Outs",
+   "kind": "pass",
+   "group": "Quick",
+   "formations": [
+    "gun_doubles",
+    "gun_spread",
+    "singleback",
+    "pistol"
+   ],
+   "weight": 2.5,
+   "tags": [
+    "short",
+    "quick",
+    "sideline"
+   ],
+   "drop": 3,
+   "routes": {
+    "X": "speed_out",
+    "Z": "speed_out",
+    "H": "hitch",
+    "Y": "stick",
+    "RB": "block"
+   },
+   "read": [
+    "Z",
+    "X",
+    "H",
+    "Y"
+   ]
+  },
+  {
+   "id": "stick",
+   "name": "Stick",
+   "kind": "pass",
+   "group": "Quick",
+   "formations": [
+    "gun_trips",
+    "gun_bunch"
+   ],
+   "weight": 2.5,
+   "tags": [
+    "short",
+    "quick"
+   ],
+   "drop": 3,
+   "routes": {
+    "Y": "flat",
+    "H": "stick",
+    "Z": "fade",
+    "X": "slant",
+    "RB": "block"
+   },
+   "read": [
+    "H",
+    "Y",
+    "X",
+    "Z"
+   ]
+  },
+  {
+   "id": "snag",
+   "name": "Snag",
+   "kind": "pass",
+   "group": "Quick",
+   "formations": [
+    "gun_bunch",
+    "gun_trips"
+   ],
+   "weight": 1.4,
+   "tags": [
+    "short",
+    "quick"
+   ],
+   "drop": 3,
+   "routes": {
+    "Z": "corner",
+    "H": "snag",
+    "Y": "flat",
+    "X": "slant",
+    "RB": "block"
+   },
+   "read": [
+    "H",
+    "Y",
+    "Z",
+    "X"
+   ]
+  },
+  {
+   "id": "hitches",
+   "name": "Hitches",
+   "kind": "pass",
+   "group": "Quick",
+   "formations": [
+    "gun_doubles",
+    "gun_spread",
+    "gun_empty"
+   ],
+   "weight": 2,
+   "tags": [
+    "short",
+    "quick"
+   ],
+   "drop": 3,
+   "routes": {
+    "X": "hitch",
+    "Z": "hitch",
+    "H": "hitch",
+    "Y": "hitch",
+    "RB": "check"
+   },
+   "read": [
+    "Z",
+    "X",
+    "H",
+    "Y",
+    "RB"
+   ]
+  },
+  {
+   "id": "empty_quick",
+   "name": "Empty Quick",
+   "kind": "pass",
+   "group": "Quick",
+   "formations": [
+    "gun_empty"
+   ],
+   "weight": 1.5,
+   "tags": [
+    "short",
+    "quick"
+   ],
+   "drop": 3,
+   "routes": {
+    "X": "slant",
+    "H": "hitch",
+    "Y": "stick",
+    "RB": "speed_out",
+    "Z": "fade"
+   },
+   "read": [
+    "H",
+    "Y",
+    "X",
+    "RB",
+    "Z"
+   ]
+  },
+  {
+   "id": "fades",
+   "name": "Fades",
+   "kind": "pass",
+   "group": "Quick",
+   "formations": [
+    "gun_doubles",
+    "gun_spread",
+    "gun_trips",
+    "singleback"
+   ],
+   "weight": 0.8,
+   "tags": [
+    "redzone",
+    "quick"
+   ],
+   "drop": 3,
+   "routes": {
+    "X": "fade",
+    "Z": "fade",
+    "H": "snag",
+    "Y": "stick",
+    "RB": "block"
+   },
+   "read": [
+    "Z",
+    "X",
+    "Y",
+    "H"
+   ]
+  },
+  {
+   "id": "bubble_screen",
+   "name": "WR Bubble",
+   "kind": "pass",
+   "group": "Screen",
+   "formations": [
+    "gun_doubles",
+    "gun_spread",
+    "gun_trips"
+   ],
+   "weight": 1.0,
+   "tags": [
+    "screen",
+    "quick",
+    "short"
+   ],
+   "drop": 1,
+   "routes": {
+    "H": "bubble",
+    "X": "stalk",
+    "Z": "stalk",
+    "Y": "block",
+    "RB": "block"
+   },
+   "read": [
+    "H"
+   ]
+  },
+  {
+   "id": "smoke_screen",
+   "name": "Smoke Screen",
+   "kind": "pass",
+   "group": "Screen",
+   "formations": [
+    "gun_doubles",
+    "gun_spread",
+    "singleback"
+   ],
+   "weight": 0.7,
+   "tags": [
+    "screen",
+    "quick",
+    "short"
+   ],
+   "drop": 1,
+   "routes": {
+    "X": "smoke",
+    "H": "stalk",
+    "Z": "go",
+    "Y": "block",
+    "RB": "block"
+   },
+   "read": [
+    "X"
+   ]
+  },
+  {
+   "id": "tunnel_screen",
+   "name": "Tunnel Screen",
+   "kind": "pass",
+   "group": "Screen",
+   "formations": [
+    "gun_doubles",
+    "gun_spread",
+    "gun_trips"
+   ],
+   "weight": 0.7,
+   "tags": [
+    "screen",
+    "short"
+   ],
+   "drop": 3,
+   "routes": {
+    "Z": "tunnel",
+    "H": "stalk",
+    "X": "go",
+    "Y": "block",
+    "RB": "block"
+   },
+   "read": [
+    "Z"
+   ],
+   "screen": true
+  },
+  {
+   "id": "rb_screen",
+   "name": "HB Screen",
+   "kind": "pass",
+   "group": "Screen",
+   "formations": [
+    "gun_doubles",
+    "gun_trips",
+    "gun_spread",
+    "singleback",
+    "pistol"
+   ],
+   "weight": 1.5,
+   "tags": [
+    "screen",
+    "short"
+   ],
+   "drop": 7,
+   "routes": {
+    "RB": "screen",
+    "X": "go",
+    "Z": "go",
+    "H": "drag",
+    "Y": "block"
+   },
+   "read": [
+    "RB"
+   ],
+   "screen": true
+  },
+  {
+   "id": "te_screen",
+   "name": "TE Screen",
+   "kind": "pass",
+   "group": "Screen",
+   "formations": [
+    "singleback",
+    "singleback_ace",
+    "gun_wing"
+   ],
+   "weight": 0.6,
+   "tags": [
+    "screen",
+    "short"
+   ],
+   "drop": 7,
+   "routes": {
+    "Y": "screen",
+    "X": "go",
+    "Z": "go",
+    "H": "block",
+    "RB": "block"
+   },
+   "read": [
+    "Y"
+   ],
+   "screen": true
   },
   {
    "id": "curl_flat",
    "name": "Curl Flat",
    "kind": "pass",
+   "group": "Dropback",
    "formations": [
     "gun_doubles",
-    "singleback"
+    "singleback",
+    "pistol",
+    "gun_wing"
+   ],
+   "weight": 3,
+   "tags": [
+    "short"
    ],
    "drop": 5,
    "routes": {
     "X": "curl",
     "Z": "curl",
-    "SLOT": "flat",
-    "TE": "out",
+    "H": "flat",
+    "Y": "out",
     "RB": "swing"
    },
    "read": [
     "X",
-    "SLOT",
+    "H",
     "Z",
-    "TE",
+    "Y",
     "RB"
-   ],
-   "weight": 3,
-   "tags": [
-    "short"
    ]
   },
   {
    "id": "mesh",
    "name": "Mesh",
    "kind": "pass",
+   "group": "Dropback",
    "formations": [
-    "gun_doubles"
-   ],
-   "drop": 5,
-   "routes": {
-    "X": "dig",
-    "Z": "corner",
-    "SLOT": "drag",
-    "TE": "drag",
-    "RB": "flat"
-   },
-   "read": [
-    "SLOT",
-    "TE",
-    "Z",
-    "X",
-    "RB"
+    "gun_doubles",
+    "gun_spread",
+    "gun_empty"
    ],
    "weight": 3,
    "tags": [
     "short",
     "medium"
+   ],
+   "drop": 5,
+   "routes": {
+    "X": "dig",
+    "Z": "corner",
+    "H": "drag",
+    "Y": "drag",
+    "RB": "flat"
+   },
+   "read": [
+    "H",
+    "Y",
+    "Z",
+    "X",
+    "RB"
    ]
   },
   {
    "id": "smash",
    "name": "Smash",
    "kind": "pass",
+   "group": "Dropback",
    "formations": [
     "gun_doubles",
-    "singleback"
+    "gun_spread",
+    "singleback",
+    "pistol"
+   ],
+   "weight": 1.5,
+   "tags": [
+    "medium"
    ],
    "drop": 5,
    "routes": {
     "X": "hitch",
     "Z": "hitch",
-    "SLOT": "corner",
-    "TE": "seam",
+    "H": "corner",
+    "Y": "seam",
     "RB": "block"
    },
    "read": [
-    "SLOT",
+    "H",
     "X",
-    "TE",
+    "Y",
     "Z"
-   ],
-   "weight": 1.5,
-   "tags": [
-    "medium"
    ]
   },
   {
-   "id": "y_cross",
-   "name": "Dig Post",
+   "id": "flood",
+   "name": "Flood",
    "kind": "pass",
+   "group": "Dropback",
    "formations": [
-    "singleback",
-    "gun_doubles"
-   ],
-   "drop": 7,
-   "routes": {
-    "X": "post",
-    "Z": "dig",
-    "SLOT": "seam",
-    "TE": "out",
-    "RB": "block"
-   },
-   "read": [
-    "Z",
-    "X",
-    "SLOT",
-    "TE"
+    "gun_trips",
+    "gun_bunch"
    ],
    "weight": 1.5,
    "tags": [
     "medium",
-    "deep"
+    "sideline"
+   ],
+   "drop": 5,
+   "routes": {
+    "Z": "go",
+    "H": "deep_out",
+    "Y": "flat",
+    "X": "dig",
+    "RB": "check"
+   },
+   "read": [
+    "H",
+    "Y",
+    "Z",
+    "X",
+    "RB"
+   ]
+  },
+  {
+   "id": "sail",
+   "name": "Sail",
+   "kind": "pass",
+   "group": "Dropback",
+   "formations": [
+    "gun_trips",
+    "gun_bunch",
+    "gun_empty"
+   ],
+   "weight": 1.2,
+   "tags": [
+    "medium",
+    "sideline"
+   ],
+   "drop": 5,
+   "routes": {
+    "Z": "go",
+    "H": "corner",
+    "Y": "flat",
+    "X": "dig",
+    "RB": "check"
+   },
+   "read": [
+    "H",
+    "Y",
+    "X",
+    "Z",
+    "RB"
    ]
   },
   {
    "id": "four_verts",
    "name": "Four Verts",
    "kind": "pass",
+   "group": "Dropback",
    "formations": [
-    "gun_doubles"
+    "gun_doubles",
+    "gun_spread",
+    "gun_trips"
+   ],
+   "weight": 0.7,
+   "tags": [
+    "deep"
    ],
    "drop": 7,
    "routes": {
     "X": "go",
     "Z": "go",
-    "SLOT": "seam",
-    "TE": "seam",
+    "H": "seam",
+    "Y": "seam",
+    "RB": "check"
+   },
+   "read": [
+    "H",
+    "Y",
+    "Z",
+    "X",
+    "RB"
+   ]
+  },
+  {
+   "id": "y_cross",
+   "name": "Y Cross",
+   "kind": "pass",
+   "group": "Dropback",
+   "formations": [
+    "singleback",
+    "gun_doubles",
+    "pistol",
+    "gun_wing"
+   ],
+   "weight": 1.5,
+   "tags": [
+    "medium"
+   ],
+   "drop": 7,
+   "routes": {
+    "X": "post",
+    "Y": "deep_cross",
+    "Z": "comeback",
+    "H": "drag",
+    "RB": "check"
+   },
+   "read": [
+    "Y",
+    "X",
+    "Z",
+    "H",
+    "RB"
+   ]
+  },
+  {
+   "id": "dig_post",
+   "name": "Dig Post",
+   "kind": "pass",
+   "group": "Dropback",
+   "formations": [
+    "singleback",
+    "gun_doubles",
+    "pistol"
+   ],
+   "weight": 1.5,
+   "tags": [
+    "medium",
+    "deep"
+   ],
+   "drop": 7,
+   "routes": {
+    "X": "post",
+    "Z": "dig",
+    "H": "seam",
+    "Y": "out",
     "RB": "block"
    },
    "read": [
-    "SLOT",
-    "TE",
     "Z",
-    "X"
+    "X",
+    "H",
+    "Y"
+   ]
+  },
+  {
+   "id": "drive",
+   "name": "Drive",
+   "kind": "pass",
+   "group": "Dropback",
+   "formations": [
+    "gun_doubles",
+    "singleback",
+    "pistol",
+    "gun_spread"
    ],
-   "weight": 0.7,
+   "weight": 1.5,
    "tags": [
-    "deep"
+    "short",
+    "medium"
+   ],
+   "drop": 5,
+   "routes": {
+    "Y": "shallow",
+    "H": "dig",
+    "X": "go",
+    "Z": "curl",
+    "RB": "check"
+   },
+   "read": [
+    "Y",
+    "H",
+    "Z",
+    "X",
+    "RB"
+   ]
+  },
+  {
+   "id": "shallow_cross",
+   "name": "Shallow Cross",
+   "kind": "pass",
+   "group": "Dropback",
+   "formations": [
+    "singleback",
+    "gun_doubles",
+    "pistol"
+   ],
+   "weight": 1.0,
+   "tags": [
+    "short",
+    "medium"
+   ],
+   "drop": 5,
+   "routes": {
+    "Y": "shallow",
+    "X": "dig",
+    "Z": "go",
+    "H": "out",
+    "RB": "check"
+   },
+   "read": [
+    "Y",
+    "X",
+    "H",
+    "Z",
+    "RB"
    ]
   },
   {
    "id": "comebacks",
    "name": "Comebacks",
    "kind": "pass",
+   "group": "Dropback",
    "formations": [
-    "gun_doubles"
+    "gun_doubles",
+    "gun_spread",
+    "singleback"
+   ],
+   "weight": 1.5,
+   "tags": [
+    "medium",
+    "sideline"
    ],
    "drop": 5,
    "routes": {
     "X": "comeback",
     "Z": "comeback",
-    "SLOT": "out",
-    "TE": "curl",
+    "H": "out",
+    "Y": "curl",
     "RB": "flat"
    },
    "read": [
     "Z",
     "X",
-    "SLOT",
-    "TE",
+    "H",
+    "Y",
     "RB"
+   ]
+  },
+  {
+   "id": "levels",
+   "name": "Levels",
+   "kind": "pass",
+   "group": "Dropback",
+   "formations": [
+    "gun_doubles",
+    "gun_spread"
    ],
-   "weight": 2,
+   "weight": 1.5,
+   "tags": [
+    "short",
+    "medium"
+   ],
+   "drop": 5,
+   "routes": {
+    "X": "dig",
+    "H": "in",
+    "Y": "seam",
+    "Z": "go",
+    "RB": "check"
+   },
+   "read": [
+    "H",
+    "X",
+    "Y",
+    "Z",
+    "RB"
+   ]
+  },
+  {
+   "id": "dagger",
+   "name": "Dagger",
+   "kind": "pass",
+   "group": "Dropback",
+   "formations": [
+    "gun_doubles",
+    "gun_spread",
+    "singleback"
+   ],
+   "weight": 1.5,
+   "tags": [
+    "medium"
+   ],
+   "drop": 7,
+   "routes": {
+    "H": "seam",
+    "X": "dig",
+    "Y": "drag",
+    "Z": "go",
+    "RB": "check"
+   },
+   "read": [
+    "X",
+    "H",
+    "Y",
+    "Z",
+    "RB"
+   ]
+  },
+  {
+   "id": "bench",
+   "name": "Bench",
+   "kind": "pass",
+   "group": "Dropback",
+   "formations": [
+    "gun_doubles",
+    "gun_spread"
+   ],
+   "weight": 1,
    "tags": [
     "medium",
     "sideline"
+   ],
+   "drop": 5,
+   "routes": {
+    "X": "corner",
+    "H": "speed_out",
+    "Z": "corner",
+    "Y": "out",
+    "RB": "check"
+   },
+   "read": [
+    "H",
+    "X",
+    "Y",
+    "Z",
+    "RB"
    ]
+  },
+  {
+   "id": "texas",
+   "name": "Texas",
+   "kind": "pass",
+   "group": "Dropback",
+   "formations": [
+    "gun_doubles",
+    "singleback",
+    "pistol"
+   ],
+   "weight": 0.6,
+   "tags": [
+    "short"
+   ],
+   "drop": 5,
+   "routes": {
+    "RB": "angle",
+    "X": "go",
+    "Z": "go",
+    "H": "out",
+    "Y": "curl"
+   },
+   "read": [
+    "RB",
+    "Y",
+    "H",
+    "X",
+    "Z"
+   ]
+  },
+  {
+   "id": "te_seams",
+   "name": "TE Seams",
+   "kind": "pass",
+   "group": "Dropback",
+   "formations": [
+    "gun_wing",
+    "singleback_ace",
+    "singleback",
+    "pistol"
+   ],
+   "weight": 0.6,
+   "tags": [
+    "medium"
+   ],
+   "drop": 5,
+   "routes": {
+    "Y": "seam",
+    "H": "seam",
+    "X": "out",
+    "Z": "out",
+    "RB": "check"
+   },
+   "read": [
+    "Y",
+    "H",
+    "X",
+    "Z",
+    "RB"
+   ]
+  },
+  {
+   "id": "post_wheel",
+   "name": "Post Wheel",
+   "kind": "pass",
+   "group": "Dropback",
+   "formations": [
+    "gun_doubles",
+    "singleback",
+    "pistol"
+   ],
+   "weight": 1,
+   "tags": [
+    "deep"
+   ],
+   "drop": 7,
+   "routes": {
+    "X": "post",
+    "RB": "wheel",
+    "Z": "dig",
+    "H": "drag",
+    "Y": "block"
+   },
+   "read": [
+    "RB",
+    "X",
+    "Z",
+    "H"
+   ]
+  },
+  {
+   "id": "deep_shot",
+   "name": "Post Corner Shot",
+   "kind": "pass",
+   "group": "Shot",
+   "formations": [
+    "singleback",
+    "gun_doubles",
+    "pistol"
+   ],
+   "weight": 0.6,
+   "tags": [
+    "deep"
+   ],
+   "drop": 7,
+   "routes": {
+    "X": "post_corner",
+    "Z": "go",
+    "H": "seam",
+    "Y": "block",
+    "RB": "block"
+   },
+   "read": [
+    "X",
+    "H",
+    "Z"
+   ]
+  },
+  {
+   "id": "out_up",
+   "name": "Out & Up",
+   "kind": "pass",
+   "group": "Shot",
+   "formations": [
+    "gun_doubles",
+    "gun_spread",
+    "singleback"
+   ],
+   "weight": 0.4,
+   "tags": [
+    "deep"
+   ],
+   "drop": 7,
+   "routes": {
+    "X": "out_up",
+    "Z": "out_up",
+    "H": "hitch",
+    "Y": "block",
+    "RB": "block"
+   },
+   "read": [
+    "Z",
+    "X",
+    "H"
+   ]
+  },
+  {
+   "id": "sluggo",
+   "name": "Sluggo Seam",
+   "kind": "pass",
+   "group": "Shot",
+   "formations": [
+    "gun_doubles",
+    "gun_spread",
+    "singleback"
+   ],
+   "weight": 0.3,
+   "tags": [
+    "deep"
+   ],
+   "drop": 7,
+   "routes": {
+    "X": "sluggo",
+    "Z": "sluggo",
+    "H": "seam",
+    "Y": "block",
+    "RB": "block"
+   },
+   "read": [
+    "X",
+    "Z",
+    "H"
+   ]
+  },
+  {
+   "id": "hail_mary",
+   "name": "Hail Mary",
+   "kind": "pass",
+   "group": "Shot",
+   "formations": [
+    "gun_spread",
+    "gun_empty",
+    "gun_doubles"
+   ],
+   "weight": 0,
+   "tags": [
+    "hailMary",
+    "deep"
+   ],
+   "drop": 7,
+   "routes": {
+    "X": "hail",
+    "Z": "hail",
+    "H": "hail",
+    "Y": "hail",
+    "RB": "block"
+   },
+   "read": [
+    "Z",
+    "X",
+    "H",
+    "Y"
+   ]
+  },
+  {
+   "id": "pa_boot",
+   "name": "PA Bootleg",
+   "kind": "pass",
+   "group": "Play action",
+   "formations": [
+    "iform_pro",
+    "strong_i",
+    "singleback",
+    "singleback_ace",
+    "pistol",
+    "jumbo"
+   ],
+   "weight": 1.5,
+   "tags": [
+    "pa",
+    "short",
+    "medium"
+   ],
+   "drop": 5,
+   "routes": {
+    "Y": "deep_cross",
+    "H": "flat:L",
+    "X": "comeback",
+    "Z": "post",
+    "RB": "block"
+   },
+   "read": [
+    "H",
+    "Y",
+    "X",
+    "Z"
+   ],
+   "pa": true,
+   "boot": true
+  },
+  {
+   "id": "pa_post",
+   "name": "PA Post",
+   "kind": "pass",
+   "group": "Play action",
+   "formations": [
+    "singleback",
+    "singleback_ace",
+    "iform_pro",
+    "strong_i",
+    "pistol",
+    "gun_doubles"
+   ],
+   "weight": 1.2,
+   "tags": [
+    "pa",
+    "deep"
+   ],
+   "drop": 7,
+   "routes": {
+    "X": "post",
+    "Z": "dig",
+    "Y": "seam",
+    "H": "block",
+    "RB": "block"
+   },
+   "read": [
+    "Z",
+    "X",
+    "Y"
+   ],
+   "pa": true
+  },
+  {
+   "id": "pa_cross",
+   "name": "PA Crossers",
+   "kind": "pass",
+   "group": "Play action",
+   "formations": [
+    "singleback",
+    "iform_pro",
+    "pistol"
+   ],
+   "weight": 1,
+   "tags": [
+    "pa",
+    "medium"
+   ],
+   "drop": 7,
+   "routes": {
+    "Y": "deep_cross",
+    "Z": "post",
+    "X": "dig",
+    "H": "block",
+    "RB": "check"
+   },
+   "read": [
+    "Y",
+    "X",
+    "Z",
+    "RB"
+   ],
+   "pa": true
+  },
+  {
+   "id": "pa_flood",
+   "name": "PA Flood",
+   "kind": "pass",
+   "group": "Play action",
+   "formations": [
+    "iform_pro",
+    "strong_i",
+    "singleback"
+   ],
+   "weight": 1,
+   "tags": [
+    "pa",
+    "medium",
+    "sideline"
+   ],
+   "drop": 5,
+   "routes": {
+    "Z": "go",
+    "Y": "deep_out",
+    "H": "flat:R",
+    "X": "post",
+    "RB": "block"
+   },
+   "read": [
+    "Y",
+    "H",
+    "Z",
+    "X"
+   ],
+   "pa": true
+  },
+  {
+   "id": "pa_shot",
+   "name": "PA Max Shot",
+   "kind": "pass",
+   "group": "Play action",
+   "formations": [
+    "iform_pro",
+    "singleback_ace",
+    "singleback",
+    "jumbo"
+   ],
+   "weight": 0.4,
+   "tags": [
+    "pa",
+    "deep"
+   ],
+   "drop": 7,
+   "routes": {
+    "X": "go",
+    "Z": "post",
+    "Y": "block",
+    "H": "block",
+    "RB": "block"
+   },
+   "read": [
+    "Z",
+    "X"
+   ],
+   "pa": true
+  },
+  {
+   "id": "pa_yankee",
+   "name": "PA Yankee",
+   "kind": "pass",
+   "group": "Play action",
+   "formations": [
+    "iform_pro",
+    "singleback",
+    "singleback_ace"
+   ],
+   "weight": 0.4,
+   "tags": [
+    "pa",
+    "deep"
+   ],
+   "drop": 7,
+   "routes": {
+    "X": "deep_cross",
+    "Z": "post",
+    "Y": "block",
+    "H": "block",
+    "RB": "block"
+   },
+   "read": [
+    "Z",
+    "X"
+   ],
+   "pa": true
+  },
+  {
+   "id": "pa_te_leak",
+   "name": "PA TE Leak",
+   "kind": "pass",
+   "group": "Play action",
+   "formations": [
+    "goal_line",
+    "jumbo",
+    "iform_tight"
+   ],
+   "weight": 0.8,
+   "tags": [
+    "pa",
+    "redzone",
+    "goalLine",
+    "short"
+   ],
+   "drop": 3,
+   "routes": {
+    "Y": "shallow",
+    "Z": "corner",
+    "X": "block",
+    "H": "flat:R",
+    "RB": "block"
+   },
+   "read": [
+    "Y",
+    "Z",
+    "H"
+   ],
+   "pa": true
   }
  ]
 }

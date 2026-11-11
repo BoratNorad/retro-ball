@@ -168,12 +168,17 @@ export const TuningSchema = z.object({
   qb: nums("readStartAfterDrop", "readWindow", "openSepStart", "openSepEnd", "openSepDeepBonus", "pressureRange", "throwAwayAwareness", "scrambleSpeedMin", "scrambleAfter", "maxHold", "dropSpeed", "cutCost", "evadeAgilityMin", "evadeStep", "pressureReactBase", "pressureReactPerMissing", "closingFactor", "misreadBase", "misreadPerMissing", "windowPerAwareness"),
   throw: nums("ballSpeedBase", "ballSpeedPer", "errBase", "errPerMissingAcc", "errPerYard", "pressureErrMult", "onRunErrMult", "shortMax", "midMax"),
   catch: nums("reach", "contestRange", "baseCatch", "catchPer", "contestPenalty", "contestSkillPer", "intBase", "intPer", "deflectBase", "catchSpeedKeep", "deepCatchPenaltyPerYard", "deepCatchFrom", "deepIntMult", "placementPenalty"),
-  coverage: nums("reactBase", "reactPerMissing", "manCushion", "zoneSwitchRange", "ballReactBase", "ballReactPerMissing", "runReadBase", "runReadPerMissing", "pursuitLead", "pursuitMaxTime", "deepCushion", "manReactBase", "manReactPerMissing", "manBailCushion"),
+  coverage: nums("reactBase", "reactPerMissing", "manCushion", "zoneSwitchRange", "ballReactBase", "ballReactPerMissing", "runReadBase", "runReadPerMissing", "pursuitLead", "pursuitMaxTime", "deepCushion", "manReactBase", "manReactPerMissing", "manBailCushion", "zoneDriftStep"),
   tackle: nums("range", "base", "per", "powerPer", "gangBonus", "min", "max", "missStun", "carrierSlowOnMiss", "fumbleBase", "fumblePer", "fumbleMin", "fumbleMax", "fumbleOffenseRecover", "sackBase", "sackPer", "elusiveMaxWeight", "fallForwardPerSpeed", "fallForwardMax", "fallForwardBase", "afterContactPowerPer", "fallForwardReceiverMult"),
   carrier: nums("lookAhead", "lanePerp", "forwardWeight", "sidelineMargin", "visionNoisePerMissing", "followAimFor", "replanTicksBase", "replanPerAgility", "sharpTurnSpeedMult", "sharpTurnAgilityPer").extend({ laneAngles: z.array(z.number()).min(3) }),
   kicking: nums("kickoffBase", "kickoffPer", "kickoffJitter", "returnMeanBase", "returnPer", "returnJitter", "returnTdPerMille", "puntBase", "puntPer", "puntJitter",
     "puntReturnMean", "puntReturnJitter", "fairCatchPerMille", "fgMakeShort", "fgDropPerYardAfter35", "fgDropPerYardAfter50", "fgAccPer", "fgRangeBase", "fgRangePer",
     "patBase", "patPer", "kickSeconds", "puntSeconds", "kickoffSeconds"),
+  schemes: nums("pullStep", "drawHandoff", "drawDrop", "drawRecognize", "optionMesh", "rpoMesh", "rpoConflictRange", "rpoConflictDepth",
+    "keyCrashPerMille", "readMisreadBase", "readMisreadPerMissing", "comboSeconds", "screenRelease", "gapPatience", "gapPatienceMult", "keyCommit", "drawShedBase", "drawShedPerMissing", "screenThrowAfter").extend({ _doc: z.string().optional() }),
+  pa: nums("fakeSeconds", "biteBase", "bitePerMissing", "cornerMult", "safetyMult", "biteStep", "bootWidth", "bootDepth").extend({ _doc: z.string().optional() }),
+  userDefense: nums("diveRange", "diveBonus", "diveMissStun", "diveWhiffStun", "stripSeconds", "stripTacklePenalty", "stripFumbleMult",
+    "swatRange", "swatSeconds", "swatCatchPenalty", "swatIntBonus", "actionCooldown", "manualHold").extend({ _doc: z.string().optional() }),
   user: nums("moveSeconds", "moveCooldown", "moveBonusBase", "moveBonusPer", "cutSideSpeed", "burstSeconds", "burstCooldown", "burstSpeedMult",
     "lobSpeedMult", "lobApex", "bulletApex").extend({ _doc: z.string().optional() }),
   penalties: z.object({
@@ -185,35 +190,104 @@ export type Tuning = z.infer<typeof TuningSchema>;
 
 // ---------------------------------------------------------------- playbook
 const XY = z.tuple([z.number(), z.number()]);
+/** Offense: QB + 5 OL are fixed; the five eligibles are X, Y, Z, H, RB, filled by the personnel group. */
+export const OFF_ELIGIBLE = ["X", "Y", "Z", "H", "RB"] as const;
+export const OFF_LINE = ["LT", "LG", "C", "RG", "RT"] as const;
+export const DefClass = z.enum(["DL", "EDGE", "LB", "NB", "CB", "S"]);
 export const FormationsFileSchema = z.object({
-  roles: z.object({ offense: z.record(z.string(), z.string()), defense: z.record(z.string(), z.string()) }),
-  offense: z.array(z.object({ id: z.string(), name: z.string(), personnel: z.string(), spots: z.record(z.string(), XY) })),
-  defense: z.array(z.object({ id: z.string(), name: z.string(), spots: z.record(z.string(), XY), alignOn: z.record(z.string(), z.string()).optional() })),
+  _doc: z.string().optional(),
+  /** personnel id -> which roster slot plays each eligible role (QB/OL always QB, LT..RT) */
+  personnel: z.record(z.string(), z.object({ name: z.string() }).catchall(z.string())),
+  offense: z.array(z.object({
+    id: z.string(), name: z.string(), family: z.string(), personnel: z.array(z.string()).min(1),
+    spots: z.record(z.string(), XY),
+  })),
+  /** defensive fronts, drawn for the offense's strength to the right (mirrored when it is left) */
+  defense: z.array(z.object({
+    id: z.string(), name: z.string(), personnel: z.string(),
+    /** role -> [x, y, class, roster slot]; alignOn: "wide" (widest receiver on my side) | "slot" (next one in) */
+    roles: z.record(z.string(), z.object({ at: XY, cls: DefClass, slot: z.string(), alignOn: z.enum(["wide", "slot"]).optional() })),
+    rush: z.array(z.string()).min(3),
+  })),
 });
 export type FormationsFile = z.infer<typeof FormationsFileSchema>;
+export type OffFormation = FormationsFile["offense"][number];
+export type DefFormation = FormationsFile["defense"][number];
 export const RoutesFileSchema = z.object({
-  routes: z.record(z.string(), z.object({ points: z.array(XY), settle: z.boolean().optional(), block: z.boolean().optional() })),
+  _doc: z.string().optional(),
+  routes: z.record(z.string(), z.object({
+    points: z.array(XY), settle: z.boolean().optional(),
+    /** block = pass protection; stalk = block the nearest defensive back (screens, runs) */
+    block: z.enum(["pass", "stalk"]).optional(),
+    /** seconds to wait (blocking) before releasing into the route */
+    delay: z.number().optional(),
+  })),
 });
 export type RoutesFile = z.infer<typeof RoutesFileSchema>;
 export const OffensePlaySchema = z.object({
-  id: z.string(), name: z.string(), kind: z.enum(["run", "pass"]), formations: z.array(z.string()).min(1),
+  id: z.string(), name: z.string(), kind: z.enum(["run", "pass", "rpo"]), formations: z.array(z.string()).min(1),
+  /** playbook group shown in the UI (Inside run, Quick, Dropback, Play action, Screen, ...) */
+  group: z.string(),
   weight: z.number().nonnegative(), tags: z.array(z.string()),
-  carrier: z.string().optional(), aim: XY.optional(), block: z.enum(["zone", "man"]).optional(),
+  // runs (and the run half of an RPO)
+  carrier: z.string().optional(), aim: XY.optional(),
+  block: z.enum(["zone", "man", "power", "counter", "toss", "draw"]).optional(),
+  /** read option: the QB reads the unblocked backside end and keeps or gives */
+  option: z.boolean().optional(),
+  /** lead blocker through the hole (FB/H) */
+  lead: z.string().optional(),
+  // passes (and the pass half of an RPO)
   drop: z.number().optional(), routes: z.record(z.string(), z.string()).optional(), read: z.array(z.string()).optional(),
+  /** play action: the back fakes the handoff */
+  pa: z.boolean().optional(),
+  /** bootleg: the QB rolls out away from the fake */
+  boot: z.boolean().optional(),
+  /** screen: the line lets rushers through, then releases downfield to block */
+  screen: z.boolean().optional(),
 });
 export type OffensePlay = z.infer<typeof OffensePlaySchema>;
-export const OffenseFileSchema = z.object({ plays: z.array(OffensePlaySchema).min(1) });
-const Assignment = z.union([z.literal("rush"), z.literal("spy"), z.object({ man: z.string() }), z.object({ zone: z.string() })]);
+export const OffenseFileSchema = z.object({ _doc: z.string().optional(), plays: z.array(OffensePlaySchema).min(1) });
+/** Defensive call = coverage shell + pressure, compiled at the snap against whatever front is on the field.
+ *  Selectors pick defenders: "FS", "MLB" (role names), or "CB:L" / "S:deep" / "LB:M" / "NB" (class:pick, where
+ *  pick is L, R, M (middle), S (strong side), W (weak side), deep, low). Lists are fallbacks: first match wins. */
+const Sel = z.array(z.string()).min(1);
 export const DefenseCallSchema = z.object({
-  id: z.string(), name: z.string(), formation: z.string(), weight: z.number().nonnegative(), tags: z.array(z.string()),
-  roles: z.record(z.string(), Assignment),
+  id: z.string(), name: z.string(), group: z.string(), weight: z.number().nonnegative(), tags: z.array(z.string()),
+  /** extra rushers beyond the front's rush (each a selector list) */
+  blitz: z.array(Sel).default([]),
+  /** front players who drop into coverage instead (zone blitz) */
+  drop: z.array(Sel).default([]),
+  /** deep zones and who plays them */
+  deep: z.array(z.object({ zone: z.string(), who: Sel })).default([]),
+  /** man coverage for everyone left (Cover 0/1/2-Man) */
+  man: z.boolean().default(false),
+  /** underneath zones in priority order (the remaining players take the first N, matched left to right) */
+  under: z.array(z.string()).default([]),
+  /** QB spy */
+  spy: Sel.optional(),
+  /** fronts this call can't be run from */
+  notFrom: z.array(z.string()).default([]),
 });
 export type DefenseCall = z.infer<typeof DefenseCallSchema>;
 export const DefenseFileSchema = z.object({
+  _doc: z.string().optional(),
   zones: z.record(z.string(), z.object({ at: XY, r: z.number().positive(), deep: z.boolean().optional() })),
   calls: z.array(DefenseCallSchema).min(1),
 });
 export type DefenseFile = z.infer<typeof DefenseFileSchema>;
+
+// ---------------------------------------------------------------- AI coach
+const Weights = z.record(z.string(), z.number().nonnegative());
+export const CoachConfigSchema = z.object({
+  _doc: z.string().optional(),
+  personnel: z.object({ normal: Weights, short: Weights, goalLine: Weights, passing: Weights }),
+  frontFor: z.record(z.string(), z.array(z.string()).min(1)),
+  baseFront: z.string(), passingDownFront: z.string(), preventFront: z.string(), goalLineFront: z.string(),
+  tendency: z.object({ prior: z.number(), runBiasMax: z.number(), paBiteBase: z.number(), paBitePerRunRate: z.number() }),
+  qbRun: z.object({ speedRef: z.number(), speedPer: z.number(), min: z.number(), max: z.number() }),
+  hailMary: z.object({ maxSeconds: z.number(), minBallOn: z.number(), maxBallOn: z.number() }),
+});
+export type CoachConfig = z.infer<typeof CoachConfigSchema>;
 
 // ---------------------------------------------------------------- derived pool
 /** A draftable player card: a real player plus game-derived fields (built by tools/report/build_pool.ts). */
