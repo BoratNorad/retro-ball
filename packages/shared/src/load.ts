@@ -3,7 +3,7 @@
 import {
   AbilitiesFileSchema, BaseStatsConfigSchema, BodyConfigSchema, DraftConfigSchema, GradeConfigSchema,
   IconsFileSchema, MaddenAbilitiesFileSchema, PlayersFileSchema, PositionsConfigSchema, PositionWeightsSchema,
-  RarityConfigSchema, StatGroupsFileSchema, TeamsFileSchema, TypesFileSchema,
+  RarityConfigSchema, RulesConfigSchema, StatGroupsFileSchema, TeamsFileSchema, TypesFileSchema,
 } from "./schemas.js";
 
 /** File names, relative to packages/shared/. */
@@ -22,6 +22,7 @@ export const DATA_FILES = {
   baseStats: "config/base_stats.json",
   grade: "config/grade.json",
   draft: "config/draft.json",
+  rules: "config/rules.json",
 } as const;
 export type DataKey = keyof typeof DATA_FILES;
 
@@ -30,6 +31,7 @@ const SCHEMAS = {
   statGroups: StatGroupsFileSchema, types: TypesFileSchema, abilities: AbilitiesFileSchema, icons: IconsFileSchema,
   positionWeights: PositionWeightsSchema, positions: PositionsConfigSchema, rarity: RarityConfigSchema,
   body: BodyConfigSchema, baseStats: BaseStatsConfigSchema, grade: GradeConfigSchema, draft: DraftConfigSchema,
+  rules: RulesConfigSchema,
 } as const;
 
 export type GameData = { [K in DataKey]: ReturnType<(typeof SCHEMAS)[K]["parse"]> };

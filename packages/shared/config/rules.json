@@ -1,0 +1,33 @@
+{
+  "_doc": "Football rules and clock. Times are game seconds unless noted; the sim counts in ticks (tickHz per second). Spots are yards from the possessing team's own goal line unless noted.",
+  "tickHz": 30,
+  "quarters": 4,
+  "quarterSeconds": 900,
+  "twoMinuteWarningSeconds": 120,
+  "timeoutsPerHalf": 3,
+  "downs": 4,
+  "firstDownYards": 10,
+  "runoffSeconds": { "normal": 36, "hurry": 14, "milk": 40 },
+  "outOfBoundsStopsClock": { "q2LastSeconds": 120, "q4LastSeconds": 300 },
+  "scoring": { "touchdown": 6, "fieldGoal": 3, "safety": 2, "pat": 1, "twoPoint": 2, "defensiveTry": 2 },
+  "spots": {
+    "kickoffFrom": 35,
+    "kickoffTouchback": 30,
+    "kickoffOutOfBounds": 40,
+    "turnoverTouchback": 20,
+    "safetyKickFrom": 20,
+    "patLine": 85,
+    "twoPointLine": 98,
+    "missedFgMinSpot": 20,
+    "fgSnapDepth": 7
+  },
+  "overtime": {
+    "mode": "college",
+    "startSpot": 75,
+    "timeoutsPerPeriod": 1,
+    "mustGoForTwoFromPeriod": 2,
+    "twoPointShootoutFromPeriod": 3,
+    "defensiveScoreEndsGame": true,
+    "maxPeriods": 12
+  }
+}

@@ -165,6 +165,29 @@ export const DraftConfigSchema = z.object({
 });
 export type DraftConfig = z.infer<typeof DraftConfigSchema>;
 
+export const RulesConfigSchema = z.object({
+  tickHz: z.number().int().positive(),
+  quarters: z.number().int().positive(),
+  quarterSeconds: z.number().int().positive(),
+  twoMinuteWarningSeconds: z.number().int().nonnegative(),
+  timeoutsPerHalf: z.number().int().nonnegative(),
+  downs: z.number().int().positive(),
+  firstDownYards: z.number().int().positive(),
+  runoffSeconds: z.object({ normal: z.number().int(), hurry: z.number().int(), milk: z.number().int() }),
+  outOfBoundsStopsClock: z.object({ q2LastSeconds: z.number().int(), q4LastSeconds: z.number().int() }),
+  scoring: z.object({ touchdown: z.number().int(), fieldGoal: z.number().int(), safety: z.number().int(), pat: z.number().int(), twoPoint: z.number().int(), defensiveTry: z.number().int() }),
+  spots: z.object({
+    kickoffFrom: z.number(), kickoffTouchback: z.number(), kickoffOutOfBounds: z.number(), turnoverTouchback: z.number(),
+    safetyKickFrom: z.number(), patLine: z.number(), twoPointLine: z.number(), missedFgMinSpot: z.number(), fgSnapDepth: z.number(),
+  }),
+  overtime: z.object({
+    mode: z.enum(["college"]), startSpot: z.number(), timeoutsPerPeriod: z.number().int(),
+    mustGoForTwoFromPeriod: z.number().int(), twoPointShootoutFromPeriod: z.number().int(),
+    defensiveScoreEndsGame: z.boolean(), maxPeriods: z.number().int(),
+  }),
+});
+export type RulesConfig = z.infer<typeof RulesConfigSchema>;
+
 // ---------------------------------------------------------------- derived pool (output of tools/report/build_pool.ts)
 export const CreatureSchema = z.object({
   id: z.number().int(),
