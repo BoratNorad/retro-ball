@@ -13,10 +13,10 @@ import {
 } from "./rules.js";
 import type { Roster } from "./roster.js";
 import {
-  chooseDefense, chooseOffensePlay, type ScrimmageDecision, chooseScrimmage, chooseTry, emptyTendencies, recordDefense, recordOffense, runRate, tempoFor, timeoutFor,
+  chooseDefense, chooseOffensePlay, aiCheck, type ScrimmageDecision, type PlayCall, type DefCall, chooseScrimmage, chooseTry, emptyTendencies, recordDefense, recordOffense, runRate, tempoFor, timeoutFor,
   type Tendencies,
 } from "./coach.js";
-import { createPlay, type PlayResult, type PlaySim, type StatEvent, type Stats } from "./engine/play.js";
+import { createPlay, type PlayResult, type PlaySim, type PreSnapDefense, type PreSnapOffense, type StatEvent, type Stats } from "./engine/play.js";
 import { fieldGoal, kickoff, pat, punt } from "./engine/kicks.js";
 
 const { ONE, fx } = F;
@@ -82,6 +82,8 @@ export interface SnapOptions {
   tryChoice?: "pat" | "twoPoint";    // human try decision
   defCall?: DefenseCall;             // human defense
   defFront?: string;                 // human defense: front (default: the AI's answer to the personnel)
+  preOff?: PreSnapOffense;           // human offense pre-snap (usually set later with adjust())
+  preDef?: PreSnapDefense;
   /** human defense: control one defender during the play */
   controlDefender?: boolean;
   timeout?: boolean;                 // human calls a timeout before this snap
@@ -92,6 +94,10 @@ export interface LivePlay {
   sim: PlaySim; offSide: Side; userOffense: boolean;
   play: OffensePlay; call: DefenseCall; twoPoint: boolean;
   formation: string; personnel: string; front: string; userDefense: boolean;
+  flip: boolean; preOff?: PreSnapOffense; preDef?: PreSnapDefense;
+  /** the play's own random stream: re-lining up (audible, hot route, motion...) replays the same luck */
+  seed: number;
+  hardCounted?: boolean;
   /** internal bookkeeping for finish() */
   ctx: { before: GameState; at: GameState };
 }
@@ -234,7 +240,13 @@ export class GameSession {
     }
     recordOffense(this.tend[off], s, dec);
     recordDefense(this.tend[def], dec.call);
-    return { live: this.start(s, before, dec, dec, opts, false) };
+    const live = this.start(s, before, dec, dec, opts, false);
+    // the AI offense sometimes hard-counts on third or fourth and short
+    if (!userOff && s.down >= 3 && s.toGo <= fx(2) && rng.int(1000) < data.coach.presnap.hardCountPerMille) {
+      const hc = this.hardCount(live);
+      if (hc) return { done: hc };
+    }
+    return { live };
   }
 
   /** The AI offense's next call, decided now so a human defense can see the personnel group come on
@@ -257,22 +269,74 @@ export class GameSession {
   }
 
   /** Line up and create the live play. */
-  private start(s: GameState, before: GameState, pc: { play: OffensePlay; formation: string; personnel: string; flip: boolean },
-    dc: { call: DefenseCall; front: string }, opts: SnapOptions, twoPoint: boolean): LivePlay {
-    const { data, rng, ratings, teams } = this;
+  private start(s: GameState, before: GameState, pc: PlayCall, dc: DefCall, opts: SnapOptions, twoPoint: boolean): LivePlay {
     const off = s.possession, def = other(off);
     const userOff = this.userSide === off;
     const userDefense = !userOff && this.userSide === def && Boolean(opts.controlDefender);
     if (twoPoint) this.ballX = this.mid;
+    const seed = this.rng.int(1_000_000_000);
+    const preOff = userOff ? opts.preOff : pc.preOff;
+    const preDef = !userOff && this.userSide === def ? opts.preDef : dc.preDef;
+    return this.build({ offSide: off, userOffense: userOff, userDefense, play: pc.play, call: dc.call, formation: pc.formation, personnel: pc.personnel,
+      front: dc.front, flip: pc.flip, preOff, preDef, seed, twoPoint, ctx: { before, at: s } });
+  }
+  /** Create (or re-create) the play's simulation from its description. */
+  private build(l: Omit<LivePlay, "sim">): LivePlay {
+    const { data, ratings, teams } = this;
+    const s = l.ctx.at;
+    const off = l.offSide, def = other(off);
+    // the AI offense may check out of a long pass when the defense shows blitz
+    if (!l.userOffense && l.preDef?.show) {
+      const chk = aiCheck({ play: l.play, formation: l.formation, personnel: l.personnel, flip: l.flip }, l.preDef,
+        ratings(teams[off].starters.QB!.id).awareness ?? 60, data, new Rng(l.seed ^ 0x5bd1e995));
+      if (chk) l = { ...l, play: chk.play };
+    }
     const C = data.coach.tendency;
     const paBiteMult = C.paBiteBase + C.paBitePerRunRate * runRate(this.tend[off], data);
     const sim = createPlay({
       data, ratings, offense: teams[off], defense: teams[def], offSide: off, ballOn: s.ballOn, ballX: this.ballX, toGo: s.toGo,
-      play: pc.play, formation: pc.formation, personnel: pc.personnel, call: dc.call, front: dc.front, flip: pc.flip, rng,
-      twoPoint, userOffense: userOff, userDefense, paBiteMult,
+      play: l.play, formation: l.formation, personnel: l.personnel, call: l.call, front: l.front, flip: l.flip, rng: new Rng(l.seed),
+      twoPoint: l.twoPoint, userOffense: l.userOffense, userDefense: l.userDefense, paBiteMult, preOff: l.preOff, preDef: l.preDef,
     });
-    return { sim, offSide: off, userOffense: userOff, userDefense, play: pc.play, call: dc.call, formation: pc.formation, personnel: pc.personnel,
-      front: dc.front, twoPoint, ctx: { before, at: s } };
+    return { ...l, sim };
+  }
+
+  /** Pre-snap changes before the ball is snapped: audible (play/formation/flip), defensive audible,
+   *  motion, shifts, hot routes, protection, defensive looks. The play keeps its own random stream. */
+  adjust(live: LivePlay, ch: { play?: OffensePlay; formation?: string; flip?: boolean; call?: DefenseCall; front?: string; preOff?: PreSnapOffense; preDef?: PreSnapDefense }): LivePlay {
+    let formation = ch.formation ?? live.formation;
+    let personnel = live.personnel;
+    const play = ch.play ?? live.play;
+    if (!play.formations.includes(formation)) {
+      // an audible keeps the personnel group on the field: find a formation for it
+      const fits = play.formations.filter((f) => this.data.formations.offense.find((x) => x.id === f)?.personnel.includes(personnel));
+      formation = fits[0] ?? play.formations[0]!;
+      const fo = this.data.formations.offense.find((x) => x.id === formation)!;
+      if (!fo.personnel.includes(personnel)) personnel = fo.personnel[0]!;
+    }
+    return this.build({ ...live, play, formation, personnel, flip: ch.flip ?? live.flip, call: ch.call ?? live.call, front: ch.front ?? live.front,
+      preOff: ch.preOff ?? live.preOff, preDef: ch.preDef ?? live.preDef });
+  }
+
+  /** Hard count: the defense may jump offside (free 5 yards); your own line may false-start. Once per play.
+   *  Returns the dead-ball result, or null if nobody moved (snap as normal). */
+  hardCount(live: LivePlay): PlaySummary | null {
+    if (live.hardCounted || live.twoPoint) return null;
+    live.hardCounted = true;
+    const P = this.data.tuning.presnap;
+    const def = this.teams[other(live.offSide)];
+    const dl = ["DE1", "DT1", "DT2", "DE2"].reduce((a, sl) => a + (this.ratings(def.starters[sl]!.id).playRecognition ?? 60), 0) / 4;
+    const rng = new Rng(live.seed ^ 0x2545f491);
+    let foul: Foul | null = null;
+    if (rng.int(1000) < P.hardCountOffsideBase + P.hardCountOffsidePer * (70 - dl)) foul = { name: "Offside (hard count)", on: "D", yards: 5, kind: "preSnap" };
+    else if (rng.int(1000) < P.hardCountFalseStart) foul = { name: "False start", on: "O", yards: 5, kind: "preSnap" };
+    if (!foul) return null;
+    return this.apply(live.ctx.before, live.ctx.at, { play: "scrimmage", endY: live.ctx.at.ballOn, elapsedTicks: 0, foul }, [], live.play.name, "", foul.name);
+  }
+  /** The play clock ran out before the snap. */
+  delayOfGame(live: LivePlay): PlaySummary {
+    const foul: Foul = { name: "Delay of game", on: "O", yards: 5, kind: "preSnap" };
+    return this.apply(live.ctx.before, live.ctx.at, { play: "scrimmage", endY: live.ctx.at.ballOn, elapsedTicks: 0, foul }, [], live.play.name, "", foul.name);
   }
 
   /** Apply a finished live play. */

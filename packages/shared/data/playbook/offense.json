@@ -1792,6 +1792,100 @@
     "H"
    ],
    "pa": true
+  },
+  {
+   "id": "jet_sweep",
+   "name": "Jet Sweep",
+   "kind": "run",
+   "group": "Outside run",
+   "formations": [
+    "gun_doubles",
+    "gun_spread",
+    "singleback",
+    "pistol"
+   ],
+   "weight": 1.2,
+   "tags": [
+    "outside",
+    "motion"
+   ],
+   "carrier": "H",
+   "aim": [
+    13,
+    1
+   ],
+   "block": "zone",
+   "motion": {
+    "role": "H",
+    "kind": "jet"
+   }
+  },
+  {
+   "id": "jet_boot",
+   "name": "Jet Fake Boot",
+   "kind": "pass",
+   "group": "Play action",
+   "formations": [
+    "gun_doubles",
+    "singleback",
+    "pistol"
+   ],
+   "weight": 0.8,
+   "tags": [
+    "pa",
+    "medium",
+    "motion"
+   ],
+   "drop": 5,
+   "routes": {
+    "H": "flat",
+    "Y": "deep_cross",
+    "X": "post",
+    "Z": "comeback",
+    "RB": "block"
+   },
+   "read": [
+    "Y",
+    "H",
+    "X",
+    "Z"
+   ],
+   "pa": true,
+   "motion": {
+    "role": "H",
+    "kind": "jet"
+   }
+  },
+  {
+   "id": "orbit_screen",
+   "name": "Orbit Flat",
+   "kind": "pass",
+   "group": "Screen",
+   "formations": [
+    "gun_doubles",
+    "gun_spread"
+   ],
+   "weight": 0.5,
+   "tags": [
+    "quick",
+    "short",
+    "motion"
+   ],
+   "drop": 3,
+   "routes": {
+    "H": "flat",
+    "X": "stalk",
+    "Z": "stalk",
+    "Y": "block",
+    "RB": "block"
+   },
+   "read": [
+    "H"
+   ],
+   "motion": {
+    "role": "H",
+    "kind": "orbit"
+   }
   }
  ]
 }

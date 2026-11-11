@@ -120,3 +120,55 @@ describe("M4 play calling", () => {
     expect(dives).toBeGreaterThanOrEqual(Math.floor(opps * 0.8)); // an engaged or stunned defender cannot dive
   });
 });
+
+describe("M5 pre-snap", () => {
+  const xOf = (sim: ReturnType<typeof createPlay>, side: "O" | "D", role: string) => sim.snapshot().actors.find((a) => a.side === side && a.role === role)!;
+  it("motion waits for the snap; a man defender follows the motion man (zone defenders stay)", () => {
+    const man = createPlay(input("slants", "cover1", "m1", { userOffense: true, preOff: { motion: { role: "H", kind: "across" } } }));
+    expect(man.snapshot().presnap).toBe(true);
+    const asg = man.assignments().find((a) => a.task === "man:H")!;
+    const h0 = xOf(man, "O", "H").x;
+    for (let i = 0; i < 90; i++) man.step({});
+    expect(man.snapshot().presnap).toBe(true);
+    const h1 = xOf(man, "O", "H").x;
+    expect(Math.abs(h1 - h0)).toBeGreaterThan(fx(8));
+    expect(Math.abs(xOf(man, "D", asg.role).x - h1)).toBeLessThan(fx(3));
+    man.step({ snap: true });
+    expect(man.snapshot().presnap).toBe(false);
+    const zone = createPlay(input("slants", "cover3", "m1", { userOffense: true, preOff: { motion: { role: "H", kind: "across" } } }));
+    const zs = zone.snapshot().actors.filter((a) => a.side === "D").map((a) => a.x);
+    for (let i = 0; i < 60; i++) zone.step({});
+    expect(zone.snapshot().actors.filter((a) => a.side === "D").map((a) => a.x)).toEqual(zs);
+  });
+
+  it("the AI snaps a jet sweep on its own and the jet man carries", () => {
+    const r = simulatePlay(input("jet_sweep", "cover3", "j1"));
+    expect(r.log.some((l) => l.includes("jet motion"))).toBe(true);
+    expect(r.outcome.elapsedTicks).toBeGreaterThan(0);
+  });
+
+  it("hot routes, keep-in and defensive looks change the lineup", () => {
+    const base = createPlay(input("four_verts", "cover3", "h1"));
+    const hot = createPlay(input("four_verts", "cover3", "h1", { preOff: { hot: { X: "slant" }, keepIn: ["H"] } }));
+    const routeOf = (sim: ReturnType<typeof createPlay>, role: string) => { const sn = sim.snapshot(); const i = sn.actors.findIndex((a) => a.side === "O" && a.role === role); return sn.routes.find((r) => r.i === i); };
+    expect(routeOf(hot, "X")!.pts).not.toEqual(routeOf(base, "X")!.pts);
+    expect(routeOf(hot, "H")).toBeUndefined();
+    const press = createPlay(input("slants", "cover1", "h1", { preDef: { corners: "press", safeties: "two", show: true } }));
+    const sn = press.snapshot();
+    const cb = sn.actors.find((a) => a.side === "D" && a.role === "LCB")!;
+    expect(cb.y - sn.los).toBeLessThan(fx(2));
+    const mlb = sn.actors.find((a) => a.side === "D" && a.role === "MLB")!;
+    expect(mlb.y - sn.los).toBeLessThan(fx(2.5));
+    // cover 1 called, two-high shown: both safeties stand deep and wide
+    const ss = sn.actors.filter((a) => a.side === "D" && (a.role === "FS" || a.role === "SS"));
+    expect(ss.every((a) => a.y - sn.los > fx(12))).toBe(true);
+    expect(press.assignments().filter((a) => a.task.startsWith("deep")).length).toBe(1);
+  });
+
+  it("spy and double-team overrides", () => {
+    const sim = createPlay(input("slants", "cover3", "s1", { preDef: { spy: "MLB", double: "Z" } }));
+    const a = sim.assignments();
+    expect(a.find((x) => x.role === "MLB")!.task).toBe("spy");
+    expect(a.filter((x) => x.task === "man:Z").length).toBe(1);
+  });
+});

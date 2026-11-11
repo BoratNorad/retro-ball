@@ -179,6 +179,9 @@ export const TuningSchema = z.object({
   pa: nums("fakeSeconds", "biteBase", "bitePerMissing", "cornerMult", "safetyMult", "biteStep", "bootWidth", "bootDepth").extend({ _doc: z.string().optional() }),
   userDefense: nums("diveRange", "diveBonus", "diveMissStun", "diveWhiffStun", "stripSeconds", "stripTacklePenalty", "stripFumbleMult",
     "swatRange", "swatSeconds", "swatCatchPenalty", "swatIntBonus", "actionCooldown", "manualHold").extend({ _doc: z.string().optional() }),
+  presnap: nums("jogMult", "jetMult", "motionMaxSeconds", "jetSnapDistance", "jetHandoff", "jetBoost", "jetBoostSeconds", "followMult",
+    "jamBase", "jamPer", "jamMax", "pressDepth", "bailDepth", "pressBeatPenalty", "showDepth", "dlShift", "lbShift", "slideBias",
+    "hardCountOffsideBase", "hardCountOffsidePer", "hardCountFalseStart", "playClock").extend({ _doc: z.string().optional() }),
   user: nums("moveSeconds", "moveCooldown", "moveBonusBase", "moveBonusPer", "cutSideSpeed", "burstSeconds", "burstCooldown", "burstSpeedMult",
     "lobSpeedMult", "lobApex", "bulletApex").extend({ _doc: z.string().optional() }),
   penalties: z.object({
@@ -244,6 +247,8 @@ export const OffensePlaySchema = z.object({
   boot: z.boolean().optional(),
   /** screen: the line lets rushers through, then releases downfield to block */
   screen: z.boolean().optional(),
+  /** built-in pre-snap motion (jet sweeps): who and what kind */
+  motion: z.object({ role: z.string(), kind: z.enum(["jet", "across", "orbit", "short", "return"]) }).optional(),
 });
 export type OffensePlay = z.infer<typeof OffensePlaySchema>;
 export const OffenseFileSchema = z.object({ _doc: z.string().optional(), plays: z.array(OffensePlaySchema).min(1) });
@@ -286,6 +291,11 @@ export const CoachConfigSchema = z.object({
   tendency: z.object({ prior: z.number(), runBiasMax: z.number(), paBiteBase: z.number(), paBitePerRunRate: z.number() }),
   qbRun: z.object({ speedRef: z.number(), speedPer: z.number(), min: z.number(), max: z.number() }),
   hailMary: z.object({ maxSeconds: z.number(), minBallOn: z.number(), maxBallOn: z.number() }),
+  presnap: z.object({
+    motionPerMille: z.number(), showBlitzPerMille: z.number(), disguisePerMille: z.number(), pressPerMille: z.number(),
+    bailPerMille: z.number(), dlShiftPerMille: z.number(), checkPerMille: z.number(), hardCountPerMille: z.number(),
+    audibles: z.object({ offense: z.array(z.string()).length(5), defense: z.array(z.string()).length(5) }),
+  }),
 });
 export type CoachConfig = z.infer<typeof CoachConfigSchema>;
 

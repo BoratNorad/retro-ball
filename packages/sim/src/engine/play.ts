@@ -19,6 +19,36 @@ export interface StatEvent {
   yds?: number; att?: number; comp?: number; td?: number; target?: number;
 }
 
+export type MotionKind = "jet" | "across" | "orbit" | "short" | "return";
+/** Offensive pre-snap adjustments. motion: undefined = the play's own motion (if any), null = none. */
+export interface PreSnapOffense {
+  motion?: { role: string; kind: MotionKind } | null;
+  /** shift: Y to the other side, Y flexed out to the slot, Z in tight */
+  shift?: "yOther" | "yFlex" | "zTight" | null;
+  /** hot routes: role -> route id */
+  hot?: Record<string, string>;
+  /** slide protection toward the offense's left or right */
+  slide?: "L" | "R" | null;
+  /** keep these eligibles in to block */
+  keepIn?: string[];
+}
+/** Defensive pre-snap alignment (what the offense sees; assignments stay the call's, except spy/double). */
+export interface PreSnapDefense {
+  dl?: "over" | "under" | "pinch" | "spread" | null;
+  lb?: "in" | "out" | null;
+  /** show blitz: linebackers and the box safety walk up to the line (then play their call) */
+  show?: boolean;
+  /** safety look: one-high or two-high regardless of the call */
+  safeties?: "one" | "two" | null;
+  corners?: "press" | "bail" | null;
+  /** turn this defender into a QB spy */
+  spy?: string | null;
+  /** bracket this offensive role with an extra underneath defender */
+  double?: string | null;
+}
+/** Routes a hot route may use. */
+export const HOT_ROUTES = ["go", "slant", "out", "in", "curl", "comeback", "post", "corner", "drag", "fade", "wheel", "flat", "block"] as const;
+
 export interface PlayInput {
   data: GameData;
   ratings: (id: number) => Stats;
@@ -41,6 +71,8 @@ export interface PlayInput {
   userOffense?: boolean;
   /** a human controls one defender (defensive control mode) */
   userDefense?: boolean;
+  preOff?: PreSnapOffense;
+  preDef?: PreSnapDefense;
 }
 export interface Frame { t: number; p: number[]; ball: [number, number, number] } // positions as [x,y,...] in Fx
 
@@ -52,6 +84,8 @@ export interface UserInput {
   throwAt?: { x: Fx; y: Fx; power: number } | null;
   /** offense: juke/spin/burst/scramble, keep (read option); defense: dive, strip, swat, switch */
   action?: "juke" | "spin" | "burst" | "scramble" | "keep" | "dive" | "strip" | "swat" | "switch" | null;
+  /** snap the ball (when the play is waiting in its pre-snap phase, e.g. during motion) */
+  snap?: boolean;
 }
 export interface ActorView { x: Fx; y: Fx; vx: Fx; vy: Fx; side: "O" | "D"; role: string; num: number | null; id: number; down: boolean }
 export interface PlaySnapshot {
@@ -63,6 +97,11 @@ export interface PlaySnapshot {
   userDefender: number;
   /** read option: the QB still has the choice to keep */
   canKeep: boolean;
+  /** still before the snap (motion running) */
+  presnap: boolean;
+  /** at the snap / before it: offensive routes and defensive assignments, for the pre-snap overlay */
+  routes: { i: number; pts: V2[] }[];
+  assign: { i: number; task: string; at?: V2; r?: Fx; target?: number }[];
   cooldowns: { juke: number; spin: number; burst: number };
   log: string[];
 }
@@ -94,6 +133,8 @@ interface Actor {
   comboOn: number; comboUntil: number;
   /** play action: this defender bites on the fake until this tick */
   biteUntil: number;
+  /** pressed at the line: can't get into the route until this tick */
+  jamUntil: number;
   // coverage
   manTarget: number; zone: { at: V2; r: Fx; deep: boolean } | null; zoneName: string; reactTicks: number;
   lastTackleTry: number;
@@ -157,7 +198,7 @@ export function createPlay(inp: PlayInput): PlaySim {
       maxSpeed: fx(T.movement.speedBase + T.movement.speedPer * g("speed")),
       accel: fx(T.movement.accelBase + T.movement.accelPer * g("acceleration")),
       task: "idle", blockTarget: -1, engagedWith: -1, shedTick: 0, stunTil: 0,
-      route: [], routeIdx: 0, settle: false, isBlocker: false, releaseAt: 0, stalk: false, comboOn: -1, comboUntil: 0, biteUntil: 0,
+      route: [], routeIdx: 0, settle: false, isBlocker: false, releaseAt: 0, stalk: false, comboOn: -1, comboUntil: 0, biteUntil: 0, jamUntil: 0,
       manTarget: -1, zone: null, zoneName: "", reactTicks: 0, lastTackleTry: -999, history: [], brake: false,
     };
   };
@@ -170,7 +211,11 @@ export function createPlay(inp: PlayInput): PlaySim {
     const slot = ["QB", "LT", "LG", "C", "RG", "RT"].includes(role) ? role : pers[role]!;
     const card = slotPlayer(inp.offense, slot, data, takenO);
     takenO.add(card.id);
-    const [dx, dy] = off.spots[role]!;
+    let [dx, dy] = off.spots[role]!;
+    const sh = inp.preOff?.shift;
+    if (sh === "yOther" && role === "Y") dx = -dx;
+    if (sh === "yFlex" && role === "Y") { dx = (dx >= 0 ? 1 : -1) * 9; dy = -1.5; }
+    if (sh === "zTight" && role === "Z") dx = (dx >= 0 ? 1 : -1) * 9;
     const a = mk(card, "O", role, place(dx, dy, flipX));
     roleIdx.set("O:" + role, a.i);
     actors.push(a);
@@ -203,6 +248,42 @@ export function createPlay(inp: PlayInput): PlaySim {
     actors.push(a);
   }
   const D = actors.filter((a) => a.side === "D");
+  const P5 = T.presnap;
+  alignDefense();
+  /** pre-snap looks: line and linebacker shifts, corner depth, blitz look, safety rotation */
+  function alignDefense() {
+    const pd = inp.preDef;
+    if (!pd) return;
+    const out = (d: Actor) => (d.pos.x >= bx ? 1 : -1);
+    const setX = (d: Actor, x: Fx) => { d.pos = { x: F.clamp(x, fx(1), W - fx(1)), y: d.pos.y }; };
+    for (const d of D) {
+      if (d.cls === "DL" || d.cls === "EDGE") {
+        const k = fx(P5.dlShift);
+        if (pd.dl === "over") setX(d, d.pos.x + k * m);
+        if (pd.dl === "under") setX(d, d.pos.x - k * m);
+        if (pd.dl === "pinch") setX(d, d.pos.x - k * out(d));
+        if (pd.dl === "spread") setX(d, d.pos.x + mul(k, fx(1.5)) * out(d));
+      }
+      if (d.cls === "LB") {
+        if (pd.lb === "in") setX(d, d.pos.x - fx(P5.lbShift) * out(d));
+        if (pd.lb === "out") setX(d, d.pos.x + fx(P5.lbShift) * out(d));
+      }
+      if (d.cls === "CB" && pd.corners) d.pos = { x: d.pos.x, y: los + fx(pd.corners === "press" ? P5.pressDepth : P5.bailDepth) };
+    }
+    const safeties = D.filter((d) => d.cls === "S").sort((p, q) => q.pos.y - p.pos.y);
+    if (pd.safeties === "two" && safeties.length >= 2) {
+      const [a1, a2] = [...safeties.slice(0, 2)].sort((p, q) => p.pos.x - q.pos.x);
+      a1!.pos = { x: bx - fx(9), y: los + fx(13) }; a2!.pos = { x: bx + fx(9), y: los + fx(13) };
+    }
+    if (pd.safeties === "one" && safeties.length >= 1) {
+      safeties[0]!.pos = { x: bx, y: los + fx(14) };
+      if (safeties[1]) safeties[1].pos = { x: bx + fx(5.5 * m), y: los + fx(8) };
+    }
+    if (pd.show) for (const d of D) {
+      const box = d.cls === "LB" || (d.cls === "S" && d !== safeties[0] && pd.safeties !== "two");
+      if (box) d.pos = { x: d.pos.x, y: los + fx(P5.showDepth) };
+    }
+  }
   const byRole = (side: "O" | "D", role: string) => actors[roleIdx.get(side + ":" + role)!]!;
   const R = (a: Actor, k: string) => a.st[k] ?? 50;
   const qb = byRole("O", "QB");
@@ -211,6 +292,25 @@ export function createPlay(inp: PlayInput): PlaySim {
   // a lead blocker only from the backfield (an H split out in this formation just blocks normally)
   const leadCand = inp.play.lead && inp.play.lead !== carrierRole ? byRole("O", inp.play.lead) : null;
   const leadBlocker = leadCand && leadCand.pos.y < los - fx(2.5) ? leadCand : null;
+
+  // ------------------------------------------------------------------ pre-snap motion
+  const motionPlan = inp.preOff && "motion" in inp.preOff ? inp.preOff.motion ?? null : inp.play.motion ?? null;
+  const mover = motionPlan && ["X", "Y", "Z", "H", "RB"].includes(motionPlan.role) ? byRole("O", motionPlan.role) : null;
+  const motionKind = motionPlan?.kind ?? "short";
+  const motionPath: V2[] = [];
+  if (mover) {
+    const sgn = mover.pos.x >= bx ? 1 : -1, toward = -sgn, Y0 = mover.pos.y;
+    const P = (x: Fx, y: Fx): V2 => ({ x: F.clamp(x, fx(1.5), W - fx(1.5)), y });
+    if (motionKind === "jet") motionPath.push(P(bx + fx(3 * sgn), los - fx(2.2)), P(bx - fx(16 * sgn), los - fx(2.2)));
+    if (motionKind === "across") motionPath.push(P(bx - (mover.pos.x - bx), Y0));
+    if (motionKind === "orbit") motionPath.push(P(bx + fx(3 * sgn), los - fx(3)), P(bx - fx(sgn), los - fx(5.5)), P(bx + fx(6 * sgn), los - fx(3.5)));
+    if (motionKind === "short") motionPath.push(P(mover.pos.x + fx(3 * toward), Y0));
+    if (motionKind === "return") motionPath.push(P(mover.pos.x + fx(4 * toward), Y0), P(mover.pos.x, Y0));
+  }
+  let snapped = !mover;
+  let preTick = 0, motionIdx = 0;
+  const jetRunner = Boolean(mover && runner === mover);
+  let jetBoostUntil = -1;
 
   // ------------------------------------------------------------------ assignments
   const OL_ROLES = ["LT", "LG", "C", "RG", "RT"];
@@ -230,13 +330,20 @@ export function createPlay(inp: PlayInput): PlaySim {
     a.task = "route";
     if (rdef.delay) { a.releaseAt = sec(rdef.delay); a.isBlocker = true; }
   };
+  const routeIds = new Map<number, string>();
   for (const a of O) {
     if (OL_ROLES.includes(a.role)) { a.task = pullers.includes(a) ? "pull" : "block"; a.isBlocker = true; continue; }
     if (a.role === "QB" && a !== runner) { a.task = "qb"; continue; }
     if (a === runner) { a.task = "carry"; continue; }
     if (a === leadBlocker) { a.task = "lead"; a.isBlocker = true; continue; }
-    const routeId = inp.play.routes?.[a.role];
-    if ((isPass || isRpo) && routeId) { setRoute(a, routeId); continue; }
+    let routeId = inp.play.routes?.[a.role];
+    if ((isPass || isRpo) && routeId) {
+      const hot = inp.preOff?.hot?.[a.role];
+      if (hot && (HOT_ROUTES as readonly string[]).includes(hot)) routeId = hot;
+      if (inp.preOff?.keepIn?.includes(a.role)) routeId = "block";
+      routeIds.set(a.i, routeId);
+      setRoute(a, routeId); continue;
+    }
     a.task = "block"; a.isBlocker = true;
     // wide receivers on runs block the nearest defensive back
     if (!passSet && ["X", "Z"].includes(a.role) || (!passSet && F.abs(a.pos.x - bx) > fx(8))) a.stalk = true;
@@ -252,6 +359,33 @@ export function createPlay(inp: PlayInput): PlaySim {
   // ------------------------------------------------------------------ defensive call -> assignments
   let assignmentsAtSnap: { role: string; task: string }[] = [];
   compileCall();
+  presnapOverrides();
+  function presnapOverrides() {
+    const pd = inp.preDef;
+    if (!pd) return;
+    if (pd.spy) {
+      const d = D.find((x) => x.role === pd.spy);
+      if (d) { d.task = "spy"; d.zone = null; d.manTarget = -1; }
+    }
+    if (pd.double) {
+      const r = O.find((x) => x.role === pd.double);
+      let best: Actor | null = null, bd = fx(1e4);
+      if (r) for (const d of D) if (d.task === "zone" && d.zone && !d.zone.deep) { const dd = vdist(d.pos, r.pos); if (dd < bd) { bd = dd; best = d; } }
+      if (r && best) { best.task = "man"; best.manTarget = r.i; best.zone = null; best.reactTicks = sec(T.coverage.manReactBase + T.coverage.manReactPerMissing * (99 - R(best, "manCoverage"))); }
+    }
+    if (pd.corners === "press") {
+      for (const d of D) {
+        if (d.cls !== "CB") continue;
+        const r = d.task === "man" ? actors[d.manTarget]! : O.filter((o) => o.task === "route").sort((p, q) => vdist(p.pos, d.pos) - vdist(q.pos, d.pos))[0];
+        if (!r || r.task !== "route" || F.abs(r.pos.x - d.pos.x) > fx(2.5)) continue;
+        const jam = Math.min(P5.jamMax, Math.max(0, P5.jamBase + P5.jamPer * (R(d, "press") - R(r, "release"))));
+        r.jamUntil = Math.max(r.releaseAt, sec(jam));
+        // a receiver who wins off the line leaves a pressed corner turning late
+        if (R(r, "release") > R(d, "press") + 5) d.reactTicks += sec(P5.pressBeatPenalty);
+      }
+    }
+    assignmentsAtSnap = D.map((d) => ({ role: d.role, task: d.task === "man" ? `man:${actors[d.manTarget]!.role}` : d.task === "zone" ? d.zoneName : d.task }));
+  }
   function compileCall() {
     const call = inp.call;
     const free = new Set(D);
@@ -349,12 +483,12 @@ export function createPlay(inp: PlayInput): PlaySim {
 
   // ------------------------------------------------------------------ ball
   // the QB holds it on passes, RPOs, draws and options until he throws or hands off
-  const qbHolds = isPass || isRpo || isDraw || isOption || runner === qb;
+  const qbHolds = isPass || isRpo || isDraw || isOption || runner === qb || jetRunner;
   const ball: Ball = { state: "held", holder: (qbHolds ? qb : runner!).i, from: qb.pos, to: qb.pos, t0: 0, t1: 0, target: -1, thrower: -1 };
   let qbHasBall = isPass || isRpo;     // QB can still throw (and be sacked)
   let runRecognizedAt = passSet ? 1 << 30 : 0;
   /** tick the QB hands off (draw, option mesh, RPO decision); -1 = no handoff pending */
-  let handoffAt = isDraw ? sec(S.drawHandoff) : isOption ? sec(S.optionMesh) : isRpo ? sec(S.rpoMesh) : -1;
+  let handoffAt = isDraw ? sec(S.drawHandoff) : isOption ? sec(S.optionMesh) : isRpo ? sec(S.rpoMesh) : jetRunner ? sec(P5.jetHandoff) : -1;
   /** the run starts (for run-read timing) */
   let runStart = isDraw ? 1 << 30 : 0;
   let keepPressed = false;
@@ -417,6 +551,7 @@ export function createPlay(inp: PlayInput): PlaySim {
       if (stopDist > dist) speedMult = mul(speedMult, F.max(fx(0.2), div(dist, F.max(stopDist, ONE))));
     }
     let maxV = mul(a.maxSpeed, speedMult);
+    if (a === runner && curTick < jetBoostUntil && ball.holder === a.i) maxV = mul(maxV, fx(P5.jetBoost));
     // gap runs: the back is patient while the pullers get there
     if (gapRun && a === runner && curTick - runStart < sec(S.gapPatience)) maxV = mul(maxV, fx(S.gapPatienceMult));
     if (a.engagedWith >= 0) maxV = mul(maxV, fx(T.movement.engagedSpeedMult));
@@ -808,6 +943,7 @@ export function createPlay(inp: PlayInput): PlaySim {
     }
     if (a.task === "route") {
       if (now < a.releaseAt) return blockerGoal(a, now);
+      if (now < a.jamUntil) return a.pos;
       if (a.isBlocker) {
         // release from the block into the route
         a.isBlocker = false;
@@ -1057,7 +1193,10 @@ export function createPlay(inp: PlayInput): PlaySim {
     const pairs: { b: Actor; d: Actor; dist: Fx }[] = [];
     for (const b of blockers) for (const d of D) if (eligible(b, d)) {
       const level = d.pos.y - los > fx(3) ? fx(1.5) : 0;
-      pairs.push({ b, d, dist: vdist(b.pos, d.pos) + level });
+      // slide protection: linemen look toward the slide side first
+      const sd = inp.preOff?.slide === "L" ? -1 : inp.preOff?.slide === "R" ? 1 : 0;
+      const slide = sd && passSet && OL_ROLES.includes(b.role) && (d.pos.x - b.pos.x) * sd < 0 ? fx(P5.slideBias) : 0;
+      pairs.push({ b, d, dist: vdist(b.pos, d.pos) + level + slide });
     }
     pairs.sort((p, q) => p.dist - q.dist || p.b.i - q.b.i || p.d.i - q.d.i);
     const usedB = new Set<number>();
@@ -1215,12 +1354,44 @@ export function createPlay(inp: PlayInput): PlaySim {
     if (isDraw || isOption) log.push(`handoff to ${runner.c.name}`);
   }
 
+  /** Before the snap: only the motion man moves (and a man defender who follows him). */
+  function presnapStep(input: UserInput | null | undefined) {
+    preTick++;
+    const mv = mover!;
+    const wp = motionPath[motionIdx];
+    if (wp && vdist(mv.pos, wp) < fx(0.9)) motionIdx++;
+    const goal = motionPath[motionIdx] ?? mv.pos;
+    steer(mv, goal, fx(motionKind === "jet" ? P5.jetMult : P5.jogMult));
+    for (const d of D) {
+      if (d.task === "man" && d.manTarget === mv.i) steer(d, { x: mv.pos.x + (mv.pos.x > bx ? -fx(0.6) : fx(0.6)), y: d.pos.y }, fx(P5.followMult));
+      else d.vel = { x: 0, y: 0 };
+    }
+    for (const a of actors) integrate(a);
+    let go = Boolean(input?.snap);
+    if (!inp.userOffense) {
+      // the AI snaps a jet as the man reaches the ball, other motions when they are set
+      if (motionKind === "jet") go ||= preTick > 3 && F.abs(mv.pos.x - bx) < fx(P5.jetSnapDistance);
+      else go ||= motionIdx >= motionPath.length && vlen(mv.vel) < fx(1);
+    }
+    if (preTick >= sec(P5.motionMaxSeconds) && !inp.userOffense) go = true;
+    if (go) doSnap();
+  }
+  function doSnap() {
+    snapped = true;
+    const mv = mover!;
+    const rid = routeIds.get(mv.i);
+    if (rid && mv.task === "route") { mv.routeIdx = 0; setRoute(mv, rid); }
+    if (jetRunner && vlen(mv.vel) > mul(mv.maxSpeed, fx(0.6))) jetBoostUntil = sec(P5.jetBoostSeconds);
+    log.push(`${mv.c.name} in ${motionKind} motion`);
+  }
+
   // ------------------------------------------------------------------ main loop (one tick per step)
   const maxTicks = sec(T.field.maxPlaySeconds);
   let tick = 0;
   let done = false;
   function step(input?: UserInput | null): boolean {
     if (done) return true;
+    if (!snapped) { presnapStep(input); return false; }
     if (tick >= maxTicks || ended) { done = true; return true; }
     curTick = tick;
     applyUser(input, tick);
@@ -1290,6 +1461,9 @@ export function createPlay(inp: PlayInput): PlaySim {
       userCarrier: Boolean(inp.userOffense && c && c.side === "O" && !(c === qb && qbHasBall) && handoffAt < 0),
       userDefender: udef,
       canKeep: isOption && handoffAt >= 0 && Boolean(inp.userOffense),
+      presnap: !snapped,
+      routes: tick === 0 ? O.filter((o) => o.task === "route" && o.route.length).map((o) => ({ i: o.i, pts: o.route })) : [],
+      assign: tick === 0 ? D.map((d) => ({ i: d.i, task: d.task === "man" ? "man" : d.task, at: d.zone?.at, r: d.zone?.r, target: d.task === "man" ? d.manTarget : undefined })) : [],
       cooldowns: { juke: Math.max(0, moveReady.juke - tick), spin: Math.max(0, moveReady.spin - tick), burst: Math.max(0, moveReady.burst - tick) },
       log,
     };

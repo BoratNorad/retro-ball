@@ -1,20 +1,114 @@
 {
-  "_doc": "AI play-calling preferences. personnel: weight of each offensive personnel group by situation (normal, short = 3 yards or less to go, goalLine = inside the 5, passing = obvious passing down or two-minute). frontFor: defensive fronts the AI answers each personnel group with (base = the team's base front). Tendencies: the AI tracks the opponent's run/pass mix by down and distance; prior = how many league-average calls it starts from; runBias = how far the observed mix can tilt run-defense calls. paBite = play-action bite multiplier: base + perRunRate x the offense's run rate this game. qbRun: designed QB runs and option keeps are weighted by (speed - speedRef) x speedPer, clamped.",
+  "_doc": "AI play-calling preferences. personnel: weight of each offensive personnel group by situation (normal, short = 3 yards or less to go, goalLine = inside the 5, passing = obvious passing down or two-minute). frontFor: defensive fronts the AI answers each personnel group with (base = the team's base front). Tendencies: the AI tracks the opponent's run/pass mix by down and distance; prior = how many league-average calls it starts from; runBias = how far the observed mix can tilt run-defense calls. paBite = play-action bite multiplier: base + perRunRate x the offense's run rate this game. qbRun: designed QB runs and option keeps are weighted by (speed - speedRef) x speedPer, clamped. presnap: how often the AI uses motion, shows blitz (with a non-blitz call; a real blitz is then disguised), disguises its safety look, presses or bails its corners, shifts its line, checks out of a long-developing pass when it sees a blitz look (per awareness), and hard-counts on 3rd/4th and short; audibles = default 5 audible slots per side.",
   "personnel": {
-    "normal": { "11": 58, "12": 14, "21": 11, "10": 8, "20": 3, "13": 3, "22": 3 },
-    "short": { "21": 26, "22": 18, "12": 20, "13": 16, "23": 8, "11": 12 },
-    "goalLine": { "23": 40, "22": 25, "13": 20, "21": 10, "11": 5 },
-    "passing": { "11": 48, "10": 32, "01": 10, "12": 10 }
+    "normal": {
+      "11": 58,
+      "12": 14,
+      "21": 11,
+      "10": 8,
+      "20": 3,
+      "13": 3,
+      "22": 3
+    },
+    "short": {
+      "21": 26,
+      "22": 18,
+      "12": 20,
+      "13": 16,
+      "23": 8,
+      "11": 12
+    },
+    "goalLine": {
+      "23": 40,
+      "22": 25,
+      "13": 20,
+      "21": 10,
+      "11": 5
+    },
+    "passing": {
+      "11": 48,
+      "10": 32,
+      "01": 10,
+      "12": 10
+    }
   },
   "frontFor": {
-    "10": ["dime"], "01": ["dime"], "11": ["nickel"], "20": ["nickel"],
-    "12": ["base"], "21": ["base"], "13": ["base", "bear"], "22": ["base", "bear", "46"], "23": ["goal_line"]
+    "10": [
+      "dime"
+    ],
+    "01": [
+      "dime"
+    ],
+    "11": [
+      "nickel"
+    ],
+    "20": [
+      "nickel"
+    ],
+    "12": [
+      "base"
+    ],
+    "21": [
+      "base"
+    ],
+    "13": [
+      "base",
+      "bear"
+    ],
+    "22": [
+      "base",
+      "bear",
+      "46"
+    ],
+    "23": [
+      "goal_line"
+    ]
   },
   "baseFront": "base43",
   "passingDownFront": "dime",
   "preventFront": "quarter",
   "goalLineFront": "goal_line",
-  "tendency": { "prior": 8, "runBiasMax": 1.8, "paBiteBase": 0.7, "paBitePerRunRate": 0.8 },
-  "qbRun": { "speedRef": 76, "speedPer": 0.09, "min": 0.15, "max": 2.0 },
-  "hailMary": { "maxSeconds": 8, "minBallOn": 40, "maxBallOn": 72 }
+  "tendency": {
+    "prior": 8,
+    "runBiasMax": 1.8,
+    "paBiteBase": 0.7,
+    "paBitePerRunRate": 0.8
+  },
+  "qbRun": {
+    "speedRef": 76,
+    "speedPer": 0.09,
+    "min": 0.15,
+    "max": 2.0
+  },
+  "hailMary": {
+    "maxSeconds": 8,
+    "minBallOn": 40,
+    "maxBallOn": 72
+  },
+  "presnap": {
+    "motionPerMille": 250,
+    "showBlitzPerMille": 100,
+    "disguisePerMille": 250,
+    "pressPerMille": 350,
+    "bailPerMille": 150,
+    "dlShiftPerMille": 200,
+    "checkPerMille": 450,
+    "hardCountPerMille": 300,
+    "audibles": {
+      "offense": [
+        "inside_zone",
+        "slants",
+        "hitches",
+        "rb_screen",
+        "four_verts"
+      ],
+      "defense": [
+        "cover3",
+        "cover1",
+        "cover2",
+        "cover0",
+        "run_stop"
+      ]
+    }
+  }
 }

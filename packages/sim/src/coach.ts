@@ -5,11 +5,11 @@ import type { Rng } from "./rng.js";
 import { other, secondsLeft, type GameState, type Side, type Tempo } from "./rules.js";
 import type { Roster } from "./roster.js";
 import { fgDistance, fgMakePerMille } from "./engine/kicks.js";
-import type { Stats } from "./engine/play.js";
+import type { PreSnapDefense, PreSnapOffense, Stats } from "./engine/play.js";
 
 /** A full offensive call: play, formation and personnel, plus the defense's answer. */
-export interface PlayCall { play: OffensePlay; formation: string; personnel: string; flip: boolean }
-export interface DefCall { call: DefenseCall; front: string }
+export interface PlayCall { play: OffensePlay; formation: string; personnel: string; flip: boolean; preOff?: PreSnapOffense }
+export interface DefCall { call: DefenseCall; front: string; preDef?: PreSnapDefense }
 export type ScrimmageDecision =
   | ({ kind: "play" } & PlayCall & DefCall)
   | { kind: "punt" } | { kind: "fieldGoal" } | { kind: "kneel" } | { kind: "spike" };
@@ -180,7 +180,7 @@ export function chooseOffensePlay(s: GameState, offense: Roster, data: GameData,
       for (const p of f.personnel) opts.push({ f: fid, p, weight: (pref[p] ?? 0.5) / 10 });
     }
     const o = weightedPick(opts, rng);
-    return { play, formation: o.f, personnel: o.p, flip: rng.int(2) === 1 };
+    return { play, formation: o.f, personnel: o.p, flip: rng.int(2) === 1, preOff: aiMotion(play, data, rng) };
   }
 }
 
@@ -249,7 +249,41 @@ export function chooseDefense(s: GameState, data: GameData, rng: Rng, personnel 
     if (c.tags.includes("blitz") && prevent) w *= 0.2;
     return { ...c, weight: w, orig: c };
   });
-  return { call: weightedPick(calls, rng).orig, front };
+  const call = weightedPick(calls, rng).orig;
+  return { call, front, preDef: aiLook(call, data, rng) };
+}
+
+/** AI offense pre-snap: the play's own motion, or now and then a motion to move the defense. */
+export function aiMotion(play: OffensePlay, data: GameData, rng: Rng): PreSnapOffense | undefined {
+  if (play.motion) return undefined;
+  if (rng.int(1000) >= data.coach.presnap.motionPerMille) return undefined;
+  const roles = ["H", "Z", "Y", "X"];
+  const kinds = ["across", "short", "return", "jet"] as const;
+  return { motion: { role: roles[rng.int(roles.length)]!, kind: kinds[rng.int(kinds.length)]! } };
+}
+
+/** AI defense pre-snap look: show blitz, disguise the safeties, press or bail, shift the line. */
+export function aiLook(call: DefenseCall, data: GameData, rng: Rng): PreSnapDefense {
+  const P = data.coach.presnap;
+  const blitz = call.tags.includes("blitz");
+  const pd: PreSnapDefense = {};
+  // show blitz with a coverage call, or hide a real blitz behind a two-high shell
+  if (!blitz && rng.int(1000) < P.showBlitzPerMille) pd.show = true;
+  if (rng.int(1000) < P.disguisePerMille) pd.safeties = blitz || call.deep.length >= 2 ? "one" : "two";
+  if (blitz && !pd.safeties && rng.int(1000) < P.disguisePerMille) pd.safeties = "two";
+  if (call.man && rng.int(1000) < P.pressPerMille) pd.corners = "press";
+  else if (!call.man && rng.int(1000) < P.bailPerMille) pd.corners = "bail";
+  if (rng.int(1000) < P.dlShiftPerMille) pd.dl = (["over", "under", "pinch", "spread"] as const)[rng.int(4)];
+  return pd;
+}
+
+/** The AI QB sees a blitz look before a long-developing pass and may check to a quick throw or screen. */
+export function aiCheck(pc: PlayCall, look: PreSnapDefense | undefined, qbAwareness: number, data: GameData, rng: Rng): PlayCall | null {
+  if (!look?.show || pc.play.kind !== "pass" || (pc.play.drop ?? 0) < 7) return null;
+  if (rng.int(1000) >= data.coach.presnap.checkPerMille * (qbAwareness / 99)) return null;
+  const alts = data.offense.plays.filter((p) => p.weight > 0 && p.formations.includes(pc.formation) && (p.tags.includes("quick") || p.tags.includes("screen")));
+  if (!alts.length) return null;
+  return { ...pc, play: alts[rng.int(alts.length)]! };
 }
 
 /** Extra point or two-point try, from a standard chart. */
