@@ -77,4 +77,8 @@ console.log(`\nwin % by rarity edge (team with more Epic+ starters): ${pct(byRar
 console.log(`win % by starters' grade edge (higher team OVR wins):    ${pct(byRarity.gradeWins ?? 0, byRarity.gradeGames ?? 0).toFixed(1)}%`);
 console.log("\nwin % when a team has 2+ more starters of a type than its opponent:");
 for (const [t, [w, n]] of Object.entries(byType).sort()) console.log(`  ${t.padEnd(7)} ${pct(w, n).toFixed(1).padStart(5)}%  (${n} games)`);
+console.log("\nper play call (all downs, in games):");
+const names = [...new Set(Object.keys(a).filter((k) => k.startsWith("play:")).map((k) => k.split(":")[1]!))];
+for (const nm of names.sort((x, y) => (a[`play:${y}:n`] ?? 0) - (a[`play:${x}:n`] ?? 0)))
+  console.log(`  ${nm.padEnd(16)} ${String(a[`play:${nm}:n`]).padStart(6)} calls  ${((a[`play:${nm}:yds`] ?? 0) / (a[`play:${nm}:n`] ?? 1)).toFixed(1).padStart(5)} yds/play`);
 console.log(`\n${out} metric(s) outside target`);

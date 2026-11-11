@@ -210,7 +210,7 @@ export function simulatePlay(inp: PlayInput): PlayResult {
     let maxV = mul(a.maxSpeed, speedMult);
     if (a.engagedWith >= 0) maxV = mul(maxV, fx(T.movement.engagedSpeedMult));
     if (ball.state === "held" && ball.holder === a.i) {
-      maxV = mul(maxV, fx(T.movement.carryingSpeedMult));
+      maxV = mul(maxV, fx(completion && completion.rec === a ? T.movement.receiverCarrySpeedMult : T.movement.carryingSpeedMult));
       // cutting hard costs speed (less for agile backs)
       const sp = vlen(a.vel);
       if (sp > fx(3) && dist > fx(0.5)) {
@@ -305,7 +305,13 @@ export function simulatePlay(inp: PlayInput): PlayResult {
       else if (!pick && j === progressed && !misreadRolled) {
         misreadRolled = true;
         const p = Math.round(1000 * (T.qb.misreadBase + T.qb.misreadPerMissing * (99 - R(qb, "awareness"))));
-        if (rng.int(1000) < p) { pick = r; log.push(`${qb.c.name} misreads the coverage`); }
+        if (rng.int(1000) < p) {
+          // he doesn't see the lurking defender: throws to the most tightly covered man he has looked at
+          let worst = r, ws = fx(1e3);
+          for (let k = 0; k <= progressed; k++) { const rr = reads[k]!; const sp = separation(rr, flightTo(rr.pos)); if (sp < ws) { ws = sp; worst = rr; } }
+          pick = worst;
+          log.push(`${qb.c.name} misreads the coverage`);
+        }
       }
       if (sep > bestSep) { bestSep = sep; best = r; }
     }
@@ -629,8 +635,12 @@ export function simulatePlay(inp: PlayInput): PlayResult {
         // momentum: a back running downhill falls forward
         const dirY = c.side === "O" ? 1 : -1;
         const fwd = Math.max(0, (c.vel.y * dirY) / ONE);
-        const extra = Math.max(0, Math.min(T.tackle.fallForwardMax, fwd * T.tackle.fallForwardPerSpeed + (R(c, "strength") - 60) * 0.01));
-        ended = { reason: "tackle", y: c.pos.y + fx(extra) * dirY, x: c.pos.x };
+        // yards after contact: momentum plus the carrier's power against the tackler's
+        const power = (R(c, "trucking") + R(c, "strength") + R(c, "breakTackle")) / 3 - (R(d, "hitPower") + R(d, "tackle")) / 2;
+        const extra = fwd < 0.3 ? 0 : Math.max(0, Math.min(T.tackle.fallForwardMax,
+          T.tackle.fallForwardBase + fwd * T.tackle.fallForwardPerSpeed * 0.5 + power * T.tackle.afterContactPowerPer + gang * -0.6));
+        const ff = completion && completion.rec === c ? extra * T.tackle.fallForwardReceiverMult : extra;
+        ended = { reason: "tackle", y: c.pos.y + fx(ff) * dirY, x: c.pos.x };
         return;
       }
       d.stunTil = now + sec(T.tackle.missStun);
@@ -657,6 +667,9 @@ export function simulatePlay(inp: PlayInput): PlayResult {
     let pCatch = 0;
     if (inReach) {
       pCatch = T.catch.baseCatch + T.catch.catchPer * (R(r, "catching") - 60);
+      // over-the-shoulder catches get harder with depth (spectacular-catch skill offsets it)
+      const airYds = (L.y - los) / ONE;
+      if (airYds > T.catch.deepCatchFrom) pCatch -= (airYds - T.catch.deepCatchFrom) * T.catch.deepCatchPenaltyPerYard * (1.4 - R(r, "spectacularCatch") / 99);
       if (def) {
         const skill = (R(r, "catchInTraffic") + R(r, "spectacularCatch")) / 2;
         const cov = (Math.max(R(def, "manCoverage"), R(def, "zoneCoverage")) + R(def, "playRecognition")) / 2;
@@ -673,8 +686,11 @@ export function simulatePlay(inp: PlayInput): PlayResult {
       log.push(`caught by ${r.c.name}`);
       return;
     }
-    if (def && vdist(def.pos, L) <= reach) {
-      const pInt = T.catch.intBase + T.catch.intPer * (R(def, "catching") - 50) + (inReach ? 0 : 60);
+    if (def && vdist(def.pos, L) <= contest) {
+      // a defender in the contest window can jump the throw; the closer he is, the likelier
+      const closeness = 1 - dd / contest;
+      const deepMult = (L.y - los) / ONE > T.catch.deepCatchFrom ? T.catch.deepIntMult : 1;
+      const pInt = (T.catch.intBase + T.catch.intPer * (R(def, "catching") - 50) + (inReach ? 0 : 60)) * (0.35 + 0.65 * closeness) * deepMult;
       if (rng.int(1000) < pInt) {
         ball.state = "held"; ball.holder = def.i;
         turnover = "interception";

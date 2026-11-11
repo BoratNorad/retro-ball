@@ -26,6 +26,9 @@ for (let g = from; g < to; g++) {
   const home = env.roster(abbrs[i]!), away = env.roster(abbrs[j]!);
   const r = playGame({ data: env.data, ratings: env.ratings, teams: [home, away], seed: `${seed}-${g}` });
   add("games", 1);
+  for (const pl of r.log) if (pl.kind === "play" && pl.name && !["Punt", "Kneel", "Spike", "—"].includes(pl.name) && !pl.name.includes("field goal")) {
+    add(`play:${pl.name}:n`, 1); add(`play:${pl.name}:yds`, pl.yards);
+  }
   if (r.state.quarter > 4) add("ot", 1);
   for (const t of r.teams) {
     for (const [k, v] of Object.entries(t)) if (typeof v === "number") add(k, v);

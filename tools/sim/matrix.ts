@@ -4,7 +4,7 @@ import { simEnv } from "./setup.js";
 const n = Number(process.argv[2] ?? 60);
 const env = await simEnv();
 const teams = env.data.teams.teams.map((t) => t.abbr);
-const plays = env.data.offense.plays.filter((p) => p.kind === "pass");
+const plays = env.data.offense.plays.filter((p) => p.kind === (process.env.KIND ?? "pass"));
 const calls = env.data.defense.calls;
 console.log("ypa (comp%)".padEnd(12) + calls.map((c) => c.id.padStart(13)).join(""));
 for (const play of plays) {
