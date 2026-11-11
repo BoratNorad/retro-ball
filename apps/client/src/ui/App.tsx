@@ -10,9 +10,12 @@ import { helmetCanvas } from "../render/sprites.js";
 import { AbilitiesToggle } from "./AbilitiesToggle.js";
 import { BoxScore } from "./BoxScore.js";
 import { DraftScreen, DraftSetup, Lineup, PostDraft, type DraftConfigUi } from "./Draft.js";
+import { OnlineScreen } from "./Online.js";
+import { hasOnlineSeat } from "../net/client.js";
 import type { Draft, Roster } from "@tdf/sim";
 
 type Screen = { kind: "loading" } | { kind: "error"; msg: string } | { kind: "menu" } | { kind: "game"; ctl: Controller; back?: Screen }
+  | { kind: "online" }
   | { kind: "draftSetup"; mode: "ai" | "hotseat" } | { kind: "draft"; cfg: DraftConfigUi }
   | { kind: "postDraft"; cfg: DraftConfigUi; d: Draft; rosters: [Roster, Roster] }
   | { kind: "lineup"; cfg: DraftConfigUi; d: Draft; rosters: [Roster, Roster]; side: 0 | 1 };
@@ -21,13 +24,14 @@ export function App() {
   const [cd, setCd] = useState<ClientData | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: "loading" });
   useEffect(() => {
-    loadClientData().then((d) => { setCd(d); setScreen({ kind: "menu" }); }).catch((e) => setScreen({ kind: "error", msg: String(e) }));
+    loadClientData().then((d) => { setCd(d); setScreen(hasOnlineSeat() ? { kind: "online" } : { kind: "menu" }); }).catch((e) => setScreen({ kind: "error", msg: String(e) }));
   }, []);
   if (screen.kind === "loading") return <div class="center"><div class="title">LOADING…</div></div>;
   if (screen.kind === "error") return <div class="center"><div class="title">ERROR</div><p>{screen.msg}</p></div>;
   const c = cd!;
   if (screen.kind === "menu") return <Menu cd={c} onStart={(u, o, q) => setScreen({ kind: "game", ctl: new Controller(c, [c.roster(u), c.roster(o)], q) })}
-    onDraft={(mode) => setScreen({ kind: "draftSetup", mode })} />;
+    onDraft={(mode) => setScreen({ kind: "draftSetup", mode })} onOnline={() => setScreen({ kind: "online" })} />;
+  if (screen.kind === "online") return <OnlineScreen cd={c} onExit={() => setScreen({ kind: "menu" })} />;
   if (screen.kind === "draftSetup") return <DraftSetup cd={c} mode={screen.mode} onBack={() => setScreen({ kind: "menu" })} onStart={(cfg) => setScreen({ kind: "draft", cfg })} />;
   if (screen.kind === "draft") return <DraftScreen cd={c} cfg={screen.cfg} onDone={(d) => setScreen({ kind: "postDraft", cfg: screen.cfg, d, rosters: [d.toRoster(0), d.toRoster(1)] })} />;
   if (screen.kind === "postDraft") {
@@ -53,7 +57,7 @@ function Helmet({ team, scale = 3 }: { team: { abbr: string; c1: string; c2: str
   return <img class="helmet" src={src} alt={team.abbr} />;
 }
 
-function Menu({ cd, onStart, onDraft }: { cd: ClientData; onStart: (user: string, opp: string, quarterMinutes: number) => void; onDraft: (mode: "ai" | "hotseat") => void }) {
+function Menu({ cd, onStart, onDraft, onOnline }: { cd: ClientData; onStart: (user: string, opp: string, quarterMinutes: number) => void; onDraft: (mode: "ai" | "hotseat") => void; onOnline: () => void }) {
   const teams = [...cd.data.teams.teams].sort((a, b) => a.name.localeCompare(b.name));
   const [user, setUser] = useState<string | null>(null);
   const [opp, setOpp] = useState<string | null>(null);
@@ -63,6 +67,7 @@ function Menu({ cd, onStart, onDraft }: { cd: ClientData; onStart: (user: string
     <div class="menu">
       <h1>TRIPLE DRAFT <span>FOOTBALL</span></h1>
       <div class="plays modes">
+        <button class="play online" onClick={onOnline}><b>ONLINE TRIPLE DRAFT</b><small>quick match or a private room · draft head to head, then play</small></button>
         <button class="play" onClick={() => onDraft("ai")}><b>TRIPLE DRAFT vs AI</b><small>draft 24 real players, then play</small></button>
         <button class="play" onClick={() => onDraft("hotseat")}><b>HOT-SEAT DRAFT</b><small>two players, one device</small></button>
       </div>
@@ -101,7 +106,11 @@ function useUi(ctl: Controller): UiState {
   return ui;
 }
 
-function Game({ ctl, onExit, exitLabel = "PLAY AGAIN" }: { ctl: Controller; onExit: () => void; exitLabel?: string }) {
+export function Game({ ctl, onExit, exitLabel = "PLAY AGAIN", extra, banner }: {
+  ctl: Controller; onExit: () => void; exitLabel?: string;
+  /** more buttons on the final screen (online: leave) */ extra?: preact.ComponentChildren;
+  /** a status line over the field (online: connection) */ banner?: string | null;
+}) {
   const host = useRef<HTMLDivElement>(null);
   const ui = useUi(ctl);
   useEffect(() => {
@@ -118,9 +127,11 @@ function Game({ ctl, onExit, exitLabel = "PLAY AGAIN" }: { ctl: Controller; onEx
     <div class="game">
       <div class="stage" ref={host} />
       <ScoreBug ctl={ctl} />
+      {banner && <div class="netbanner">{banner}</div>}
       {ui.toast && ui.mode === "result" && <div class="toast">{ui.toast}</div>}
       {ui.bigToast && <div class="bigtoast">{ui.bigToast}</div>}
       <div class="bottom">
+        {ui.mode === "waiting" && <div class="bar"><span class="playname">{ui.waitText ?? "WAITING…"}</span>{ui.netClock != null && <span class="clock">{Math.ceil(ui.netClock)}</span>}</div>}
         {ui.mode === "callOffense" && <OffenseSheet ctl={ctl} />}
         {ui.mode === "callDefense" && <DefenseSheet ctl={ctl} />}
         {ui.mode === "callTry" && <TrySheet ctl={ctl} />}
@@ -143,13 +154,14 @@ function Game({ ctl, onExit, exitLabel = "PLAY AGAIN" }: { ctl: Controller; onEx
         {ui.mode === "live" && !ui.userOffense && ui.userDefense && <DefenseControls ctl={ctl} />}
         {ui.mode === "live" && !ui.userOffense && !ui.userDefense && !ctl.live?.kick && (
           <div class="bar"><span class="playname">{ctl.team(ctl.live!.offSide).abbr} offense · you: {ctl.live?.call.name}</span>
-            <button class="chip" onClick={() => ctl.fastForward()}>SKIP ▶▶</button></div>
+            {!ui.online && <button class="chip" onClick={() => ctl.fastForward()}>SKIP ▶▶</button>}</div>
         )}
       </div>
       {ui.mode === "final" && (
         <div class="overlay">
           <BoxScore r={ctl.result()} />
           <button class="big" onClick={onExit}>{exitLabel}</button>
+          {extra}
         </div>
       )}
     </div>
@@ -436,7 +448,7 @@ function KickControls({ ctl, ui }: { ctl: Controller; ui: UiState }) {
       </div>
     );
   }
-  return <div class="bar"><span class="playname">…</span><button class="chip" onClick={() => ctl.fastForward()}>SKIP ▶▶</button></div>;
+  return <div class="bar"><span class="playname">…</span>{!ui.online && <button class="chip" onClick={() => ctl.fastForward()}>SKIP ▶▶</button>}</div>;
 }
 
 function TrySheet({ ctl }: { ctl: Controller }) {
@@ -607,7 +619,8 @@ function Presnap({ ctl, ui }: { ctl: Controller; ui: UiState }) {
           {T("double", "DOUBLE", Boolean(pd.double))}{T("audible", "AUDIBLE")}
         </>}
         {ctl.session.abilities && T("ability", ctl.armed() ? "★ ARMED" : "★ ABILITY", Boolean(ctl.armed()))}
-        <button class="big" onClick={() => ctl.snapBall()}>{off ? "SNAP ▶" : "READY ▶"}</button>
+        {(off || !ui.online) && <button class="big" onClick={() => ctl.snapBall()}>{off ? "SNAP ▶" : "READY ▶"}</button>}
+        {!off && ui.online && <span class="tag">WAITING FOR THE SNAP</span>}
       </div>
       {sub}
     </div>

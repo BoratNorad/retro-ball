@@ -26,6 +26,8 @@ decisions and milestone status. Keep it updated.
 | Trace/probe a formation or front | add `FORM=gun_trips FRONT=nickel PERS=11` to `trace.ts` / `probe.ts` |
 | Re-fit team-grade weights to what wins | `RANDOM_ROSTERS=1 FIT_OUT=/tmp/fit.jsonl pnpm sim:harness --games 10000` then `python3 tools/import/fit_grade_weights.py /tmp/fit.jsonl --write` |
 | Play in the browser (dev server) | `pnpm dev:client` (copies data to `apps/client/public/game-data`, Vite on :5173) |
+| Online game server | `pnpm dev:server` (watch) / `pnpm start:server` (`PORT`, default 2567; the dev client connects to `ws://<host>:2567/ws`, override with `?server=`) |
+| Two-browser online check (draft + first drive) | server + dev client running, then `node tools/e2e/online_two_browsers.cjs 9 /tmp` (`RELOAD_AT=4` reloads one browser mid-game) |
 | Production build of the client | `pnpm build` → `apps/client/dist` (CI builds it; Render uses `render.yaml`) |
 | Gridiron Dex (legacy browser) | `pnpm dev:dex` |
 
@@ -40,11 +42,14 @@ packages/sim      headless core: seeded RNG, Q16.16 fixed-point maths, cards.ts 
                   rules.ts (rules engine), roster.ts, engine/play.ts (30 Hz 22-player engine), engine/special.ts
                   (30 Hz kicks + returns), engine/kicks.ts (FG distance helper, legacy rating models),
                   coach.ts (AI play calling + clock management), game.ts (full game loop + box score),
-                  draft.ts (Triple Draft engine, AI drafters, spread prediction)
+                  draft.ts (Triple Draft engine, AI drafters, spread prediction),
+                  online.ts (match/draft action logs, OnlineMatch, wire rosters/inputs), net.ts (client/server messages)
 apps/client       Vite + Phaser 3 + Preact: src/game/controller.ts (GameSession + 30 Hz live loop + UI state),
+                  src/game/netcontroller.ts (online match: decisions -> server, rollback), src/net/client.ts (socket + replicas),
+                  src/ui/Online.tsx (lobby, room, online draft, lineup, match),
                   src/render/FieldScene.ts (Bowl camera, sprites, slingshot aim, steer-to-finger), src/ui/*.tsx (menus, HUD),
                   src/ui/Draft.tsx (draft setup / board / reveal / post-draft / lineup builder)
-apps/server       Colyseus (M8)
+apps/server       online game server (M8): ws rooms, timers, referee (src/room.ts), sockets/codes/quick match (src/server.ts)
 apps/dex          Gridiron Dex, the original static roster browser (kept working; parts get ported to client)
 tools/import      Python importers (Madden xlsx + nflverse → JSON), position-weight fitter, headshot baker, icon maker
 tools/report      TS build/report scripts (pool.json, distribution report)
@@ -167,6 +172,25 @@ data/raw          source spreadsheet
     (`snapshot.fx`). Big Leg does not touch kickoffs (touchback rates swing hard with kick power).
     Workhorse has no effect until there is a fatigue model.
 
+18. **Online (M8) = one deterministic action log per draft and per match.** `OnlineMatch` (sim/online.ts) is
+    a `GameSession` with both sides human, driven only by serializable `MatchAction`s (snap = both
+    sides' pre-snap decisions, adjust, hardCount, delay, play = every tick's inputs, human = AI takes a
+    side over / gives it back). The server orders every action and runs the referee copy; both
+    browsers replay the same log (checksum after every action, resync on mismatch; a reconnect just
+    replays the log). Drafts likewise: the server's `Draft` plus a `reroll` / `reveal` log. **Live
+    plays:** each client sends its per-tick input (`inputDelayTicks` late), predicts the opponent
+    (last run direction, no actions) and on a confirmed input that differs re-simulates the play from
+    tick 0 (`LivePlay.remake`; a few hundred cheap ticks, so no snapshot/restore is needed). The server
+    confirms ticks in order, paced by real time, giving a late or absent side "no input" after
+    `fillMs`; it also forces a default kick / the snap for a human who stalls. **Hidden info:** the
+    offense calls first and the defense only learns the personnel; both calls reach both clients at
+    the line-up (the snap action) and the UI shows the other side's call only after the whistle (decision
+    8's accepted tradeoff, moved from the snap to the line-up so pre-snap adjustments can be shared).
+    Draft offers are computed by each client's replica from the shared log (a modded client could
+    see the opponent's offers, never his pick before the reveal). **Transport: plain `ws`, not
+    Colyseus** (the spec allows a custom room layer; Colyseus's state sync is the wrong model for a
+    lockstep action log). Timers and netcode numbers: `config/online.json`.
+
 ## Balance targets (for the M2 harness)
 
 Per team per game, arcade-realistic: 20–31 pts avg, 55–75 offensive plays, run/pass 42/58 ±8,
@@ -260,7 +284,23 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   swung touchbacks 9% -> 92%, Sticky Hands erased contested-catch losses. **4,000 real-team games,
   abilities on: 28/28 metrics in range** — 23.0 pts, 63.4% comp, 7.7 yds/att, 3.9 ypc, 6.2% sacks,
   1.4 TO, 40.9% 3rd down; grade gap 3–5 wins 77%, 5+ 90%. (Abilities off: 22.4 pts, 7.6 yds/att, 7.0% sacks.)
-- [ ] M8 Online (rollback) · [ ] M9 Pro camera + presentation · [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
+- [x] **M8 Online** (decision 18) — game server (`apps/server`, ws on `/ws`, `/health`): private rooms by
+  5-letter code, quick match, room settings (format, mirror, reveal passed, themed, pick timer,
+  quarter length, abilities, control defender), server-owned timers (pick, lineup, play call 25 s,
+  defense 15 s, play clock, kicks), auto-picks / coach calls when a timer runs out, simultaneous
+  reveal, lineup validation (only drafted players), forfeit after 90 s away, the AI plays an away
+  side after 15 s, rematch = new draft, flood limit, pool-version check. Client: ONLINE menu entry,
+  lobby (team name/colours/logo, quick match, create, join by code), waiting room, online draft
+  board (locked-in state, opponent status, server pick clock), post-draft + lineup, online match
+  (waiting bar with the server clock, the defense sees the personnel, presnap adjustments and
+  abilities go through the server, rollback live play), reconnect on reload (session-stored seat
+  token). Tests: two online replicas + a reconnect replay give the identical game, rollback =
+  straight run, AI takeover, draft replica = server draft (mirror rerolls too); server test with
+  two scripted clients over real sockets (quick match → draft → lineup → full game with a reconnect,
+  checksums 0 mismatches, room codes, version mismatch). Two real browsers (Playwright,
+  `tools/e2e/online_two_browsers.cjs`): draft in ~11 s, then plays in lockstep including a reload.
+  Render Blueprint now has the `tdf-server` web service (the static client gets its host via `fromService`).
+- [ ] M9 Pro camera + presentation · [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
 
 ## Known issues / todo
 
@@ -283,5 +323,10 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   headshots (`tools/import/bake_headshots.py`) avoids it.
 - Spec wants ~40 passive abilities; we have 23 (all now work on the field, except Workhorse: no
   fatigue model yet). Retune actives with `pnpm tsx tools/sim/abilities.ts` (armed vs unarmed on the same seeds).
+- **Online follow-ups:** ranked/Elo, matchmaking by rating and seasons (M10); spectators; the spec's
+  limited match pauses on disconnect (now: the AI plays the away side after 15 s, forfeit at 90 s);
+  rollback re-simulates the whole play (fine at ~1 ms a play; snapshot/restore if plays get heavier);
+  online two-point tries and onside recoveries are human-vs-human but untested by the browser script;
+  no rematch side swap; rooms live in memory (a server restart ends games; SQLite later for accounts).
 - Draft extras not done: draft card share image, spectator link, daily draft (M10), drag-and-drop
   lineup (tap-tap only), stamina-based auto-sub thresholds (no fatigue model yet).

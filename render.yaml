@@ -1,12 +1,27 @@
 # Render Blueprint (free tier). New → Blueprint → pick this repo.
-# The client is a static site; the Colyseus server (M8) will be added here as a web service.
+# Two services: the static browser client and the online game server (WebSocket on /ws).
+# The free web service sleeps when idle, so the first online connection can take ~30 s.
 services:
+  - type: web
+    name: tdf-server
+    runtime: node
+    plan: free
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm --filter @tdf/server start
+    healthCheckPath: /health
+    pullRequestPreviewsEnabled: false
   - type: web
     name: triple-draft-football
     runtime: static
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
     staticPublishPath: apps/client/dist
     pullRequestPreviewsEnabled: false
+    envVars:
+      - key: VITE_SERVER_HOST
+        fromService:
+          type: web
+          name: tdf-server
+          property: host
     headers:
       - path: /game-data/*
         name: Cache-Control

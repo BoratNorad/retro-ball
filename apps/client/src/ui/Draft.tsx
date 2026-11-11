@@ -11,7 +11,7 @@ import { helmetCanvas } from "../render/sprites.js";
 import { AbilitiesToggle } from "./AbilitiesToggle.js";
 
 // ---------------------------------------------------------------- shared bits
-const PALETTES: [string, string, string][] = [
+export const PALETTES: [string, string, string][] = [
   ["#1d4fa0", "#ffffff", "#ffc82e"], ["#b3122e", "#ffffff", "#111111"], ["#1f6b3a", "#f2e9d0", "#d8a72c"], ["#4b2a83", "#ffffff", "#e8b62c"],
   ["#111111", "#ffb612", "#ffffff"], ["#e06a1a", "#ffffff", "#1b1b1b"], ["#0e7c86", "#ffffff", "#ff7a3d"], ["#7a1e2c", "#e6c36a", "#ffffff"],
 ];
@@ -43,7 +43,7 @@ function Helmet({ cd, abbr }: { cd: ClientData; abbr: string }) {
   return src ? <img class="helmet" src={src} alt={abbr} /> : null;
 }
 
-function PlayerCardView({ cd, c, ovr, slotLabel, selected, onClick, small }: {
+export function PlayerCardView({ cd, c, ovr, slotLabel, selected, onClick, small }: {
   cd: ClientData; c: PlayerCard; ovr?: number; slotLabel?: string; selected?: boolean; onClick?: () => void; small?: boolean;
 }) {
   const r = cd.ratings(c.id);
@@ -79,18 +79,10 @@ export interface DraftConfigUi {
   mode: "ai" | "hotseat"; teams: [TeamSetup, TeamSetup]; ai: Personality;
   format: "quick" | "full"; mirror: boolean; revealPassed: boolean; themed: boolean; timer: boolean; quarter: number;
 }
-export function DraftSetup({ cd, mode, onStart, onBack }: { cd: ClientData; mode: "ai" | "hotseat"; onStart: (c: DraftConfigUi) => void; onBack: () => void }) {
+/** Team name (abbreviation derived), colours and logo. */
+export function TeamEditor({ cd, t, set, label }: { cd: ClientData; t: TeamSetup; set: (t: TeamSetup) => void; label: string }) {
   const icons = Object.keys(cd.data.icons.icons);
-  const [t1, setT1] = useState<TeamSetup>({ info: { abbr: "YOU", name: "Your Team", nick: "Team", c1: PALETTES[0]![0], c2: PALETTES[0]![1], c3: PALETTES[0]![2] }, icon: icons[0]! });
-  const [t2, setT2] = useState<TeamSetup>({ info: { abbr: mode === "ai" ? "CPU" : "P2", name: mode === "ai" ? "Computer" : "Player 2", nick: "Team", c1: PALETTES[1]![0], c2: PALETTES[1]![1], c3: PALETTES[1]![2] }, icon: icons[1] ?? icons[0]! });
-  const [ai, setAi] = useState<Personality>("need");
-  const [format, setFormat] = useState<"quick" | "full">("quick");
-  const [mirror, setMirror] = useState(cd.data.draft.mirrorDefault);
-  const [revealPassed, setReveal] = useState(cd.data.draft.revealPassedDefault);
-  const [themed, setThemed] = useState(false);
-  const [timer, setTimer] = useState(true);
-  const [quarter, setQuarter] = useState(5);
-  const teamEditor = (t: TeamSetup, set: (t: TeamSetup) => void, label: string) => (
+  return (
     <div class="teamsetup">
       <div class="lbl">{label}</div>
       <div class="row">
@@ -104,7 +96,22 @@ export function DraftSetup({ cd, mode, onStart, onBack }: { cd: ClientData; mode
       <div class="row">{PALETTES.map(([a, b, c]) => <button class={`swatch ${t.info.c1 === a ? "on" : ""}`} style={{ background: a, borderColor: b }} onClick={() => set({ ...t, info: { ...t.info, c1: a, c2: b, c3: c } })} />)}</div>
       <div class="row icons">{icons.map((id) => <button class={`chip ${t.icon === id ? "on" : ""}`} onClick={() => set({ ...t, icon: id })}><Icon cd={cd} id={id} color={t.info.c1} size={18} /></button>)}</div>
     </div>
+  
   );
+}
+
+export function DraftSetup({ cd, mode, onStart, onBack }: { cd: ClientData; mode: "ai" | "hotseat"; onStart: (c: DraftConfigUi) => void; onBack: () => void }) {
+  const icons = Object.keys(cd.data.icons.icons);
+  const [t1, setT1] = useState<TeamSetup>({ info: { abbr: "YOU", name: "Your Team", nick: "Team", c1: PALETTES[0]![0], c2: PALETTES[0]![1], c3: PALETTES[0]![2] }, icon: icons[0]! });
+  const [t2, setT2] = useState<TeamSetup>({ info: { abbr: mode === "ai" ? "CPU" : "P2", name: mode === "ai" ? "Computer" : "Player 2", nick: "Team", c1: PALETTES[1]![0], c2: PALETTES[1]![1], c3: PALETTES[1]![2] }, icon: icons[1] ?? icons[0]! });
+  const [ai, setAi] = useState<Personality>("need");
+  const [format, setFormat] = useState<"quick" | "full">("quick");
+  const [mirror, setMirror] = useState(cd.data.draft.mirrorDefault);
+  const [revealPassed, setReveal] = useState(cd.data.draft.revealPassedDefault);
+  const [themed, setThemed] = useState(false);
+  const [timer, setTimer] = useState(true);
+  const [quarter, setQuarter] = useState(5);
+  const teamEditor = (t: TeamSetup, set: (t: TeamSetup) => void, label: string) => <TeamEditor cd={cd} t={t} set={set} label={label} />;
   return (
     <div class="menu">
       <h1>TRIPLE <span>DRAFT</span></h1>
@@ -139,7 +146,7 @@ const BOARD: { title: string; rows: string[][] }[] = [
   { title: "DEFENSE", rows: [["DE#1", "DT#1", "DT#2", "DE#2"], ["OLB#1", "MLB", "OLB#2"], ["CB#1", "FS", "SS", "CB#2"]] },
   { title: "SPECIAL", rows: [["K", "P"]] },
 ];
-function SlotBoard({ d, side, card, onSlot }: { d: Draft; side: 0 | 1; card: PlayerCard | null; onSlot: (k: string) => void }) {
+export function SlotBoard({ d, side, card, onSlot }: { d: Draft; side: 0 | 1; card: PlayerCard | null; onSlot: (k: string) => void }) {
   const t = d.teams[side];
   const bench = d.slotKeys.filter((k) => k.startsWith("BN"));
   const cell = (k: string) => {
@@ -163,7 +170,7 @@ function SlotBoard({ d, side, card, onSlot }: { d: Draft; side: 0 | 1; card: Pla
 }
 const cd_min = (d: Draft) => d.data.draft.viability.minOverallAtSlot;
 
-function GradeChips({ d, side }: { d: Draft; side: 0 | 1 }) {
+export function GradeChips({ d, side }: { d: Draft; side: 0 | 1 }) {
   const g = d.grade(side);
   return (
     <span class="grades">
@@ -258,7 +265,7 @@ export function DraftScreen({ cd, cfg, onDone }: { cd: ClientData; cfg: DraftCon
   );
 }
 
-function Reveal({ cd, d, rev, cfg, onNext }: { cd: ClientData; d: Draft; rev: RoundReveal; cfg: DraftConfigUi; onNext: () => void }) {
+export function Reveal({ cd, d, rev, cfg, onNext }: { cd: ClientData; d: Draft; rev: RoundReveal; cfg: DraftConfigUi; onNext: () => void }) {
   const one = (p: DraftPick) => {
     const t = cfg.teams[p.side];
     const delta = p.gradeAfter - p.gradeBefore;

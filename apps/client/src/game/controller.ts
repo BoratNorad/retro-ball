@@ -19,6 +19,7 @@ export type Mode =
   | "callST"        // they line up to punt / kick a field goal: return side, block or safe
   | "kick"          // waiting for your kick flick
   | "pass"          // hot-seat: hand the device to the other player
+  | "waiting"       // online: the opponent is deciding
   | "presnap"       // lined up, waiting for SNAP
   | "live"          // play running
   | "result"        // brief result banner
@@ -51,6 +52,11 @@ export interface UiState {
   canFairCatch: boolean; canKneel: boolean; scramble: boolean;
   /** hot-seat privacy screen: who takes the device, and for what */
   passTo: { team: string; next: "defense" | "offense" } | null;
+  /** online match: no fast-forward, waiting states, server clock */
+  online: boolean;
+  /** online: what we are waiting for (opponent calling, etc.), and the server timer in seconds */
+  waitText: string | null;
+  netClock: number | null;
 }
 
 export type AbilityCtx = "off" | "def" | "kick" | "return";
@@ -76,7 +82,9 @@ export class Controller {
   readonly cd: ClientData;
   readonly session: GameSession;
   /** the side the human controls now (hot-seat: whoever has the ball) */
-  get userSide(): Side { return this.session.userSide ?? 0; }
+  get userSide(): Side { return this.mySide ?? this.session.userSide ?? 0; }
+  /** online: the side this browser plays */
+  protected mySide: Side | null = null;
   live: LivePlay | null = null;
   prev: PlaySnapshot | null = null;
   cur: PlaySnapshot | null = null;
@@ -84,16 +92,16 @@ export class Controller {
   acc = 0;
   ui: UiState;
   private listeners = new Set<() => void>();
-  private resultTimer: ReturnType<typeof setTimeout> | null = null;
+  protected resultTimer: ReturnType<typeof setTimeout> | null = null;
   /** input for the next tick */
   input: UserInput = {};
   pendingTry: "pat" | "twoPoint" | null = null;
   lastSummary: PlaySummary | null = null;
   settings: Settings = loadSettings();
 
-  constructor(cd: ClientData, teams: [Roster, Roster], quarterMinutes: number, opts: { hotseat?: boolean; seed?: string } = {}) {
+  constructor(cd: ClientData, teams: [Roster, Roster], quarterMinutes: number, opts: { hotseat?: boolean; seed?: string; session?: GameSession } = {}) {
     this.cd = cd;
-    this.session = new GameSession({
+    this.session = opts.session ?? new GameSession({
       data: cd.data, ratings: cd.ratings, teams, seed: opts.seed ?? String(Date.now() % 1e9), userSide: 0, hotseat: opts.hotseat,
       quarterSeconds: Math.round(quarterMinutes * 60), abilities: loadSettings().abilities !== false,
     });
@@ -101,15 +109,16 @@ export class Controller {
       mode: "result", toast: null, bigToast: null, live: false, userOffense: false, qbCanThrow: false, userCarrier: false,
       cooldowns: { juke: 0, spin: 0, burst: 0 }, fg: null, tryForTwo: false, fast: false,
       userDefense: false, userDefender: -1, canKeep: false, preview: null, playClock: 0, lineup: 0, canFairCatch: false, canKneel: false, scramble: false, passTo: null,
+      online: Boolean(opts.session), waitText: null, netClock: null,
     };
-    queueMicrotask(() => this.advance());
+    if (!opts.session) queueMicrotask(() => this.advance());
     // dev builds: expose the controller for browser debugging / Playwright checks
     if (import.meta.env?.DEV) (globalThis as { __tdf?: Controller }).__tdf = this;
   }
 
   subscribe(fn: () => void) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
-  private emit() { for (const f of this.listeners) f(); }
-  private set(p: Partial<UiState>) { this.ui = { ...this.ui, ...p }; this.emit(); }
+  protected emit() { for (const f of this.listeners) f(); }
+  protected set(p: Partial<UiState>) { this.ui = { ...this.ui, ...p }; this.emit(); }
 
   get state() { return this.session.state; }
   team(side: Side) { return this.session.teams[side].info; }
@@ -221,9 +230,9 @@ export class Controller {
     this.set({ toast: "Timeout" });
   }
   timeoutQueued = false;
-  private takeTimeout() { const t = this.timeoutQueued; this.timeoutQueued = false; return t; }
+  protected takeTimeout() { const t = this.timeoutQueued; this.timeoutQueued = false; return t; }
 
-  private handle(r: ReturnType<GameSession["snap"]>) {
+  protected handle(r: ReturnType<GameSession["snap"]>) {
     if ("done" in r) { this.showResult(r.done); return; }
     this.live = r.live;
     this.prev = this.cur = r.live.sim.snapshot();
@@ -291,7 +300,7 @@ export class Controller {
   // ---------------------------------------------------------------- abilities
   /** an active armed on a call sheet, used at the next snap (pre-snap changes go through adjust) */
   pendingActive: ArmedActive | null = null;
-  private takeActive() { const a = this.pendingActive; this.pendingActive = null; return a; }
+  protected takeActive() { const a = this.pendingActive; this.pendingActive = null; return a; }
   /** The human's armed active right now. */
   armed(): ArmedActive | null {
     if (this.ui.mode === "presnap" && this.live && !this.live.kick) return this.live.actives?.[this.live.userOffense ? "O" : "D"] ?? null;
@@ -355,7 +364,7 @@ export class Controller {
   }
 
   /** Pre-snap: run the play clock; let motion run (the sim waits in its pre-snap phase). */
-  private presnapFrame(dtMs: number) {
+  protected presnapFrame(dtMs: number) {
     const live = this.live!;
     const left = Math.max(0, this.ui.playClock - dtMs / 1000);
     if (Math.ceil(left) !== Math.ceil(this.ui.playClock)) this.set({ playClock: left }); else this.ui.playClock = left;
@@ -375,14 +384,14 @@ export class Controller {
     }
   }
 
-  private endLive() {
+  protected endLive() {
     const live = this.live!;
     const sum = this.session.finish(live);
     // after the whistle you get to see what the other side was in
     this.showResult(sum, live.kick ? undefined : live.userOffense ? `vs ${live.call.name}` : `${this.team(live.offSide).abbr} ran ${live.play.name}`);
   }
 
-  private showResult(sum: PlaySummary, reveal?: string) {
+  protected showResult(sum: PlaySummary, reveal?: string) {
     this.lastSummary = sum;
     const big = bigCallout(sum, this.userSide);
     const text = describe(sum, this) + (reveal ? ` · ${reveal}` : "");

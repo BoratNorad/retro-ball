@@ -13,7 +13,7 @@ let server: GameServer;
 beforeAll(async () => {
   const e = await loadEnv();
   // fast timers for the test
-  env = { ...e, data: { ...e.data, online: { ...e.data.online, resultSeconds: 0.01, aiPresnapSeconds: 0.01, aiAfterSeconds: 0.3, fillMs: 40 } } };
+  env = { ...e, data: { ...e.data, online: { ...e.data.online, resultSeconds: 0.01, aiPresnapSeconds: 0.01, aiAfterSeconds: 0.3, fillMs: 40, maxPredictTicks: 100000 } } };
   server = await startServer(env, 0);
 });
 afterAll(async () => { await server.close(); });
@@ -47,7 +47,7 @@ class Bot {
       case "welcome": this.token = m.token; break;
       case "room": this.side = m.side; break;
       case "draft": {
-        if (m.from === 0) { this.draft = newDraft(m.init, env.data, env.pool); this.pickedRound = 0; }
+        if (m.reset) { this.draft = newDraft(m.init, env.data, env.pool); this.pickedRound = 0; }
         for (const a of m.actions) applyDraftAction(this.draft!, a);
         this.maybePick();
         break;
@@ -57,7 +57,7 @@ class Bot {
         if (!this.lineupSent && !m.ready[this.side]) { this.lineupSent = true; this.send({ t: "lineup", roster: m.rosters[this.side] }); }
         break;
       case "match": {
-        if (m.from === 0) { this.match = new OnlineMatch(m.init, env.data, env.ratings, env.byId); this.sentLive = -1; }
+        if (m.reset) { this.match = new OnlineMatch(m.init, env.data, env.ratings, env.byId); this.sentLive = -1; }
         if (m.from !== this.match!.applied) break; // already have these
         for (const a of m.actions) this.match!.apply(a);
         break;

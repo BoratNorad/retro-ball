@@ -56,8 +56,8 @@ export type ServerMsg =
   | { t: "welcome"; token: string }
   | { t: "error"; msg: string }
   | { t: "room"; code: string; side: Side; phase: RoomPhase; settings: RoomSettings; seats: [SeatInfo | null, SeatInfo | null]; quick: boolean }
-  /** the draft log from action `from` on (from 0 = everything; init is always included) */
-  | { t: "draft"; init: DraftInit; from: number; actions: DraftAction[] }
+  /** draft log entries from action `from` on; reset = this is the whole log (start, reconnect, resync) */
+  | { t: "draft"; init: DraftInit; from: number; actions: DraftAction[]; reset: boolean }
   /** the draft's pick timer */
   | { t: "pickTimer"; ms: number }
   /** a side has locked in its pick (the pick itself comes at the reveal) */
@@ -65,8 +65,8 @@ export type ServerMsg =
   | { t: "pickRejected"; msg: string }
   /** lineup phase: both drafted rosters, and who has confirmed */
   | { t: "rosters"; rosters: [WireRoster, WireRoster]; ready: [boolean, boolean]; ms: number }
-  /** the match log from action `from` on */
-  | { t: "match"; init: MatchInit; from: number; actions: MatchAction[] }
+  /** match log entries from action `from` on; reset = this is the whole log */
+  | { t: "match"; init: MatchInit; from: number; actions: MatchAction[]; reset: boolean }
   | { t: "wait"; wait: MatchWait }
   /** confirmed inputs of live play `play`, ticks from .. */
   | { t: "ticks"; play: number; from: number; inputs: [UserInput | null, UserInput | null][] }

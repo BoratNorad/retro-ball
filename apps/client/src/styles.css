@@ -149,3 +149,10 @@ select { background: #000; color: var(--text); border: 2px solid #000; font: inh
 .bug .side .mom b.full u { background: #ffe27a; box-shadow: 0 0 4px var(--gold); }
 .chip.dim { opacity: .45; }
 .scroller.abil .chip small { color: var(--gold); letter-spacing: 1px; margin-left: 4px; }
+/* online (M8) */
+.netbanner { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); background: #000c; color: var(--gold); font-family: var(--pixel); font-size: 8px; padding: 4px 8px; border: 2px solid #000; z-index: 5; pointer-events: none; text-align: center; max-width: 92%; }
+.netbar { font-family: var(--pixel); font-size: 9px; color: var(--gold); text-align: center; padding: 8px; background: #000; }
+.sub.warn { color: #ff7a6b; }
+.offers.locked { opacity: .55; }
+.search.code { width: 8em; text-transform: uppercase; letter-spacing: 3px; }
+.play.online { border-color: var(--gold); }

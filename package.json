@@ -12,6 +12,8 @@
     "data:fit": "python3 tools/import/fit_position_weights.py",
     "data:report": "tsx tools/report/distribution.ts",
     "dev:client": "pnpm --filter @tdf/client dev",
+    "dev:server": "pnpm --filter @tdf/server dev",
+    "start:server": "pnpm --filter @tdf/server start",
     "dev:dex": "pnpm dlx serve apps/dex",
     "build": "pnpm --filter @tdf/client build",
     "sim:game": "tsx tools/sim/game.ts",

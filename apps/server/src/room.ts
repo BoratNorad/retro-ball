@@ -126,7 +126,7 @@ export class Room {
   private sendState(seat: Seat) {
     const side = seat.side;
     if (this.draftInit) {
-      this.send(side, { t: "draft", init: this.draftInit, from: 0, actions: this.draftLog });
+      this.send(side, { t: "draft", init: this.draftInit, from: 0, actions: this.draftLog, reset: true });
       if (this.phase === "draft") {
         this.send(side, { t: "pickTimer", ms: Math.max(0, this.pickDeadline - this.env.now()) });
         for (const s of [0, 1] as Side[]) if (this.picks[s]) this.send(side, { t: "picked", side: s });
@@ -134,7 +134,7 @@ export class Room {
     }
     if (this.rosters && this.phase === "lineup") this.send(side, { t: "rosters", rosters: this.rosters, ready: this.ready, ms: Math.max(0, this.lineupDeadline - this.env.now()) });
     if (this.matchInit) {
-      this.send(side, { t: "match", init: this.matchInit, from: 0, actions: this.matchLog });
+      this.send(side, { t: "match", init: this.matchInit, from: 0, actions: this.matchLog, reset: true });
       this.send(side, { t: "sum", at: this.matchLog.length, sum: this.match!.checksum() });
       this.sendWait(side);
       if (this.wait.step === "live") this.send(side, { t: "ticks", play: this.liveIdx, from: 0, inputs: this.confirmed });
@@ -181,6 +181,10 @@ export class Room {
     const s = this.settings;
     for (const x of this.seats) if (x) x.rematch = false;
     this.forfeit = null;
+    // two teams in the same colours: the second one wears its colours the other way round
+    const t0 = this.seats[0]!.team.info, t1 = this.seats[1]!.team.info;
+    if (t0.c1.toLowerCase() === t1.c1.toLowerCase()) this.seats[1]!.team = { ...this.seats[1]!.team, info: { ...t1, c1: t1.c2, c2: t1.c1 } };
+    if (t0.abbr === this.seats[1]!.team.info.abbr) this.seats[1]!.team = { ...this.seats[1]!.team, info: { ...this.seats[1]!.team.info, abbr: `${this.seats[1]!.team.info.abbr.slice(0, 2)}2` } };
     this.draftInit = {
       seed: this.env.seed(), settings: { format: s.format, mirror: s.mirror, revealPassed: s.revealPassed, themed: s.themed },
       setups: [{ info: this.seats[0]!.team.info }, { info: this.seats[1]!.team.info }],
@@ -192,7 +196,7 @@ export class Room {
     this.matchInit = null; this.match = null; this.matchLog.length = 0;
     this.phase = "draft";
     this.broadcastRoom();
-    this.both({ t: "draft", init: this.draftInit, from: 0, actions: [] });
+    this.both({ t: "draft", init: this.draftInit, from: 0, actions: [], reset: true });
     this.startPickTimer();
   }
   private startPickTimer() {
@@ -218,7 +222,7 @@ export class Room {
     const a: DraftAction = { t: "reveal", picks: [this.picks[0], this.picks[1]] };
     this.draftLog.push(a);
     this.picks = [null, null];
-    this.both({ t: "draft", init: this.draftInit!, from: this.draftLog.length - 1, actions: [a] });
+    this.both({ t: "draft", init: this.draftInit!, from: this.draftLog.length - 1, actions: [a], reset: false });
     if (d.done) this.startLineup(); else this.startPickTimer();
   }
   private onReroll(side: Side) {
@@ -231,7 +235,7 @@ export class Room {
       this.picks[other(side)] = null;
       this.send(other(side), { t: "pickRejected", msg: "the options were rerolled" });
     }
-    this.both({ t: "draft", init: this.draftInit!, from: this.draftLog.length - 1, actions: [a] });
+    this.both({ t: "draft", init: this.draftInit!, from: this.draftLog.length - 1, actions: [a], reset: false });
   }
 
   // ---------------------------------------------------------------- lineup
@@ -266,14 +270,14 @@ export class Room {
     this.matchLog.length = 0;
     this.phase = "match";
     this.broadcastRoom();
-    this.both({ t: "match", init: this.matchInit, from: 0, actions: [] });
+    this.both({ t: "match", init: this.matchInit, from: 0, actions: [], reset: true });
     this.next();
   }
   /** Apply an action on the referee copy, log it and send it to both clients. */
   private act(a: MatchAction) {
     const r = this.match!.apply(a);
     this.matchLog.push(a);
-    this.both({ t: "match", init: this.matchInit!, from: this.matchLog.length - 1, actions: [a] });
+    this.both({ t: "match", init: this.matchInit!, from: this.matchLog.length - 1, actions: [a], reset: false });
     this.both({ t: "sum", at: this.matchLog.length, sum: this.match!.checksum() });
     return r;
   }
@@ -367,8 +371,11 @@ export class Room {
     const from = this.confirmed.length;
     const now = this.env.now();
     let done = false;
+    // the referee never runs ahead of real time (+ a little lead for clients sending early)
+    const maxTick = Math.floor((now - this.liveStart) / (1000 / this.env.data.rules.tickHz)) + this.O.maxPredictTicks * 2;
     for (;;) {
       const t = this.confirmed.length;
+      if (t >= maxTick) break;
       const absent = (s: Side) => !this.seats[s]?.connected || !m.session.isHuman(s);
       const late = fill && this.firstSeen[t] !== undefined && now - this.firstSeen[t]! >= this.O.fillMs;
       const ready = (s: Side) => this.have[s][t] || absent(s) || late;
@@ -378,8 +385,9 @@ export class Room {
       const d = this.have[other(offSide)][t] ? this.got[other(offSide)][t] ?? null : null;
       // server overrides: a human kicker who won't kick, a human offense in motion that won't snap
       const snap = sim.snapshot();
-      if (live.kick?.userKick && snap.kick?.awaitingKick && now - this.liveStart > this.O.kickSeconds * 1000) o = { ...(o ?? {}), kick: { aim: 0, power: 850, curve: 0 } };
-      if (snap.presnap && now - this.liveStart > this.env.data.tuning.presnap.motionMaxSeconds * 1000) o = { ...(o ?? {}), snap: true };
+      const hz = this.env.data.rules.tickHz;
+      if (live.kick?.userKick && snap.kick?.awaitingKick && t >= this.O.kickSeconds * hz) o = { ...(o ?? {}), kick: { aim: 0, power: 850, curve: 0 } };
+      if (snap.presnap && t >= this.env.data.tuning.presnap.motionMaxSeconds * hz) o = { ...(o ?? {}), snap: true };
       this.confirmed.push([o, d]);
       if (sim.step(o, d)) { done = true; break; }
     }
