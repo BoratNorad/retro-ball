@@ -3,26 +3,25 @@
   "unitWeights": {
     "offense": {
       "QB": 4.0,
-      "RB": 1.2,
-      "FB": 0.5,
-      "WR": 1.4,
-      "TE": 1.0,
-      "LT": 1.3,
-      "LG": 0.9,
-      "C": 1.0,
-      "RG": 0.9,
-      "RT": 1.1
+      "RB": 2.54,
+      "WR": 0.756,
+      "TE": 0.916,
+      "LT": 0.843,
+      "LG": 0.364,
+      "C": 0.911,
+      "RG": 0.722,
+      "RT": 1.487
     },
     "defense": {
-      "DE": 1.6,
-      "DT": 1.0,
-      "NT": 1.0,
-      "OLB": 1.2,
-      "MLB": 1.1,
-      "ILB": 1.0,
-      "CB": 1.5,
-      "FS": 1.1,
-      "SS": 1.0
+      "DE": 4.0,
+      "DT": 0.551,
+      "OLB": 1.505,
+      "MLB": 1.84,
+      "CB": 1.154,
+      "FS": 3.329,
+      "SS": 2.417,
+      "NT": 0.551,
+      "ILB": 1.84
     },
     "special": {
       "K": 1.0,
@@ -32,9 +31,9 @@
     }
   },
   "overallUnitWeights": {
-    "offense": 0.47,
-    "defense": 0.43,
-    "special": 0.1
+    "offense": 0.535,
+    "defense": 0.419,
+    "special": 0.046
   },
   "letters": [
     [
@@ -96,5 +95,11 @@
     "olSameTeamPairBonus": 0.15,
     "olCap": 1.0,
     "maxTotal": 2.4
+  },
+  "_fit": {
+    "games": 10000,
+    "r": 0.395,
+    "winnerAcc": 0.629,
+    "note": "unit/slot weights fitted by tools/import/fit_grade_weights.py from harness games; special-teams slot weights kept by hand (their measured effect is within noise)"
   }
 }

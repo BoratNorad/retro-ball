@@ -291,7 +291,8 @@ export function simulatePlay(inp: PlayInput): PlayResult {
     if (now < readStart && !pressure) return;
     const span = Math.max(0.1, T.qb.maxHold - readStart / hz);
     const k = Math.min(1, Math.max(0, (t - readStart / hz) / span));
-    const need = T.qb.openSepStart + (T.qb.openSepEnd - T.qb.openSepStart) * k;
+    // a high-awareness QB anticipates and throws into tighter windows
+    const need = (T.qb.openSepStart + (T.qb.openSepEnd - T.qb.openSepStart) * k) * Math.max(0.6, 1 - T.qb.windowPerAwareness * (R(qb, "awareness") - 75));
     // the QB has progressed this far through his reads; earlier reads stay available
     const progressed = Math.min(reads.length - 1, Math.max(0, Math.floor((now - readStart) / sec(T.qb.readWindow))));
     let pick: Actor | null = null, best: Actor | null = null, bestSep = fx(-99);
@@ -664,6 +665,8 @@ export function simulatePlay(inp: PlayInput): PlayResult {
     let pCatch = 0;
     if (inReach) {
       pCatch = T.catch.baseCatch + T.catch.catchPer * (R(r, "catching") - 60);
+      // ball placement: a throw that makes the receiver reach is harder to catch
+      pCatch -= T.catch.placementPenalty * (vdist(r.pos, L) / reach);
       // over-the-shoulder catches get harder with depth (spectacular-catch skill offsets it)
       const airYds = (L.y - los) / ONE;
       if (airYds > T.catch.deepCatchFrom) pCatch -= (airYds - T.catch.deepCatchFrom) * T.catch.deepCatchPenaltyPerYard * (1.4 - R(r, "spectacularCatch") / 99);

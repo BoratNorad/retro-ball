@@ -19,6 +19,8 @@ decisions and milestone status. Keep it updated.
 | Balance harness (all cores) | `pnpm sim:harness --games 1000` (spec target run: `--games 10000`) |
 | Trace one play tick by tick | `pnpm tsx tools/sim/trace.ts four_verts cover3 7` (`ROLES=regex EVERY=n DEBUG_ROLE=FS`) |
 | Summarise one play type over N reps | `pnpm tsx tools/sim/probe.ts slants cover1 300` |
+| Play x coverage yardage table | `pnpm tsx tools/sim/matrix.ts 60` (`KIND=run` for runs) |
+| Re-fit team-grade weights to what wins | `RANDOM_ROSTERS=1 FIT_OUT=/tmp/fit.jsonl pnpm sim:harness --games 10000` then `python3 tools/import/fit_grade_weights.py /tmp/fit.jsonl --write` |
 | Gridiron Dex (legacy browser) | `pnpm dev:dex` |
 
 Data pipeline order after a new ratings week: `data:import` → `data:fit` → `data:report` → commit
@@ -113,16 +115,20 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   harness. **10,000-game run (seed full1): 16/18 metrics in range** — 23.6 pts/team, 64.5 plays,
   55% pass, 68.8% comp, 4.0 ypc, 8.5% sacks, 1.2 TO, 0.6 INT, 4.4 penalties, FG 98.6/86.3/67.1%,
   OT 8.9%, 360 yds/team. Slightly out: 8.6 yds/att (target 6–8), 49.6% 3rd-down (35–45).
-  Talent sensitivity is low: the higher-rated team wins only ~56% (NFL ~65%) — fix before the
-  draft (M7) since drafting better players must clearly pay off.
+  **Talent pass (after M2):** rating effects strengthened (blocking, tackling, catching, accuracy,
+  reads, coverage reaction, speed/accel) and QB play made decisive (ball placement affects catch
+  odds; high-awareness QBs throw into tighter windows). 10k real-team games: 17/18 metrics in range
+  (3rd-down 46.1% vs ≤45). Better team's win %: gap 1–2 pts 59%, 2–3 66%, 3–5 73%, 5+ 86%.
+  **Team grade weights are fitted** to engine outcomes on random draft-like rosters
+  (`fit_grade_weights.py`): QB and edge rushers matter most; grade gap 3–5 pts wins 69%, 5+ 81%.
 - [ ] M3 Playable offense vs AI (Bowl camera) — client deployed to Render from here
 - [ ] M4 Full play calling · [ ] M5 Pre-snap layer · [ ] M6 Special teams · [ ] M7 Triple Draft offline
 - [ ] M8 Online (rollback) · [ ] M9 Pro camera + presentation · [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
 
 ## Known issues / todo
 
-- **Balance follow-ups:** raise rating impact so better teams win ~60-65%; trim yards per attempt
-  (YAC after deep/hitch catches) and 3rd-down conversion. Tools:
+- **Balance follow-ups:** 3rd-down conversion slightly high (46%). Re-fit grade weights whenever the
+  engine changes meaningfully (M4 playbook, M6 kicking). Tools:
   `tools/sim/matrix.ts` (pass/run play x coverage table, `KIND=run`), `probe.ts`, `trace.ts`,
   and the harness "per play call" table.
 - Run game: backside LBs are unblocked on zone runs (no climbing/combo blocks yet) — add in M4.

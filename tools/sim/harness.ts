@@ -74,6 +74,16 @@ scores.sort((x, y) => x - y);
 console.log(`\nscore spread: p10 ${scores[Math.floor(scores.length * 0.1)]}  median ${scores[Math.floor(scores.length / 2)]}  p90 ${scores[Math.floor(scores.length * 0.9)]}  max ${scores[scores.length - 1]}`);
 console.log(`\nwin % by talent edge (team with more Pro Bowl+ starters): ${pct(byRarity.moreWins ?? 0, byRarity.moreGames ?? 0).toFixed(1)}% of ${byRarity.moreGames ?? 0} games`);
 console.log(`win % by starters' grade edge (higher team OVR wins):    ${pct(byRarity.gradeWins ?? 0, byRarity.gradeGames ?? 0).toFixed(1)}%`);
+console.log("\nbetter team's win % by talent gap (avg starter overall):");
+for (const b of ["0-1", "1-2", "2-3", "3-5", "5+"]) {
+  const n = byRarity[`gap_${b}_n`] ?? 0;
+  if (n) console.log(`  gap ${b.padEnd(4)} pts  ${pct(byRarity[`gap_${b}_w`] ?? 0, n).toFixed(1).padStart(5)}%  (${n} games)`);
+}
+console.log("\nbetter team's win % by TEAM GRADE gap (position-weighted, what the draft shows):");
+for (const b of ["0-1", "1-2", "2-3", "3-5", "5+"]) {
+  const n = byRarity[`ggap_${b}_n`] ?? 0;
+  if (n) console.log(`  gap ${b.padEnd(4)} pts  ${pct(byRarity[`ggap_${b}_w`] ?? 0, n).toFixed(1).padStart(5)}%  (${n} games)`);
+}
 console.log("\nper play call (all downs, in games):");
 const names = [...new Set(Object.keys(a).filter((k) => k.startsWith("play:")).map((k) => k.split(":")[1]!))];
 for (const nm of names.sort((x, y) => (a[`play:${y}:n`] ?? 0) - (a[`play:${x}:n`] ?? 0)))
