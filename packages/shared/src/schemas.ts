@@ -182,6 +182,7 @@ export const TuningSchema = z.object({
   presnap: nums("jogMult", "jetMult", "motionMaxSeconds", "jetSnapDistance", "jetHandoff", "jetBoost", "jetBoostSeconds", "followMult",
     "jamBase", "jamPer", "jamMax", "pressDepth", "bailDepth", "pressBeatPenalty", "showDepth", "dlShift", "lbShift", "slideBias",
     "hardCountOffsideBase", "hardCountOffsidePer", "hardCountFalseStart", "playClock").extend({ _doc: z.string().optional() }),
+  special: nums("gravity", "dragFg", "dragPunt", "dragKickoff", "dragSquib", "dragOnside", "elevFg", "elevPat", "elevPunt", "elevKickoff", "elevSquib", "elevOnside", "speedBase", "speedPer", "minPower", "squibMult", "onsideMult", "aimErrBase", "aimErrPer", "powerErrBase", "powerErrPer", "pressureMult", "longFgFrom", "longFgMult", "windAccel", "windMaxMph", "windCalmPerMille", "curveAccel", "restitution", "onsideRestitution", "friction", "scatter", "rollFriction", "catchHeight", "catchRange", "catchBase", "catchPer", "catchTraffic", "fieldBase", "fieldPer", "recoverRange", "recoverBase", "recoverPer", "onsideTravel", "downRange", "fairCatchEta", "kneelDepth", "kickoffApproach", "puntSnap", "puntGetOff", "fgOperation", "blockBase", "blockPer", "blockModeMult", "safeModeMult", "puntBlockMult", "patBlockMult", "postsHalfWidth", "crossbar", "maxSeconds", "diveBonus").extend({ _doc: z.string().optional() }),
   user: nums("moveSeconds", "moveCooldown", "moveBonusBase", "moveBonusPer", "cutSideSpeed", "burstSeconds", "burstCooldown", "burstSpeedMult",
     "lobSpeedMult", "lobApex", "bulletApex").extend({ _doc: z.string().optional() }),
   penalties: z.object({
@@ -291,6 +292,8 @@ export const CoachConfigSchema = z.object({
   tendency: z.object({ prior: z.number(), runBiasMax: z.number(), paBiteBase: z.number(), paBitePerRunRate: z.number() }),
   qbRun: z.object({ speedRef: z.number(), speedPer: z.number(), min: z.number(), max: z.number() }),
   hailMary: z.object({ maxSeconds: z.number(), minBallOn: z.number(), maxBallOn: z.number() }),
+  special: z.object({ onsideMaxDeficit: z.number(), onsideSeconds: z.number(), squibSeconds: z.number(), squibPerMille: z.number(),
+    coffinFrom: z.number(), coffinTarget: z.number(), fakePuntPerMille: z.number(), fakeFgPerMille: z.number() }),
   presnap: z.object({
     motionPerMille: z.number(), showBlitzPerMille: z.number(), disguisePerMille: z.number(), pressPerMille: z.number(),
     bailPerMille: z.number(), dlShiftPerMille: z.number(), checkPerMille: z.number(), hardCountPerMille: z.number(),

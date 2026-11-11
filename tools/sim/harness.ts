@@ -62,6 +62,15 @@ const rows: Row[] = [
   ["FG attempts / team", per("fgAtt"), 1.2, 2.5],
   ["overtime games %", pct(a.ot ?? 0, a.games ?? 0), 3, 9],
   ["total yards / team", per("totalYds"), 300, 400],
+  ["PAT %", pct(a.patMade ?? 0, a.patAtt ?? 0), 92, 99.5],
+  ["punt gross avg", (a.puntYds ?? 0) / Math.max(1, a.punts ?? 0), 42, 50],
+  ["punt net avg", (a.puntNet ?? 0) / Math.max(1, a.punts ?? 0), 36, 45],
+  ["kick return avg", (a.krYds ?? 0) / Math.max(1, a.krAtt ?? 0), 19, 27],
+  ["punt return avg", (a.prYds ?? 0) / Math.max(1, a.prAtt ?? 0), 6, 12],
+  ["kickoff touchback %", pct(a.touchbacks ?? 0, a.kickoffs ?? 0), 25, 75],
+  ["return TDs / team / game", per("retTd"), 0, 0.08],
+  ["blocked kicks / team / game", per("blockedKicks"), 0, 0.08],
+  ["onside recovery %", pct(a.onsideRec ?? 0, a.onsideAtt ?? 0), 5, 25],
 ];
 console.log(`\n${a.games} games in ${(ms / 1000).toFixed(1)}s on ${WORKERS} workers (${(ms / a.games!).toFixed(0)} ms/game per core x${WORKERS})\n`);
 let out = 0;

@@ -1,5 +1,5 @@
 {
-  "_doc": "AI play-calling preferences. personnel: weight of each offensive personnel group by situation (normal, short = 3 yards or less to go, goalLine = inside the 5, passing = obvious passing down or two-minute). frontFor: defensive fronts the AI answers each personnel group with (base = the team's base front). Tendencies: the AI tracks the opponent's run/pass mix by down and distance; prior = how many league-average calls it starts from; runBias = how far the observed mix can tilt run-defense calls. paBite = play-action bite multiplier: base + perRunRate x the offense's run rate this game. qbRun: designed QB runs and option keeps are weighted by (speed - speedRef) x speedPer, clamped. presnap: how often the AI uses motion, shows blitz (with a non-blitz call; a real blitz is then disguised), disguises its safety look, presses or bails its corners, shifts its line, checks out of a long-developing pass when it sees a blitz look (per awareness), and hard-counts on 3rd/4th and short; audibles = default 5 audible slots per side.",
+  "_doc": "AI play-calling preferences. personnel: weight of each offensive personnel group by situation (normal, short = 3 yards or less to go, goalLine = inside the 5, passing = obvious passing down or two-minute). frontFor: defensive fronts the AI answers each personnel group with (base = the team's base front). Tendencies: the AI tracks the opponent's run/pass mix by down and distance; prior = how many league-average calls it starts from; runBias = how far the observed mix can tilt run-defense calls. paBite = play-action bite multiplier: base + perRunRate x the offense's run rate this game. qbRun: designed QB runs and option keeps are weighted by (speed - speedRef) x speedPer, clamped. presnap: how often the AI uses motion, shows blitz (with a non-blitz call; a real blitz is then disguised), disguises its safety look, presses or bails its corners, shifts its line, checks out of a long-developing pass when it sees a blitz look (per awareness), and hard-counts on 3rd/4th and short; audibles = default 5 audible slots per side. special: onside when trailing by up to onsideMaxDeficit with onsideSeconds or less left in the 4th; squib at the end of the first half (squibSeconds) or squibPerMille of the time; coffin-corner punts (aim for the sideline near the goal line) from coffinFrom yard line; fake punt / fake FG per-mille on 4th and short in the right field zone.",
   "personnel": {
     "normal": {
       "11": 58,
@@ -110,5 +110,15 @@
         "run_stop"
       ]
     }
+  },
+  "special": {
+    "onsideMaxDeficit": 16,
+    "onsideSeconds": 180,
+    "squibSeconds": 15,
+    "squibPerMille": 30,
+    "coffinFrom": 55,
+    "coffinTarget": 94,
+    "fakePuntPerMille": 15,
+    "fakeFgPerMille": 10
   }
 }

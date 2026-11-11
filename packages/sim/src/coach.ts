@@ -12,7 +12,9 @@ export interface PlayCall { play: OffensePlay; formation: string; personnel: str
 export interface DefCall { call: DefenseCall; front: string; preDef?: PreSnapDefense }
 export type ScrimmageDecision =
   | ({ kind: "play" } & PlayCall & DefCall)
-  | { kind: "punt" } | { kind: "fieldGoal" } | { kind: "kneel" } | { kind: "spike" };
+  | { kind: "punt" } | { kind: "fieldGoal" } | { kind: "kneel" } | { kind: "spike" }
+  /** a fake from the punt / FG unit (it looks like `as` until the snap) */
+  | { kind: "fake"; play: OffensePlay; as: "punt" | "fieldGoal" };
 
 /** What each side has shown this game (the AI reads it; the UI shows it as a scouting report). */
 export interface Tendencies {
@@ -92,7 +94,8 @@ function passRate(s: GameState, data: GameData): number {
   return Math.max(100, Math.min(970, p));
 }
 
-export function chooseScrimmage(s: GameState, offense: Roster, defense: Roster, data: GameData, ratings: (id: number) => Stats, rng: Rng, offTend?: Tendencies, oppDefense?: Tendencies): ScrimmageDecision {
+export function chooseScrimmage(s: GameState, offense: Roster, defense: Roster, data: GameData, ratings: (id: number) => Stats, rng: Rng, offTend?: Tendencies, oppDefense?: Tendencies,
+  fgChance?: (ballOn: number) => number): ScrimmageDecision {
   const t = secondsLeft(s, data.rules);
   const l = lead(s, s.possession);
   const ballOn = yds(s.ballOn), togo = yds(s.toGo);
@@ -105,7 +108,7 @@ export function chooseScrimmage(s: GameState, offense: Roster, defense: Roster, 
   if (!s.ot && s.quarter === 2 && t <= 30 && ballOn < 40 && s.down < 4) return { kind: "kneel" };
 
   const dist = fgDistance(s.ballOn, data);
-  const fgP = fgMakePerMille(dist, k, kin);
+  const fgP = fgChance ? fgChance(s.ballOn) : fgMakePerMille(dist, k, kin);
   // last-second field goal
   if (!s.ot && (s.quarter === 2 || s.quarter >= 4) && t <= 6 && fgP >= 250 && (s.quarter === 2 || (l <= 0 && l >= -3))) return { kind: "fieldGoal" };
 
@@ -117,14 +120,29 @@ export function chooseScrimmage(s: GameState, offense: Roster, defense: Roster, 
       return fgP >= 150 ? { kind: "fieldGoal" } : goForIt();
     }
     if (desperate && !(l >= -3 && fgP >= 500)) return goForIt();
-    if (fgP >= 600 && !(togo <= 1 && ballOn >= 60 && ballOn <= 95)) return { kind: "fieldGoal" };
+    if (fgP >= 600 && !(togo <= 1 && ballOn >= 60 && ballOn <= 95)) return maybeFake({ kind: "fieldGoal" });
     if (togo <= 1 && ballOn >= 40) return goForIt();
     if (togo <= 2 && ballOn >= 55 && ballOn < 70) return goForIt();
     if (ballOn >= 62 && fgP >= 350) return { kind: "fieldGoal" };
     if (ballOn >= 62 && togo <= 4) return goForIt();
-    return { kind: "punt" };
+    return maybeFake({ kind: "punt" });
   }
   return goForIt();
+
+  /** now and then a fake on 4th and short from the kicking unit */
+  function maybeFake(d: { kind: "punt" } | { kind: "fieldGoal" }): ScrimmageDecision {
+    const C = data.coach.special;
+    if (s.ot || togo > 3) return d;
+    if (d.kind === "punt" && ballOn >= 30 && ballOn <= 55 && rng.int(1000) < C.fakePuntPerMille) {
+      const p = data.offense.plays.find((x) => x.id === (rng.int(2) ? "fake_punt_pass" : "fake_punt_run"));
+      if (p) return { kind: "fake", play: p, as: "punt" };
+    }
+    if (d.kind === "fieldGoal" && rng.int(1000) < C.fakeFgPerMille) {
+      const p = data.offense.plays.find((x) => x.id === "fake_fg_pass");
+      if (p) return { kind: "fake", play: p, as: "fieldGoal" };
+    }
+    return d;
+  }
 
   function goForIt(): ScrimmageDecision {
     const c = chooseOffensePlay(s, offense, data, ratings, rng, oppDefense);

@@ -8,7 +8,7 @@ import type { DefenseCall, GameData, OffensePlay } from "@tdf/shared";
 import * as F from "./fixed.js";
 import { hashString, Rng } from "./rng.js";
 import {
-  applyOutcome, beforeSnap, newGame, other, prepareTry, tryOptions,
+  applyOutcome, beforeSnap, newGame, other, prepareTry, secondsLeft, tryOptions,
   type Foul, type GameEvent, type GameState, type PlayOutcome, type Side,
 } from "./rules.js";
 import type { Roster } from "./roster.js";
@@ -17,7 +17,9 @@ import {
   type Tendencies,
 } from "./coach.js";
 import { createPlay, type PlayResult, type PlaySim, type PreSnapDefense, type PreSnapOffense, type StatEvent, type Stats } from "./engine/play.js";
-import { fieldGoal, kickoff, pat, punt } from "./engine/kicks.js";
+import { fgDistance } from "./engine/kicks.js";
+import { createKick, kickChance, type KickMeta } from "./engine/special.js";
+import type { KickKind } from "./engine/play.js";
 
 const { ONE, fx } = F;
 
@@ -35,7 +37,9 @@ export interface TeamBox {
   penalties: number; penaltyYds: number;
   thirdAtt: number; thirdConv: number; fourthAtt: number; fourthConv: number;
   fgAtt: number; fgMade: number; fgByDist: Record<string, [number, number]>; patAtt: number; patMade: number; twoAtt: number; twoMade: number;
-  punts: number; puntYds: number;
+  punts: number; puntYds: number; puntNet: number;
+  kickoffs: number; touchbacks: number; krAtt: number; krYds: number; prAtt: number; prYds: number; retTd: number;
+  onsideAtt: number; onsideRec: number; blockedKicks: number; fakes: number;
   topTicks: number; sacks: number; defInts: number;
 }
 export interface PlayerLine { id: number; name: string; team: Side; pos: string; [k: string]: number | string }
@@ -49,7 +53,8 @@ const emptyBox = (): TeamBox => ({
   passAtt: 0, passComp: 0, passYds: 0, passTd: 0, ints: 0, sacksTaken: 0, sackYds: 0,
   rushAtt: 0, rushYds: 0, rushTd: 0, fumblesLost: 0, turnovers: 0, penalties: 0, penaltyYds: 0,
   thirdAtt: 0, thirdConv: 0, fourthAtt: 0, fourthConv: 0,
-  fgAtt: 0, fgMade: 0, fgByDist: {}, patAtt: 0, patMade: 0, twoAtt: 0, twoMade: 0, punts: 0, puntYds: 0,
+  fgAtt: 0, fgMade: 0, fgByDist: {}, patAtt: 0, patMade: 0, twoAtt: 0, twoMade: 0, punts: 0, puntYds: 0, puntNet: 0,
+  kickoffs: 0, touchbacks: 0, krAtt: 0, krYds: 0, prAtt: 0, prYds: 0, retTd: 0, onsideAtt: 0, onsideRec: 0, blockedKicks: 0, fakes: 0,
   topTicks: 0, sacks: 0, defInts: 0,
 });
 
@@ -63,6 +68,8 @@ export interface GameSetup {
   userSide?: Side | null;
   /** override quarter length (game seconds), e.g. for short games */
   quarterSeconds?: number;
+  /** wind in mph (x across, y toward the north end zone); default: random */
+  wind?: F.V2;
 }
 
 /** What has to happen next. */
@@ -75,7 +82,9 @@ export type Pending =
 /** A human offensive decision. */
 export type UserCall =
   | { kind: "play"; play: OffensePlay; flip: boolean; formation?: string; personnel?: string }
-  | { kind: "punt" } | { kind: "fieldGoal" } | { kind: "kneel" } | { kind: "spike" };
+  | { kind: "punt" } | { kind: "fieldGoal" } | { kind: "kneel" } | { kind: "spike" }
+  /** a fake from the punt or field-goal unit */
+  | { kind: "fake"; play: OffensePlay; as?: "punt" | "fieldGoal" };
 
 export interface SnapOptions {
   userCall?: UserCall;               // human offense
@@ -87,6 +96,12 @@ export interface SnapOptions {
   /** human defense: control one defender during the play */
   controlDefender?: boolean;
   timeout?: boolean;                 // human calls a timeout before this snap
+  /** human kicking off: deep, squib or onside */
+  kickoffKind?: "kickoff" | "squib" | "onside";
+  /** human returning: wall side */
+  returnSide?: "L" | "M" | "R";
+  /** human defending a punt / FG: block, safe (fake watch), normal */
+  stDefense?: "block" | "safe" | "normal";
 }
 
 /** A live scrimmage play in progress. */
@@ -97,6 +112,8 @@ export interface LivePlay {
   flip: boolean; preOff?: PreSnapOffense; preDef?: PreSnapDefense;
   /** the play's own random stream: re-lining up (audible, hot route, motion...) replays the same luck */
   seed: number;
+  /** special-teams play */
+  kick?: { kind: KickKind; userKick: boolean; userReturn: boolean };
   hardCounted?: boolean;
   /** internal bookkeeping for finish() */
   ctx: { before: GameState; at: GameState };
@@ -135,9 +152,71 @@ export class GameSession {
     this.mid = fx(this.data.tuning.field.width / 2);
     this.hashGap = fx(this.data.tuning.field.hashHalfGap);
     this.ballX = this.mid;
+    const W = this.data.tuning.special;
+    const wr = this.rng.int(1000);
+    if (setup.wind) this.wind = setup.wind;
+    else if (wr < W.windCalmPerMille) this.wind = { x: 0, y: 0 };
+    else {
+      const mph = 3 + this.rng.int(Math.max(1, W.windMaxMph - 2));
+      const dir = this.rng.int(8);
+      const v = F.vfromAngle(F.mul(fx(Math.PI / 4), fx(dir)), fx(mph));
+      this.wind = { x: v.x, y: v.y };
+    }
   }
 
   get rules() { return this.cfg; }
+
+  /** Wind in mph (x across the field, y toward the north end zone). */
+  readonly wind: F.V2;
+  /** Wind as the given side feels it when it has the ball this quarter (its attacking frame). */
+  windFor(side: Side): F.V2 {
+    const q = this.state.quarter;
+    const north = (side === 0 ? 1 : -1) * (q % 2 === 1 ? 1 : -1);
+    return { x: this.wind.x * north, y: this.wind.y * north };
+  }
+  private pressure(s: GameState): boolean {
+    return s.ot !== null || (s.quarter >= 4 && secondsLeft(s, this.cfg) <= 120);
+  }
+  /** Field-goal / PAT make chance (per-mille) for the team with the ball, in this wind. */
+  kickChanceFor(kind: "fieldGoal" | "pat", ballOn: F.Fx): number {
+    const s = this.state, k = this.teams[s.possession].starters.K!;
+    const r = this.ratings(k.id);
+    const key = `${k.id}:${kind}:${ballOn >> 16}:${this.windFor(s.possession).x}:${this.windFor(s.possession).y}:${this.pressure(s)}`;
+    let v = this.chanceCache.get(key);
+    if (v == null) { v = kickChance(this.data, r.kickPower ?? 70, r.kickAccuracy ?? 70, kind, ballOn, this.windFor(s.possession), this.pressure(s)); this.chanceCache.set(key, v); }
+    return v;
+  }
+  private chanceCache = new Map<string, number>();
+
+  private startKick(s: GameState, before: GameState, kind: KickKind, opts: SnapOptions): LivePlay {
+    const off = s.possession, def = other(off);
+    const userKick = this.userSide === off, userReturn = this.userSide === def;
+    const seed = this.rng.int(1_000_000_000);
+    const prng = new Rng(seed);
+    const C = this.data.coach;
+    const stDefense = userReturn ? opts.stDefense ?? "normal"
+      : kind === "punt" || kind === "fieldGoal" ? (prng.int(1000) < 100 ? "block" : prng.int(1000) < 150 && s.toGo <= fx(3) ? "safe" : "normal") : "normal";
+    const returnSide = userReturn ? opts.returnSide ?? "M" : (["L", "M", "R"] as const)[prng.int(3)]!;
+    void C;
+    const spot = kind === "kickoff" || kind === "squib" || kind === "onside" ? s.freeKickFrom : s.ballOn;
+    const ballX = kind === "kickoff" || kind === "squib" || kind === "onside" ? this.mid : this.ballX;
+    const sim = createKick({
+      data: this.data, ratings: this.ratings, kicking: this.teams[off], receiving: this.teams[def], kickSide: off, kind, spot, ballX,
+      rng: prng, wind: this.windFor(off), pressure: this.pressure(s), userKick, userReturn, userKickTeam: userKick && kind === "onside",
+      returnSide, stDefense,
+    });
+    const play = this.data.offense.plays[0]!, call = this.data.defense.calls[0]!;
+    return { sim, offSide: off, userOffense: userKick, userDefense: false, play, call, formation: "", personnel: "", front: "", flip: false,
+      seed, twoPoint: false, kick: { kind, userKick, userReturn }, ctx: { before, at: s } };
+  }
+  /** AI kickoff choice: onside when trailing late, squib to end the half, else deep. */
+  private chooseKickoffKind(s: GameState): KickKind {
+    const C = this.data.coach.special, t = secondsLeft(s, this.cfg);
+    const kicker = s.possession, lead = s.score[kicker] - s.score[other(kicker)];
+    if (!s.ot && s.quarter >= 4 && lead < 0 && -lead <= C.onsideMaxDeficit && t <= C.onsideSeconds) return "onside";
+    if (s.quarter === 2 && t <= C.squibSeconds) return "squib";
+    return this.rng.int(1000) < C.squibPerMille ? "squib" : "kickoff";
+  }
   /** Ball's position across the field for the next snap. */
   get ballX_(): F.Fx { return this.ballX; }
 
@@ -170,19 +249,16 @@ export class GameSession {
 
     if (s.phase === "final") throw new Error("game is over");
     if (s.phase === "kickoff") {
-      const k = kickoff(kin, s.freeKickFrom);
-      this.ballX = this.mid;
-      return { done: this.apply(before, s, k.outcome, k.stats, "Kickoff", "", k.log.join(", "), "kickoff") };
+      const kind = userOff ? opts.kickoffKind ?? "kickoff" : this.chooseKickoffKind(s);
+      return { live: this.startKick(s, before, kind, opts) };
     }
     if (s.phase === "try") {
       const choice = userOff && opts.tryChoice ? opts.tryChoice : chooseTry(s, tryOptions(s, cfg));
       s = prepareTry(s, choice, cfg);
       this.state = s;
       if (choice === "pat") {
-        const k = pat(kin, s.ballOn);
-        this.box[off].patAtt++; if (k.outcome.good) this.box[off].patMade++;
         this.ballX = this.mid;
-        return { done: this.apply(before, s, k.outcome, [], "Extra point", "", k.log.join(", "), "try") };
+        return { live: this.startKick(s, before, "pat", opts) };
       }
       const goal = data.offense.plays.filter((p) => p.weight > 0 && !p.tags.includes("deep") && !p.tags.includes("screen"));
       const p0 = goal[rng.int(goal.length)]!;
@@ -210,22 +286,19 @@ export class GameSession {
       ? (opts.userCall.kind === "play"
         ? (() => { const pc = this.userPlayCall(opts.userCall); return { kind: "play" as const, ...pc, ...chooseDefense(s, data, rng, pc.personnel, defense, this.tend[off]) }; })()
         : opts.userCall)
-      : this.preview ?? chooseScrimmage(s, offense, defense, data, ratings, rng, this.tend[off], this.tend[def]);
+      : this.preview ?? chooseScrimmage(s, offense, defense, data, ratings, rng, this.tend[off], this.tend[def], (b) => this.kickChanceFor("fieldGoal", b));
     this.preview = null;
     if (dec.kind === "play" && !userOff && this.userSide !== null && opts.defCall) dec = { ...dec, call: opts.defCall, front: opts.defFront ?? dec.front };
-    if (dec.kind === "punt") {
-      const k = punt(kin, s.ballOn);
-      this.box[off].punts++; this.box[off].puntYds += Math.round(F.min(k.outcome.endY, fx(100)) / ONE - s.ballOn / ONE);
-      this.ballX = this.mid;
-      return { done: this.apply(before, s, k.outcome, k.stats, "Punt", "", k.log.join(", ")) };
-    }
-    if (dec.kind === "fieldGoal") {
-      const k = fieldGoal(kin, s.ballOn);
-      this.box[off].fgAtt++; if (k.outcome.good) this.box[off].fgMade++;
-      const bucket = k.dist < 30 ? "<30" : k.dist < 40 ? "30-39" : k.dist < 50 ? "40-49" : "50+";
-      const fb = (this.box[off].fgByDist[bucket] ??= [0, 0]); fb[1]++; if (k.outcome.good) fb[0]++;
-      this.ballX = this.mid;
-      return { done: this.apply(before, s, k.outcome, k.stats, `${k.dist}-yd field goal`, "", k.log.join(", ")) };
+    if (dec.kind === "punt" || dec.kind === "fieldGoal") return { live: this.startKick(s, before, dec.kind, opts) };
+    if (dec.kind === "fake") {
+      // the fake comes out of the kicking unit; the defense lined up for the kick it expected
+      this.box[off].fakes++;
+      const fo = data.formations.offense.find((f) => dec.play.formations.includes(f.id))!;
+      const mode = this.userSide === def ? opts.stDefense ?? "normal" : "normal";
+      const look = mode === "block" ? { front: "goal_line", call: "cover0" } : mode === "safe" ? { front: "base43", call: "cover3" } : { front: "nickel", call: "cover1" };
+      const pc = { play: dec.play, formation: fo.id, personnel: fo.personnel[0]!, flip: rng.int(2) === 1 };
+      const dc = { call: data.defense.calls.find((c) => c.id === look.call)!, front: look.front };
+      return { live: this.start(s, before, pc, dc, opts, false) };
     }
     if (dec.kind === "kneel") {
       this.recordStats([{ k: "rush", id: offense.starters.QB!.id, team: off, att: 1, yds: -1 }]);
@@ -255,7 +328,7 @@ export class GameSession {
     const s = this.state;
     if (s.phase !== "play" || this.isUserOffense()) return null;
     const off = s.possession, def = other(off);
-    this.preview ??= chooseScrimmage(s, this.teams[off], this.teams[def], this.data, this.ratings, this.rng, this.tend[off], this.tend[def]);
+    this.preview ??= chooseScrimmage(s, this.teams[off], this.teams[def], this.data, this.ratings, this.rng, this.tend[off], this.tend[def], (b) => this.kickChanceFor("fieldGoal", b));
     return this.preview;
   }
   private preview: ScrimmageDecision | null = null;
@@ -341,6 +414,7 @@ export class GameSession {
 
   /** Apply a finished live play. */
   finish(live: LivePlay): PlaySummary {
+    if (live.kick) return this.finishKick(live);
     const r: PlayResult = live.sim.result();
     const s = live.ctx.at;
     const off = live.offSide;
@@ -353,6 +427,46 @@ export class GameSession {
     if (s.down === 3) this.box[off].thirdAtt++;
     if (s.down === 4) this.box[off].fourthAtt++;
     return this.apply(live.ctx.before, s, r.outcome, r.stats, live.play.name, live.call.name, r.log.slice(-2).join("; "));
+  }
+
+  private finishKick(live: LivePlay): PlaySummary {
+    const r = live.sim.result() as PlayResult & { meta: KickMeta };
+    const s = live.ctx.at, off = live.offSide, def = other(off), b = this.box[off], m = r.meta;
+    const kind = live.kick!.kind;
+    if (m.blocked) b.blockedKicks++;
+    if (m.returner != null && !m.blocked && !m.fairCatch && !m.touchback && r.stats.some((x) => x.k === "kr" || x.k === "pr")) { const rb = this.box[def]; if (kind === "punt") { rb.prAtt++; rb.prYds += m.returnYds; } else { rb.krAtt++; rb.krYds += m.returnYds; } }
+    if (m.returnTd) this.box[def].retTd++;
+    this.ballX = F.clamp(r.endX, this.mid - this.hashGap, this.mid + this.hashGap);
+    let name = "Kickoff";
+    if (kind === "kickoff" || kind === "squib" || kind === "onside") {
+      b.kickoffs++;
+      if (m.touchback) b.touchbacks++;
+      if (kind === "onside") { b.onsideAtt++; if (m.kickingRecovered) b.onsideRec++; name = "Onside kick"; }
+      if (kind === "squib") name = "Squib kick";
+      if (m.touchback || m.outOfBounds) this.ballX = this.mid;
+    } else if (kind === "punt") {
+      name = "Punt";
+      b.punts++;
+      if (!m.blocked) {
+        b.puntYds += Math.max(0, m.gross);
+        // net: where the receiving team starts (a touchback comes out to the 20)
+        const at = m.touchback ? fx(80) : r.outcome.kickingTeamRecovered ? s.ballOn : F.min(r.outcome.endY, fx(100));
+        b.puntNet += Math.round((at - s.ballOn) / ONE);
+      }
+      if (m.touchback) this.ballX = this.mid;
+    } else if (kind === "fieldGoal") {
+      const dist = fgDistance(s.ballOn, this.data);
+      name = `${dist}-yd field goal`;
+      b.fgAtt++; if (r.outcome.good) b.fgMade++;
+      const bucket = dist < 30 ? "<30" : dist < 40 ? "30-39" : dist < 50 ? "40-49" : "50+";
+      const fb = (b.fgByDist[bucket] ??= [0, 0]); fb[1]++; if (r.outcome.good) fb[0]++;
+      this.ballX = this.mid;
+    } else if (kind === "pat") {
+      name = "Extra point";
+      b.patAtt++; if (r.outcome.good) b.patMade++;
+      this.ballX = this.mid;
+    }
+    return this.apply(live.ctx.before, s, r.outcome, r.stats, name, "", r.log.slice(-2).join("; "), kind === "pat" ? "try" : kind === "punt" || kind === "fieldGoal" ? "play" : "kickoff");
   }
 
   result(): GameResult {
@@ -437,6 +551,8 @@ export class GameSession {
         case "sack": add(p, "sacks", 1); b.sacks += 1; break;
         case "int": add(p, "defInts", 1); b.defInts += 1; this.box[other(e.team)].ints += 1; break;
         case "fumbleLost": this.box[e.team].fumblesLost += 1; break;
+        case "kr": add(p, "krAtt", 1); add(p, "krYds", e.yds ?? 0); add(p, "krTd", e.td ?? 0); break;
+        case "pr": add(p, "prAtt", 1); add(p, "prYds", e.yds ?? 0); add(p, "prTd", e.td ?? 0); break;
         case "defended": add(p, "passesDefended", 1); break;
         default: break;
       }

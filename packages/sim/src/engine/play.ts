@@ -14,7 +14,7 @@ const { fx, mul, div, idiv, ONE, vsub, vadd, vlen, vnorm, vscale, vdist } = F;
 
 export type Stats = Record<string, number>;
 export interface StatEvent {
-  k: "pass" | "rush" | "rec" | "tackle" | "sack" | "int" | "fumble" | "fumbleLost" | "defended";
+  k: "pass" | "rush" | "rec" | "tackle" | "sack" | "int" | "fumble" | "fumbleLost" | "defended" | "kr" | "pr";
   id: number; team: 0 | 1;
   yds?: number; att?: number; comp?: number; td?: number; target?: number;
 }
@@ -83,7 +83,9 @@ export interface UserInput {
   /** throw now at this field point; power 0..1 (0 = soft lob, 1 = bullet) */
   throwAt?: { x: Fx; y: Fx; power: number } | null;
   /** offense: juke/spin/burst/scramble, keep (read option); defense: dive, strip, swat, switch */
-  action?: "juke" | "spin" | "burst" | "scramble" | "keep" | "dive" | "strip" | "swat" | "switch" | null;
+  action?: "juke" | "spin" | "burst" | "scramble" | "keep" | "dive" | "strip" | "swat" | "switch" | "fairCatch" | "kneel" | null;
+  /** kicks: aim (radians x 1000 from straight downfield, + = right), power 0..1000, curve -1000..1000 */
+  kick?: { aim: number; power: number; curve: number } | null;
   /** snap the ball (when the play is waiting in its pre-snap phase, e.g. during motion) */
   snap?: boolean;
 }
@@ -102,8 +104,26 @@ export interface PlaySnapshot {
   /** at the snap / before it: offensive routes and defensive assignments, for the pre-snap overlay */
   routes: { i: number; pts: V2[] }[];
   assign: { i: number; task: string; at?: V2; r?: Fx; target?: number }[];
+  /** special-teams plays only */
+  kick?: KickView;
   cooldowns: { juke: number; spin: number; burst: number };
   log: string[];
+}
+export type KickKind = "fieldGoal" | "pat" | "kickoff" | "squib" | "onside" | "punt";
+export interface KickView {
+  kind: KickKind;
+  phase: "setup" | "approach" | "flight" | "loose" | "return" | "dead";
+  /** waiting for the human kicker's flick */
+  awaitingKick: boolean;
+  /** half-width of the accuracy cone (radians, Fx) and the kick spot / goal-post target (field Fx) */
+  cone: Fx; spot: V2; target: V2;
+  /** wind in this play's frame (yd/s per axis, Fx) and mph */
+  wind: V2; windMph: number;
+  canFairCatch: boolean; canKneel: boolean;
+  /** onside / loose-ball scramble: the player the human controls (-1 none) */
+  userPlayer: number;
+  /** field goal / PAT: result shown once decided */
+  good: boolean | null;
 }
 export interface PlaySim {
   step(input?: UserInput | null): boolean;
@@ -208,7 +228,7 @@ export function createPlay(inp: PlayInput): PlaySim {
   const roleIdx = new Map<string, number>();
   const takenO = new Set<number>();
   for (const role of ["QB", "LT", "LG", "C", "RG", "RT", "X", "Y", "Z", "H", "RB"]) {
-    const slot = ["QB", "LT", "LG", "C", "RG", "RT"].includes(role) ? role : pers[role]!;
+    const slot = pers[role] ?? role;
     const card = slotPlayer(inp.offense, slot, data, takenO);
     takenO.add(card.id);
     let [dx, dy] = off.spots[role]!;

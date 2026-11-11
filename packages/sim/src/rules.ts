@@ -59,6 +59,8 @@ export interface PlayOutcome {
   /** kicks: kicking team recovered (onside kick, muffed punt) */
   kickingTeamRecovered?: boolean;
   kickOutOfBounds?: boolean;
+  /** field goal blocked (endY = where the return ended, kicking frame) and returned for a TD */
+  blocked?: boolean; defenseTd?: boolean;
   good?: boolean;        // field goal / try converted
   elapsedTicks: number;
   foul?: Foul | null;
@@ -341,7 +343,9 @@ function resolveFieldGoal(s: GameState, o: PlayOutcome, cfg: RulesConfig, ev: Ga
     return s;
   }
   ev.push({ t: "fgMissed", side: kicker });
+  if (o.blocked && o.defenseTd) { const d = other(kicker); s.possession = d; return afterTouchdown(s, d, cfg, ev, true); }
   if (s.ot) return endOtPossession(s, cfg, ev);
+  if (o.blocked) { changePossession(s, Y(100) - clampField(o.endY), cfg); return s; }
   // defense takes over at the spot of the kick, but never inside its own 20
   const kickSpot = s.ballOn - Y(cfg.spots.fgSnapDepth);
   changePossession(s, max(Y(cfg.spots.missedFgMinSpot), Y(100) - kickSpot), cfg);

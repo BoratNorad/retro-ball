@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { PoolFileSchema, type GameData } from "@tdf/shared";
 import { nodeGameData, readShared } from "@tdf/shared/node";
 import { nflRoster } from "../src/roster.js";
-import { GameSession, playGame } from "../src/game.js";
+import { GameSession, playGame, type LivePlay } from "../src/game.js";
 import { suggestPlays } from "../src/coach.js";
 import { fromInt } from "../src/fixed.js";
 import type { Stats } from "../src/engine/play.js";
@@ -41,6 +41,13 @@ describe("full games", () => {
   });
 });
 
+/** Step a live play to the end; a human kick gets a straight, full-power flick. */
+function runOut(live: LivePlay) {
+  const kick = live.kick?.userKick ? { kick: { aim: 0, power: 1000, curve: 0 } } : {};
+  let n = 0;
+  while (!live.sim.step(n++ === 0 ? kick : {}) && n < 5000) { /* run */ }
+}
+
 describe("play calling (M4)", () => {
   it("the human defense sees the AI's personnel before calling, and the snap uses that same call", () => {
     const s = new GameSession({ data, ratings, teams: [nflRoster("BUF", pool, data), nflRoster("KC", pool, data)], seed: "pv", userSide: 0 });
@@ -56,11 +63,11 @@ describe("play calling (M4)", () => {
           expect(r.live.front).toBe("nickel");
           checked++;
         }
-        if ("live" in r) { while (!r.live.sim.step()); s.finish(r.live); }
+        if ("live" in r) { runOut(r.live); s.finish(r.live); }
         continue;
       }
       const r = s.snap(s.isUserOffense() && p.kind === "scrimmage" ? { userCall: { kind: "play", play: data.offense.plays[0]!, flip: false } } : {});
-      if ("live" in r) { while (!r.live.sim.step()); s.finish(r.live); }
+      if ("live" in r) { runOut(r.live); s.finish(r.live); }
     }
     expect(checked).toBeGreaterThan(0);
   });
@@ -82,7 +89,7 @@ describe("pre-snap (M5)", () => {
     for (let i = 0; i < 200; i++) {
       if (s.pending().kind === "scrimmage" && s.isUserOffense()) return;
       const r = s.snap({});
-      if ("live" in r) { while (!r.live.sim.step()); s.finish(r.live); }
+      if ("live" in r) { runOut(r.live); s.finish(r.live); }
     }
   };
   it("adjust() re-lines up with the same luck: the same adjustments replay the same play", () => {

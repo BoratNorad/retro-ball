@@ -1886,6 +1886,83 @@
     "role": "H",
     "kind": "orbit"
    }
+  },
+  {
+   "id": "fake_punt_pass",
+   "name": "Fake Punt Pass",
+   "kind": "pass",
+   "group": "Fake",
+   "formations": [
+    "punt_spread"
+   ],
+   "weight": 0,
+   "tags": [
+    "fake",
+    "short"
+   ],
+   "drop": 1,
+   "routes": {
+    "X": "slant",
+    "Z": "go",
+    "Y": "flat",
+    "H": "drag",
+    "RB": "block"
+   },
+   "read": [
+    "Y",
+    "X",
+    "H",
+    "Z"
+   ]
+  },
+  {
+   "id": "fake_punt_run",
+   "name": "Fake Punt Run",
+   "kind": "run",
+   "group": "Fake",
+   "formations": [
+    "punt_spread"
+   ],
+   "weight": 0,
+   "tags": [
+    "fake",
+    "short",
+    "inside"
+   ],
+   "carrier": "RB",
+   "aim": [
+    2,
+    3
+   ],
+   "block": "man"
+  },
+  {
+   "id": "fake_fg_pass",
+   "name": "Fake FG Pass",
+   "kind": "pass",
+   "group": "Fake",
+   "formations": [
+    "fg_unit"
+   ],
+   "weight": 0,
+   "tags": [
+    "fake",
+    "short"
+   ],
+   "drop": 1,
+   "routes": {
+    "Y": "flat",
+    "X": "corner",
+    "Z": "drag",
+    "H": "flat",
+    "RB": "block"
+   },
+   "read": [
+    "Y",
+    "H",
+    "X",
+    "Z"
+   ]
   }
  ]
 }
