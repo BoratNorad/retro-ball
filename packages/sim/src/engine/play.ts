@@ -31,8 +31,33 @@ export interface PlayInput {
   rng: Rng;
   twoPoint?: boolean;
   record?: boolean;
+  /** a human controls the offense: the QB waits for throwAt, the carrier follows move */
+  userOffense?: boolean;
 }
 export interface Frame { t: number; p: number[]; ball: [number, number, number] } // positions as [x,y,...] in Fx
+
+/** Per-tick input from a human controlling the offense (all optional). Coordinates are field Fx. */
+export interface UserInput {
+  /** desired run direction for the ball carrier (any length; zero/undefined = AI steering) */
+  move?: V2 | null;
+  /** throw now at this field point; power 0..1 (0 = soft lob, 1 = bullet) */
+  throwAt?: { x: Fx; y: Fx; power: number } | null;
+  action?: "juke" | "spin" | "burst" | "scramble" | null;
+}
+export interface ActorView { x: Fx; y: Fx; vx: Fx; vy: Fx; side: "O" | "D"; role: string; num: number | null; id: number; down: boolean }
+export interface PlaySnapshot {
+  tick: number; done: boolean; los: Fx;
+  actors: ActorView[];
+  ball: { x: Fx; y: Fx; h: Fx; state: "held" | "air" | "dead" | "loose"; holder: number };
+  qbCanThrow: boolean; carrier: number; userCarrier: boolean;
+  cooldowns: { juke: number; spin: number; burst: number };
+  log: string[];
+}
+export interface PlaySim {
+  step(input?: UserInput | null): boolean;
+  snapshot(): PlaySnapshot;
+  result(): PlayResult;
+}
 export interface PlayResult { outcome: PlayOutcome; stats: StatEvent[]; endX: Fx; frames?: Frame[]; log: string[]; debug?: { tries: number; missed: number; minDist: number } }
 
 type Task = "block" | "route" | "qb" | "carry" | "rush" | "man" | "zone" | "pursue" | "idle";
@@ -59,7 +84,15 @@ interface Ball {
 
 const DEG = (d: number) => fx((d * Math.PI) / 180);
 
+/** Run a whole play with AI on both sides. */
 export function simulatePlay(inp: PlayInput): PlayResult {
+  const p = createPlay(inp);
+  while (!p.step()) { /* advance */ }
+  return p.result();
+}
+
+/** Set up a play that advances one 30 Hz tick per step(), optionally driven by human input. */
+export function createPlay(inp: PlayInput): PlaySim {
   const { data, rng } = inp;
   const T: Tuning = data.tuning;
   const hz = data.rules.tickHz;
@@ -210,6 +243,7 @@ export function simulatePlay(inp: PlayInput): PlayResult {
     if (a.engagedWith >= 0) maxV = mul(maxV, fx(T.movement.engagedSpeedMult));
     if (ball.state === "held" && ball.holder === a.i) {
       maxV = mul(maxV, fx(completion && completion.rec === a ? T.movement.receiverCarrySpeedMult : T.movement.carryingSpeedMult));
+      if (moveUntil.burst > curTick) maxV = mul(maxV, fx(T.user.burstSpeedMult));
       // cutting hard costs speed (less for agile backs)
       const sp = vlen(a.vel);
       if (sp > fx(3) && dist > fx(0.5)) {
@@ -387,6 +421,7 @@ export function simulatePlay(inp: PlayInput): PlayResult {
   /** Ball carrier: pick the open lane with the most room, biased upfield; re-plans every few ticks. */
   let laneGoal: V2 | null = null, laneDir: V2 | null = null, laneUntil = -1, laneOwner = -1;
   function carrierGoal(a: Actor, now: number): V2 {
+    if (inp.userOffense && a.side === "O" && userMove && (userMove.x !== 0 || userMove.y !== 0)) return vadd(a.pos, vscale(vnorm(userMove), fx(5)));
     if (laneOwner === a.i && now < laneUntil && laneDir) return vadd(a.pos, vscale(laneDir, fx(5)));
     const g = pickLane(a, now);
     laneOwner = a.i;
@@ -611,8 +646,12 @@ export function simulatePlay(inp: PlayInput): PlayResult {
       const best = Math.max(...moves), avg = moves.reduce((x, y) => x + y, 0) / moves.length;
       const elusive = best * T.tackle.elusiveMaxWeight + avg * (1 - T.tackle.elusiveMaxWeight);
       const gang = near.length - 1;
+      // a well-timed juke or spin (human-controlled carrier) makes this tackle harder
+      let moveBonus = 0;
+      if (moveUntil.juke > now) moveBonus = T.user.moveBonusBase + T.user.moveBonusPer * (R(c, "jukeMove") - 60);
+      else if (moveUntil.spin > now) moveBonus = T.user.moveBonusBase + T.user.moveBonusPer * (R(c, "spinMove") - 60);
       const p = clampPm(T.tackle.base + T.tackle.per * (R(d, "tackle") - elusive) + T.tackle.powerPer * (R(d, "hitPower") - R(c, "strength")) +
-        gang * T.tackle.gangBonus);
+        gang * T.tackle.gangBonus - moveBonus);
       dbg.tries++;
       if (rng.int(1000) < p) {
         stats.push({ k: "tackle", id: d.c.id, team: c.side === "O" ? defSide : inp.offSide });
@@ -655,7 +694,13 @@ export function simulatePlay(inp: PlayInput): PlayResult {
       if (throwInfo) stats.push({ k: "pass", id: throwInfo.qb.c.id, team: inp.offSide, att: 1, comp: 0, yds: 0 });
       return;
     }
-    const r = actors[ball.target]!;
+    let r = actors[ball.target]!;
+    if (userThrow) {
+      // a human throws to a spot: whoever on offense is closest to where it lands goes up for it
+      let best = r, bd = vdist(r.pos, L);
+      for (const o of O) if (o.task === "route" && vdist(o.pos, L) < bd) { bd = vdist(o.pos, L); best = o; }
+      r = best;
+    }
     const reach = fx(T.catch.reach), contest = fx(T.catch.contestRange);
     let def: Actor | null = null, dd = contest;
     for (const d of D) { const x = vdist(d.pos, L); if (x < dd) { dd = x; def = d; } }
@@ -734,10 +779,64 @@ export function simulatePlay(inp: PlayInput): PlayResult {
     for (const b of blockers) if (!usedB.has(b.i)) claimTarget(b);
   }
 
-  // ------------------------------------------------------------------ main loop
+  // ------------------------------------------------------------------ human input
+  let userMove: V2 | null = null;
+  let userThrow = false;
+  let curTick = 0;
+  const moveUntil = { juke: -1, spin: -1, burst: -1 };
+  const moveReady = { juke: 0, spin: 0, burst: 0 };
+  function applyUser(u: UserInput | null | undefined, now: number) {
+    if (!inp.userOffense || !u) { userMove = null; return; }
+    userMove = u.move ?? null;
+    if (u.throwAt && qbHasBall) userThrowAt(u.throwAt, now);
+    const c = carrier();
+    if (u.action === "scramble" && qbHasBall) { startScramble(now); return; }
+    if (u.action && u.action !== "scramble" && c && c.side === "O" && !(c === qb && qbHasBall) && now >= moveReady[u.action]) {
+      const k = u.action;
+      moveUntil[k] = now + sec(k === "burst" ? T.user.burstSeconds : T.user.moveSeconds);
+      moveReady[k] = now + sec(k === "burst" ? T.user.burstCooldown : T.user.moveCooldown);
+      if (k !== "burst" && userMove) {
+        // the cut itself: a quick sidestep across the run direction
+        const side = vnorm({ x: -userMove.y, y: userMove.x });
+        c.vel = vadd(c.vel, vscale(side, fx(T.user.cutSideSpeed * (now % 2 === 0 ? 1 : -1))));
+      }
+      log.push(`${c.c.name} ${k === "juke" ? "jukes" : k === "spin" ? "spins" : "bursts"}`);
+    }
+  }
+  /** A human throw: ball flies to the chosen spot; QB accuracy still moves it. */
+  function userThrowAt(t: { x: Fx; y: Fx; power: number }, now: number) {
+    const raw = rushers().some((d) => d.engagedWith < 0 && vdist(d.pos, qb.pos) < fx(T.qb.pressureRange));
+    let aim: V2 = { x: t.x, y: t.y };
+    const yds = vdist(qb.pos, aim) / ONE;
+    const accKey = yds <= T.throw.shortMax ? "throwAccuracyShort" : yds <= T.throw.midMax ? "throwAccuracyMid" : "throwAccuracyDeep";
+    let acc = R(qb, accKey);
+    if (raw) acc = Math.round((acc + R(qb, "throwUnderPressure")) / 2);
+    let err = T.throw.errBase + T.throw.errPerMissingAcc * (99 - acc) * (1 + yds * T.throw.errPerYard);
+    if (raw) err *= T.throw.pressureErrMult;
+    if (scramble) err *= (2 - R(qb, "throwOnTheRun") / 99) * (T.throw.onRunErrMult / 1.35);
+    aim = vadd(aim, F.vfromAngle(fx(((rng.int(360) - 180) * Math.PI) / 180), mul(fx(err), fx(rng.int(1000) / 1000))));
+    const power = Math.max(0, Math.min(1, t.power));
+    const speed = fx((T.throw.ballSpeedBase + T.throw.ballSpeedPer * R(qb, "throwPower")) * (T.user.lobSpeedMult + (1 - T.user.lobSpeedMult) * power));
+    const ticks = Math.max(3, Math.round(mul(div(vdist(qb.pos, aim), speed), fromIntHz(hz)) / ONE));
+    let target = O.find((o) => o.task === "route") ?? qb, bd = fx(1e4);
+    for (const o of O) if (o.task === "route") { const dd = vdist(o.pos, aim); if (dd < bd) { bd = dd; target = o; } }
+    Object.assign(ball, { state: "air", from: qb.pos, to: aim, t0: now, t1: now + ticks, target: target.i, thrower: qb.i });
+    ballApex = fx(T.user.lobApex * (1 - power) + T.user.bulletApex * power);
+    qbHasBall = false; pressureAtThrow = raw; userThrow = true;
+    throwInfo = { qb, target, airYds: aim.y - los };
+    log.push(`${qb.c.name} throws (${Math.round((aim.y - los) / ONE)} air yds${raw ? ", under pressure" : ""})`);
+  }
+  let ballApex = fx(2.5);
+
+  // ------------------------------------------------------------------ main loop (one tick per step)
   const maxTicks = sec(T.field.maxPlaySeconds);
   let tick = 0;
-  for (; tick < maxTicks && !ended; tick++) {
+  let done = false;
+  function step(input?: UserInput | null): boolean {
+    if (done) return true;
+    if (tick >= maxTicks || ended) { done = true; return true; }
+    curTick = tick;
+    applyUser(input, tick);
     for (const a of actors) {
       let goal: V2;
       let mult: Fx = ONE;
@@ -751,14 +850,14 @@ export function simulatePlay(inp: PlayInput): PlayResult {
     }
     for (const a of actors) integrate(a);
     engage(tick);
-    if (qbHasBall) tryThrow(tick);
+    if (qbHasBall && !inp.userOffense) tryThrow(tick);
     if (ball.state === "air" && tick >= ball.t1) resolveCatch(tick);
-    if (ended) break;
+    if (ended) { done = true; return true; }
     const c = carrier();
     if (c) {
-      if (c.pos.x < 0 || c.pos.x > W) { ended = { reason: "oob", y: c.pos.y, x: c.pos.x, oob: true }; break; }
-      if (c.side === "O" && c.pos.y >= fx(100)) { ended = { reason: "td", y: c.pos.y, x: c.pos.x, td: "O" }; break; }
-      if (c.side === "D" && c.pos.y <= 0) { ended = { reason: "td", y: c.pos.y, x: c.pos.x, td: "D" }; break; }
+      if (c.pos.x < 0 || c.pos.x > W) { ended = { reason: "oob", y: c.pos.y, x: c.pos.x, oob: true }; done = true; return true; }
+      if (c.side === "O" && c.pos.y >= fx(100)) { ended = { reason: "td", y: c.pos.y, x: c.pos.x, td: "O" }; done = true; return true; }
+      if (c.side === "D" && c.pos.y <= 0) { ended = { reason: "td", y: c.pos.y, x: c.pos.x, td: "D" }; done = true; return true; }
       tackles(tick);
     }
     if (inp.record) {
@@ -768,7 +867,36 @@ export function simulatePlay(inp: PlayInput): PlayResult {
       const by = ball.state === "air" ? F.lerp(ball.from.y, ball.to.y, div(fromIntHz(tick - ball.t0), fromIntHz(Math.max(1, ball.t1 - ball.t0)))) : (carrier()?.pos.y ?? 0);
       frames.push({ t: tick, p, ball: [bp, by, ball.state === "air" ? 1 : 0] });
     }
+    tick++;
+    if (tick >= maxTicks || ended) done = true;
+    return done;
   }
+
+  function snapshot(): PlaySnapshot {
+    let bx2: Fx, by2: Fx, h: Fx = 0;
+    if (ball.state === "air") {
+      const u = div(fromIntHz(Math.min(tick, ball.t1) - ball.t0), fromIntHz(Math.max(1, ball.t1 - ball.t0)));
+      bx2 = F.lerp(ball.from.x, ball.to.x, u); by2 = F.lerp(ball.from.y, ball.to.y, u);
+      h = mul(mul(ballApex, fx(4)), mul(u, ONE - u));
+    } else {
+      const c = actors[ball.holder]!;
+      bx2 = c.pos.x; by2 = c.pos.y; h = fx(1);
+    }
+    const c = carrier();
+    const endedNow = ended as End | null;
+    const downId = endedNow && (endedNow.reason === "tackle" || endedNow.reason === "sack") && c ? c.i : -1;
+    return {
+      tick, done, los,
+      actors: actors.map((a) => ({ x: a.pos.x, y: a.pos.y, vx: a.vel.x, vy: a.vel.y, side: a.side, role: a.role, num: a.c.num, id: a.c.id, down: a.i === downId })),
+      ball: { x: bx2, y: by2, h, state: ball.state, holder: ball.holder },
+      qbCanThrow: qbHasBall,
+      carrier: c ? c.i : -1,
+      userCarrier: Boolean(inp.userOffense && c && c.side === "O" && !(c === qb && qbHasBall)),
+      cooldowns: { juke: Math.max(0, moveReady.juke - tick), spin: Math.max(0, moveReady.spin - tick), burst: Math.max(0, moveReady.burst - tick) },
+      log,
+    };
+  }
+
   /** Backpedalling (slower) only while the receiver is still well in front; then he turns and runs. */
   function d_backpedal(a: Actor) {
     if (a.side !== "D" || completion || ball.state === "air" || a.vel.y <= 0) return false;
@@ -778,6 +906,10 @@ export function simulatePlay(inp: PlayInput): PlayResult {
   }
 
   // ------------------------------------------------------------------ outcome
+  let cached: PlayResult | null = null;
+  function result(): PlayResult {
+  if (cached) return cached;
+  if (!done) throw new Error("play still running");
   const fin: End = (ended as End | null) ?? (() => { const c = carrier(); return { reason: "time", y: c ? c.pos.y : los, x: c ? c.pos.x : bx }; })();
   turnover = turnover as Turnover;
   const c = carrier();
@@ -826,7 +958,11 @@ export function simulatePlay(inp: PlayInput): PlayResult {
   };
   const res: PlayResult = { outcome, stats, endX: F.clamp(fin.x, fx(1), W - fx(1)), log, debug: dbg };
   if (inp.record) res.frames = frames;
+  cached = res;
   return res;
+  }
+  return { step, snapshot, result };
 }
+
 
 const fromIntHz = (n: number) => n * ONE;

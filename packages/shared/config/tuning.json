@@ -194,5 +194,19 @@
       "perMille": 3,
       "yards": 15
     }
+  },
+  "user": {
+    "_doc": "human controls: juke/spin make the next tackle harder for moveSeconds (bonus in per-mille, scaled by the carrier's juke/spin rating); burst = brief speed boost; throws: power 0 = lob (slower, higher), 1 = bullet",
+    "moveSeconds": 0.45,
+    "moveCooldown": 1.2,
+    "moveBonusBase": 180,
+    "moveBonusPer": 6,
+    "cutSideSpeed": 3.5,
+    "burstSeconds": 1.2,
+    "burstCooldown": 4.0,
+    "burstSpeedMult": 1.08,
+    "lobSpeedMult": 0.62,
+    "lobApex": 6.0,
+    "bulletApex": 1.6
   }
 }

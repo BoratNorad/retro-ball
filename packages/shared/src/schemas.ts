@@ -174,6 +174,8 @@ export const TuningSchema = z.object({
   kicking: nums("kickoffBase", "kickoffPer", "kickoffJitter", "returnMeanBase", "returnPer", "returnJitter", "returnTdPerMille", "puntBase", "puntPer", "puntJitter",
     "puntReturnMean", "puntReturnJitter", "fairCatchPerMille", "fgMakeShort", "fgDropPerYardAfter35", "fgDropPerYardAfter50", "fgAccPer", "fgRangeBase", "fgRangePer",
     "patBase", "patPer", "kickSeconds", "puntSeconds", "kickoffSeconds"),
+  user: nums("moveSeconds", "moveCooldown", "moveBonusBase", "moveBonusPer", "cutSideSpeed", "burstSeconds", "burstCooldown", "burstSpeedMult",
+    "lobSpeedMult", "lobApex", "bulletApex").extend({ _doc: z.string().optional() }),
   penalties: z.object({
     falseStart: penalty, offside: penalty, holdingOffense: penalty, holdingDefense: penalty,
     passInterference: z.object({ onCloseIncompletePerMille: z.number() }), roughing: penalty,
