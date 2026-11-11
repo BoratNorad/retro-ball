@@ -1,10 +1,46 @@
 {
   "_doc": "Triple Draft settings (engine arrives in M7). viability is used by the dataset report now.",
   "optionsPerRound": 3,
-  "quick": { "rounds": 24, "slots": ["QB", "RB", "WR", "WR", "WR", "TE", "LT", "LG", "C", "RG", "RT", "DE", "DT", "DT", "DE", "OLB", "MLB", "OLB", "CB", "CB", "FS", "SS", "K", "P"] },
-  "full":  { "rounds": 32, "benchSlots": 8 },
-  "mythicCapPerTeam": 3,
+  "quick": {
+    "rounds": 24,
+    "slots": [
+      "QB",
+      "RB",
+      "WR",
+      "WR",
+      "WR",
+      "TE",
+      "LT",
+      "LG",
+      "C",
+      "RG",
+      "RT",
+      "DE",
+      "DT",
+      "DT",
+      "DE",
+      "OLB",
+      "MLB",
+      "OLB",
+      "CB",
+      "CB",
+      "FS",
+      "SS",
+      "K",
+      "P"
+    ]
+  },
+  "full": {
+    "rounds": 32,
+    "benchSlots": 8
+  },
   "rerollsPerDraft": 2,
-  "pickTimerSec": 30, "pickWarningSec": 10,
-  "viability": { "minOverallAtSlot": 65, "minViablePerSlot": 40, "minEpicPlusPerSlot": 4 }
+  "pickTimerSec": 30,
+  "pickWarningSec": 10,
+  "viability": {
+    "minOverallAtSlot": 65,
+    "minViablePerSlot": 40,
+    "minEpicPlusPerSlot": 4
+  },
+  "eliteCapPerTeam": 3
 }

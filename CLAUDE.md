@@ -27,8 +27,8 @@ Data pipeline order after a new ratings week: `data:import` → `data:fit` → `
 ## Layout
 
 ```
-packages/shared   Zod schemas, data/ (players, teams, types, abilities, icons, pool), config/ (all tuning)
-packages/sim      headless core: seeded RNG, Q16.16 fixed-point maths, creature derivation, team grades,
+packages/shared   Zod schemas, data/ (players, teams, abilities, icons, pool, playbook/), config/ (all tuning)
+packages/sim      headless core: seeded RNG, Q16.16 fixed-point maths, cards.ts (player cards), team grades,
                   rules.ts (rules engine), roster.ts, engine/play.ts (30 Hz 22-player engine), engine/kicks.ts,
                   coach.ts (AI play calling + clock management), game.ts (full game loop + box score)
 apps/client       Vite + Phaser 3 + Preact (M3)
@@ -61,25 +61,28 @@ data/raw          source spreadsheet
    Gridiron Dex work carries over (ratings, abilities, badges, demo plays, 16-bit portraits).
    Consequence: this build is for private use; shipping publicly would need licensing. Keep the
    repo private.
-2. **"Creatures" = enriched players** (`pool.json`, built by `tools/report/build_pool.ts`):
-   overall at every game position, natural positions, 1–2 types, rarity, body archetype, six base
-   stats (VIT/POW/GRD/FOC/RES/SPD), abilities with tiers, signature move.
+2. **Player cards = real players + game-derived fields** (`pool.json`, built by
+   `tools/report/build_pool.ts`): overall at every game position, natural positions, talent tier,
+   Madden archetype, real bio (height/weight/age), abilities with tiers, signature move.
+   **No invented attributes**: the spec's Pokémon-style creature layer (elemental types and a type
+   chart, six "base stats", body archetypes, gacha rarity) was removed at the owner's request — this
+   is a real-football game with the All-22 browser-game look. All on-field outcomes come from Madden
+   ratings only.
 3. **Overall at every position is fitted to Madden's own overalls** (`tools/import/fit_position_weights.py`):
    non-negative ridge regression per position over a sensible rating subset. Fits r ≈ 0.99,
    RMSE ≈ 1 overall point (LS weaker, r 0.85). A player's real position always uses his real Madden
    overall. NT/ILB/KR have no Madden equivalent and are derived (documented in the JSON).
-4. **13 original types** (Blaze, Shadow, Grove, Venom, Tide, Volt, Titan, Gale, Quake, Mind, Storm,
-   Frost, Iron) assigned from each player's ratings *relative to his position* (z-scores of type
-   trait mixes), restricted to types eligible for his position group. Secondary type if the second
-   z ≥ 0.75 (≈40% are dual-type). Chart is a ring (type i beats i+1 and i+3): exactly two
-   strengths and two weaknesses each, ±6% on one-on-ones. Subtle weather/situation passives in data.
-5. **Rarity from real overall:** Mythic 90+, Epic 80–89, Rare 70–79, Common < 70 (93 / 320 / 896 / 632).
+4. **Talent tiers from real overall** (`config/tiers.json`): Elite 90+, Pro Bowl 80–89, Starter
+   70–79, Depth < 70 (93 / 320 / 896 / 632). The draft's spec "rarity" rules use these tiers
+   (e.g. max 3 Elite per team).
+5. **Player style = Madden archetype** (Field General, Power Rusher, Deep Threat, Man to Man, ...),
+   shown on cards; no other classification.
 6. **Abilities:** the Gridiron Dex library (56: 23 passives, 33 actives) plus named signature moves
-   for 88+ overall. Spec asks for ~40 passives; Rare+ players get a second passive when they
+   for 88+ overall. Spec asks for ~40 passives; Starter-tier+ players get a second passive when they
    stand out. **Actives + momentum are kept as a ruleset (owner said yes), on by default**,
    configurable later; the spec's optional momentum meter is that same meter (3 bars, capped).
-7. **Team chemistry with real players:** type diversity, QB↔receiver shared types, and
-   **OL cohesion = linemen from the same real NFL team**. All capped (max +3 overall).
+7. **Team chemistry = real-life teammates:** a QB throwing to receivers from his actual NFL team,
+   and offensive linemen who play together. Capped (max +2.4 overall).
 8. **Netcode: deterministic rollback (planned for M8).** Both clients run the identical fixed-point
    sim at 30 Hz, exchange per-tick inputs through the server, predict the opponent's input, and on a
    late input restore a snapshot and re-simulate. The server runs the same sim as referee and
@@ -97,7 +100,7 @@ data/raw          source spreadsheet
 
 Per team per game, arcade-realistic: 20–31 pts avg, 55–75 offensive plays, run/pass 42/58 ±8,
 completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+ inside 40 / 60–75 at
-50+, 4–8 penalties. Flag outliers; also report win rate by type and by rarity.
+50+, 4–8 penalties. Flag outliers; also report win rate by talent edge.
 
 ## Milestone status
 
@@ -109,9 +112,8 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   harness. **10,000-game run (seed full1): 16/18 metrics in range** — 23.6 pts/team, 64.5 plays,
   55% pass, 68.8% comp, 4.0 ypc, 8.5% sacks, 1.2 TO, 0.6 INT, 4.4 penalties, FG 98.6/86.3/67.1%,
   OT 8.9%, 360 yds/team. Slightly out: 8.6 yds/att (target 6–8), 49.6% 3rd-down (35–45).
-  Talent sensitivity is low: the higher-rated team wins only ~55% (NFL ~65%) — fix in the M12
-  balance pass (or earlier, since the draft depends on it). Type win rates range 45–57.5%
-  (Iron/Mind low, Venom/Storm high) — revisit with the draft.
+  Talent sensitivity is low: the higher-rated team wins only ~56% (NFL ~65%) — fix before the
+  draft (M7) since drafting better players must clearly pay off.
 - [ ] M3 Playable offense vs AI (Bowl camera) — client deployed to Render from here
 - [ ] M4 Full play calling · [ ] M5 Pre-snap layer · [ ] M6 Special teams · [ ] M7 Triple Draft offline
 - [ ] M8 Online (rollback) · [ ] M9 Pro camera + presentation · [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
@@ -119,7 +121,7 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
 ## Known issues / todo
 
 - **Balance follow-ups:** raise rating impact so better teams win ~60-65%; trim yards per attempt
-  (YAC after deep/hitch catches) and 3rd-down conversion; even out type win rates. Tools:
+  (YAC after deep/hitch catches) and 3rd-down conversion. Tools:
   `tools/sim/matrix.ts` (pass/run play x coverage table, `KIND=run`), `probe.ts`, `trace.ts`,
   and the harness "per play call" table.
 - Run game: backside LBs are unblocked on zone runs (no climbing/combo blocks yet) — add in M4.

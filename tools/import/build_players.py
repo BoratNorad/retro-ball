@@ -102,6 +102,10 @@ DEFENSE = [
 SPECIAL = [("K", ["K"]), ("P", ["P"]), ("LS", ["LS"])]
 
 
+# typos in the Madden export
+ARCH_FIX = {"Manto Man": "Man to Man"}
+
+
 def norm(s):
     s = unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().lower()
     s = re.sub(r"\b(jr|sr|ii|iii|iv|v)\b\.?", "", s)
@@ -217,7 +221,7 @@ def main():
             "num": int(row["jerseyNum"]) if pd.notna(row["jerseyNum"]) else None,
             "ovr": int(row["overallRating"]),
             "ovrDiff": int(row["stats/overall/diff"]) if pd.notna(row.get("stats/overall/diff")) else 0,
-            "arch": (row["archetype/label"] or "").split(" - ")[0] if pd.notna(row["archetype/label"]) else "",
+            "arch": ARCH_FIX.get(a := (row["archetype/label"] or "").split(" - ")[0], a) if pd.notna(row["archetype/label"]) else "",
             "age": int(row["age"]),
             "bday": str(row["birthdate"])[:10],
             "htIn": int(row["height"]),

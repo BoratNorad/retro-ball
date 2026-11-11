@@ -1,6 +1,6 @@
 // Kicking game for M2: rating-driven models (full swipe-kicking physics arrives in M6).
 // Integer per-mille probabilities and the seeded Rng keep it deterministic.
-import type { Creature, GameData } from "@tdf/shared";
+import type { PlayerCard, GameData } from "@tdf/shared";
 import { fromInt, fx, ONE, type Fx } from "../fixed.js";
 import type { Rng } from "../rng.js";
 import type { PlayOutcome } from "../rules.js";
@@ -13,11 +13,11 @@ export interface KickInput {
 }
 export interface KickResult { outcome: PlayOutcome; stats: StatEvent[]; log: string[] }
 
-const r = (inp: KickInput, c: Creature, k: string) => inp.ratings(c.id)[k] ?? 50;
+const r = (inp: KickInput, c: PlayerCard, k: string) => inp.ratings(c.id)[k] ?? 50;
 const jitter = (rng: Rng, amp: number) => ((rng.int(2001) - 1000) / 1000) * amp;
 
 /** Best returner on a roster by the KR role overall (bench players count). */
-export function returner(ro: Roster): Creature {
+export function returner(ro: Roster): PlayerCard {
   const all = [...Object.values(ro.starters), ...ro.bench];
   return all.reduce((b, c) => ((c.overallAt.KR ?? 0) > (b.overallAt.KR ?? 0) ? c : b));
 }
@@ -79,12 +79,12 @@ export function punt(inp: KickInput, ballOn: Fx): KickResult {
 /** Field-goal distance (yards) from a spot: end zone + snap depth. */
 export const fgDistance = (ballOn: Fx, data: GameData) => Math.round(100 - ballOn / ONE + 10 + data.rules.spots.fgSnapDepth);
 
-export function fgRange(k: Creature, inp: Pick<KickInput, "data" | "ratings">): number {
+export function fgRange(k: PlayerCard, inp: Pick<KickInput, "data" | "ratings">): number {
   const T = inp.data.tuning.kicking;
   return T.fgRangeBase + T.fgRangePer * ((inp.ratings(k.id).kickPower ?? 70) - 70) * 2;
 }
 
-export function fgMakePerMille(dist: number, k: Creature, inp: Pick<KickInput, "data" | "ratings">): number {
+export function fgMakePerMille(dist: number, k: PlayerCard, inp: Pick<KickInput, "data" | "ratings">): number {
   const T = inp.data.tuning.kicking;
   const acc = inp.ratings(k.id).kickAccuracy ?? 70;
   const range = fgRange(k, inp);

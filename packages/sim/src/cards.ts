@@ -1,10 +1,10 @@
-// Turn imported real players into draftable "creatures": overall at every game position,
-// natural positions, types, rarity, body archetype, six base stats and abilities.
+// Turn imported real players into draftable player cards: overall at every game position,
+// natural positions, talent tier, Madden archetype, abilities and signature move.
 //
 // This runs at BUILD time (tools/report/build_pool.ts) and its output, data/pool.json, is what
 // the client, server and sim read. It uses ordinary float maths; determinism here only needs to
 // hold for one machine producing one file, and the file's hash is checked in tests.
-import type { AbilityDef, Creature, GameData, Player } from "@tdf/shared";
+import type { AbilityDef, GameData, Player, PlayerCard } from "@tdf/shared";
 import { hashString } from "./rng.js";
 
 type Stats = Record<string, number>;
@@ -46,7 +46,7 @@ export function groupOf(pos: string, data: GameData): string {
   return data.positions.positions.find((p) => p.id === pos)?.group ?? "ST";
 }
 
-/** Points lost when a creature starts at `slot`. 0 at a natural position. */
+/** Points lost when a player starts at `slot`. 0 at a natural position. */
 export function outOfPositionPenalty(natural: readonly string[], slot: string, data: GameData): number {
   if (natural.includes(slot)) return 0;
   const cfg = data.positions.outOfPosition;
@@ -57,8 +57,8 @@ export function outOfPositionPenalty(natural: readonly string[], slot: string, d
   return adj ? cfg.adjacentGroup : cfg.otherGroup;
 }
 
-/** Effective overall of a creature placed at a slot (overall there minus any out-of-position penalty). */
-export function slotOverall(c: Pick<Creature, "overallAt" | "natural">, slot: string, data: GameData): number {
+/** Effective overall of a player placed at a slot (overall there minus any out-of-position penalty). */
+export function slotOverall(c: Pick<PlayerCard, "overallAt" | "natural">, slot: string, data: GameData): number {
   return Math.max(0, (c.overallAt[slot] ?? 0) - outOfPositionPenalty(c.natural, slot, data));
 }
 
@@ -91,73 +91,17 @@ const weighted = (s: Stats, w: Record<string, number>) => {
   return a / t;
 };
 
-// ---------------------------------------------------------------- types
-export function assignTypes(p: Player, data: GameData, norms: Norms): string[] {
-  const group = data.positions.positions.find((q) => q.id === (data.positions.maddenToGame[p.pos] ?? p.pos))?.group ?? "ST";
-  const scored = data.types.types
-    .filter((t) => t.eligible.includes(group))
-    .map((t) => ({ id: t.id, z: norms.z(p, "type:" + t.id, (q) => weighted(q.stats, t.traits)) + weighted(p.stats, t.traits) / 1000 }))
-    .sort((a, b) => b.z - a.z);
-  const out = [scored[0]?.id ?? "MIND"];
-  const second = scored[1];
-  if (second && second.z >= data.types.secondaryMinZ) out.push(second.id);
-  return out;
-}
-
-/** Type advantage on a one-on-one: +modifier if the attacker has an edge, -modifier if the defender does, else 0. */
-export function typeModifier(attacker: readonly string[], defender: readonly string[], data: GameData): number {
-  const chart = typeChart(data);
-  const edge = attacker.some((a) => defender.some((d) => chart.get(a)?.has(d)));
-  const against = defender.some((d) => attacker.some((a) => chart.get(d)?.has(a)));
-  return edge === against ? 0 : edge ? data.types.modifier : -data.types.modifier;
-}
-
-let chartCache: { data: GameData; chart: Map<string, Set<string>> } | null = null;
-/** Ring chart: type i is strong vs i+1 and i+3 (mod n). Each type: 2 strengths, 2 weaknesses. */
-export function typeChart(data: GameData): Map<string, Set<string>> {
-  if (chartCache?.data === data) return chartCache.chart;
-  const ids = data.types.types.map((t) => t.id);
-  const n = ids.length;
-  const chart = new Map<string, Set<string>>();
-  ids.forEach((id, i) => chart.set(id, new Set([ids[(i + 1) % n] as string, ids[(i + 3) % n] as string])));
-  chartCache = { data, chart };
-  return chart;
-}
-
-// ---------------------------------------------------------------- rarity, body, base stats
-export function rarityOf(ovr: number, data: GameData): string {
-  const tiers = [...data.rarity.tiers].sort((a, b) => b.min - a.min);
+// ---------------------------------------------------------------- talent tier
+export function tierOfOvr(ovr: number, data: GameData): string {
+  const tiers = [...data.tiers.tiers].sort((a, b) => b.min - a.min);
   return (tiers.find((t) => ovr >= t.min) ?? tiers[tiers.length - 1])!.id;
-}
-
-export function bodyOf(htIn: number, wt: number, data: GameData): string {
-  const bmi = (703 * wt) / (htIn * htIn);
-  for (const rule of data.body.rules) {
-    if (rule.minWt != null && wt < rule.minWt) continue;
-    if (rule.maxWt != null && wt > rule.maxWt) continue;
-    if (rule.minHt != null && htIn < rule.minHt) continue;
-    if (rule.maxHt != null && htIn > rule.maxHt) continue;
-    if (rule.minBmi != null && bmi < rule.minBmi) continue;
-    if (rule.maxBmi != null && bmi > rule.maxBmi) continue;
-    return rule.id;
-  }
-  return data.body.rules[data.body.rules.length - 1]!.id;
-}
-
-export function baseStats(stats: Stats, data: GameData): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const [id, def] of Object.entries(data.baseStats.stats)) {
-    const vals = def.ratings.map((k) => r(stats, k)).sort((a, b) => b - a).slice(0, def.top);
-    out[id] = round(vals.reduce((a, b) => a + b, 0) / vals.length);
-  }
-  return out;
 }
 
 // ---------------------------------------------------------------- abilities (carried over from Gridiron Dex)
 const tierOf = (s: number) => (s >= 89 ? 3 : s >= 78 ? 2 : 1);
 const fmt = (x: number) => (Number.isInteger(x) ? String(x) : x.toFixed(1).replace(/\.0$/, ""));
 
-export function assignAbilities(p: Player, data: GameData, norms: Norms, rarity: string) {
+export function assignAbilities(p: Player, data: GameData, norms: Norms, tier: string) {
   const group = p.group;
   const pool = data.abilities.abilities
     .filter((a) => a.groups.includes(group) && (!a.positions || a.positions.includes(p.pos)))
@@ -174,9 +118,9 @@ export function assignAbilities(p: Player, data: GameData, norms: Norms, rarity:
   };
   const out = [] as { id: string; tier: number; text: string }[];
   if (passives[0]) out.push(inst(passives[0]));
-  // Rare+ creatures also get a second passive (spec: "Rare+ creatures can have a second ability")
-  const rank = (id: string) => data.rarity.tiers.findIndex((t) => t.id === id);
-  if (passives[1] && rank(rarity) <= rank(data.rarity.secondAbilityMinTier) && passives[1].z > 0) out.push(inst(passives[1]));
+  // Starter-tier and better players also get a second passive when they stand out
+  const rank = (id: string) => data.tiers.tiers.findIndex((t) => t.id === id);
+  if (passives[1] && rank(tier) <= rank(data.tiers.secondAbilityMinTier) && passives[1].z > 0) out.push(inst(passives[1]));
   if (actives[0]) out.push(inst(actives[0]));
   if (actives[1] && p.ovr >= 72 && actives[1].s >= 70 && actives[1].z > 0) out.push(inst(actives[1]));
   return out;
@@ -199,9 +143,9 @@ export function signatureOf(p: Player, data: GameData) {
 }
 
 // ---------------------------------------------------------------- the pool
-export function buildCreature(p: Player, data: GameData, norms: Norms): Creature {
+export function buildCard(p: Player, data: GameData, norms: Norms): PlayerCard {
   const { home, at, natural } = positionProfile(p, data);
-  const rarity = rarityOf(p.ovr, data);
+  const tier = tierOfOvr(p.ovr, data);
   return {
     id: p.id,
     name: `${p.first} ${p.last}`,
@@ -211,23 +155,22 @@ export function buildCreature(p: Player, data: GameData, norms: Norms): Creature
     pos: home,
     group: groupOf(home, data),
     ovr: p.ovr,
-    rarity,
-    types: assignTypes(p, data, norms),
-    body: bodyOf(p.htIn, p.wt, data),
-    base: baseStats(p.stats, data),
+    tier,
+    arch: p.arch,
+    htIn: p.htIn, wt: p.wt, age: p.age,
     overallAt: at,
     natural,
-    abilities: assignAbilities(p, data, norms, rarity),
+    abilities: assignAbilities(p, data, norms, tier),
     signature: signatureOf(p, data),
   };
 }
 
-export function buildPool(data: GameData): Creature[] {
+export function buildPool(data: GameData): PlayerCard[] {
   const norms = new Norms(data.players.players);
-  return data.players.players.map((p) => buildCreature(p, data, norms));
+  return data.players.players.map((p) => buildCard(p, data, norms));
 }
 
 /** Stable content hash of the pool (FNV over the JSON), checked by tests to catch accidental drift. */
-export function poolHash(creatures: readonly Creature[]): string {
-  return hashString(JSON.stringify(creatures)).toString(16).padStart(8, "0");
+export function poolHash(cards: readonly PlayerCard[]): string {
+  return hashString(JSON.stringify(cards)).toString(16).padStart(8, "0");
 }

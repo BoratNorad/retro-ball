@@ -1,6 +1,6 @@
 // Rosters: 22 starters + K/P/LS by slot, plus a bench, from the creature pool.
-import type { Creature, GameData } from "@tdf/shared";
-import { slotOverall } from "./creatures.js";
+import type { PlayerCard, GameData } from "@tdf/shared";
+import { slotOverall } from "./cards.js";
 
 /** Starting slots. Digits distinguish repeated positions; slotPos() strips them. */
 export const OFFENSE_SLOTS = ["QB", "RB", "WR1", "WR2", "WR3", "TE", "LT", "LG", "C", "RG", "RT"] as const;
@@ -16,17 +16,17 @@ export const slotPos = (slot: string) => slot.replace(/#?\d+$/, "");
 export interface TeamInfo { abbr: string; name: string; nick: string; c1: string; c2: string; c3: string }
 export interface Roster {
   info: TeamInfo;
-  starters: Record<string, Creature>;
-  bench: Creature[];
+  starters: Record<string, PlayerCard>;
+  bench: PlayerCard[];
 }
 
 /** Greedy assignment: each slot (in importance order) takes the best remaining player there. */
-export function buildRoster(info: TeamInfo, players: readonly Creature[], data: GameData): Roster {
+export function buildRoster(info: TeamInfo, players: readonly PlayerCard[], data: GameData): Roster {
   const left = new Set(players);
-  const starters: Record<string, Creature> = {};
+  const starters: Record<string, PlayerCard> = {};
   for (const slot of FILL_ORDER) {
     const pos = slotPos(slot);
-    let best: Creature | null = null, bestVal = -1;
+    let best: PlayerCard | null = null, bestVal = -1;
     for (const c of left) {
       const v = slotOverall(c, pos, data);
       if (v > bestVal || (v === bestVal && best && c.id < best.id)) { best = c; bestVal = v; }
@@ -40,7 +40,7 @@ export function buildRoster(info: TeamInfo, players: readonly Creature[], data: 
 }
 
 /** A real NFL team's roster from the pool. */
-export function nflRoster(abbr: string, pool: readonly Creature[], data: GameData): Roster {
+export function nflRoster(abbr: string, pool: readonly PlayerCard[], data: GameData): Roster {
   const t = data.teams.teams.find((x) => x.abbr === abbr);
   if (!t) throw new Error(`unknown team ${abbr}`);
   const info = { abbr: t.abbr, name: t.name, nick: t.nick, c1: t.c1, c2: t.c2, c3: t.c3 };

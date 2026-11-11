@@ -59,21 +59,6 @@ export const StatGroupsFileSchema = z.object({
   groups: z.array(z.object({ name: z.string(), stats: z.array(z.object({ key: RatingKey, short: z.string() })) })),
 });
 
-// ---------------------------------------------------------------- types
-export const TypeDefSchema = z.object({
-  id: z.string(), name: z.string(), color: Hex, icon: z.string(),
-  traits: z.record(RatingKey, z.number().positive()),
-  eligible: z.array(z.string()).min(1),
-  passive: z.record(z.string(), z.number()),
-});
-export type TypeDef = z.infer<typeof TypeDefSchema>;
-export const TypesFileSchema = z.object({
-  modifier: z.number().min(0).max(0.5),
-  secondaryMinZ: z.number(),
-  types: z.array(TypeDefSchema).min(2),
-});
-export type TypesFile = z.infer<typeof TypesFileSchema>;
-
 // ---------------------------------------------------------------- abilities
 export const AbilityDefSchema = z.object({
   id: z.string(), name: z.string(),
@@ -119,26 +104,11 @@ export const PositionsConfigSchema = z.object({
 });
 export type PositionsConfig = z.infer<typeof PositionsConfigSchema>;
 
-export const RarityConfigSchema = z.object({
+export const TiersConfigSchema = z.object({
   tiers: z.array(z.object({ id: z.string(), name: z.string(), min: z.number().int(), color: Hex, draftWeight: z.number() })),
   secondAbilityMinTier: z.string(),
 });
-export type RarityConfig = z.infer<typeof RarityConfigSchema>;
-
-export const BodyConfigSchema = z.object({
-  rules: z.array(z.object({
-    id: z.string(), name: z.string(),
-    minWt: z.number().optional(), maxWt: z.number().optional(),
-    minHt: z.number().optional(), maxHt: z.number().optional(),
-    minBmi: z.number().optional(), maxBmi: z.number().optional(),
-  })).min(1),
-});
-export type BodyConfig = z.infer<typeof BodyConfigSchema>;
-
-export const BaseStatsConfigSchema = z.object({
-  stats: z.record(z.string(), z.object({ name: z.string(), ratings: z.array(RatingKey).min(1), top: z.number().int().min(1) })),
-});
-export type BaseStatsConfig = z.infer<typeof BaseStatsConfigSchema>;
+export type TiersConfig = z.infer<typeof TiersConfigSchema>;
 
 export const GradeConfigSchema = z.object({
   unitWeights: z.object({
@@ -147,8 +117,7 @@ export const GradeConfigSchema = z.object({
   overallUnitWeights: z.object({ offense: z.number(), defense: z.number(), special: z.number() }),
   letters: z.array(z.tuple([z.string(), z.number()])).min(2),
   chemistry: z.object({
-    typeDiversityPerType: z.number(), typeDiversityCap: z.number(),
-    qbWrSharedTypeBonus: z.number(), qbWrCap: z.number(),
+    qbTargetSameTeamBonus: z.number(), qbTargetCap: z.number(),
     olSameTeamPairBonus: z.number(), olCap: z.number(), maxTotal: z.number(),
   }),
 });
@@ -158,7 +127,7 @@ export const DraftConfigSchema = z.object({
   optionsPerRound: z.number().int().min(1),
   quick: z.object({ rounds: z.number().int(), slots: z.array(z.string()) }),
   full: z.object({ rounds: z.number().int(), benchSlots: z.number().int() }),
-  mythicCapPerTeam: z.number().int(),
+  eliteCapPerTeam: z.number().int(),
   rerollsPerDraft: z.number().int(),
   pickTimerSec: z.number(), pickWarningSec: z.number(),
   viability: z.object({ minOverallAtSlot: z.number(), minViablePerSlot: z.number().int(), minEpicPlusPerSlot: z.number().int() }),
@@ -244,8 +213,9 @@ export const DefenseFileSchema = z.object({
 });
 export type DefenseFile = z.infer<typeof DefenseFileSchema>;
 
-// ---------------------------------------------------------------- derived pool (output of tools/report/build_pool.ts)
-export const CreatureSchema = z.object({
+// ---------------------------------------------------------------- derived pool
+/** A draftable player card: a real player plus game-derived fields (built by tools/report/build_pool.ts). */
+export const PlayerCardSchema = z.object({
   id: z.number().int(),
   name: z.string(),
   team: z.string(),
@@ -253,18 +223,17 @@ export const CreatureSchema = z.object({
   maddenPos: z.string(),
   pos: z.string(),                         // game position
   group: z.string(),
-  ovr: z.number().int(),                   // real overall at natural position
-  rarity: z.string(),
-  types: z.array(z.string()).min(1).max(2),
-  body: z.string(),
-  base: z.record(z.string(), z.number().int()),
+  ovr: z.number().int(),                   // real Madden overall at his position
+  tier: z.string(),                        // ELITE | PRO_BOWL | STARTER | DEPTH
+  arch: z.string(),                        // Madden archetype (Field General, Power Rusher, ...)
+  htIn: z.number().int(), wt: z.number().int(), age: z.number().int(),
   overallAt: z.record(z.string(), z.number().int()),
   natural: z.array(z.string()).min(1),
   abilities: z.array(z.object({ id: z.string(), tier: z.number().int().min(1).max(3), text: z.string() })),
   signature: z.object({ name: z.string(), text: z.string() }).nullable(),
 });
-export type Creature = z.infer<typeof CreatureSchema>;
+export type PlayerCard = z.infer<typeof PlayerCardSchema>;
 export const PoolFileSchema = z.object({
   _doc: z.string(), source: z.string(), hash: z.string(),
-  creatures: z.array(CreatureSchema),
+  players: z.array(PlayerCardSchema),
 });

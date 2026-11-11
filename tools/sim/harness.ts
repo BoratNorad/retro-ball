@@ -14,7 +14,7 @@ const WORKERS = Math.max(1, Math.min(cpus().length, Number(arg("workers", String
 const here = dirname(fileURLToPath(import.meta.url));
 
 type Agg = Record<string, number>;
-async function runWorkers(): Promise<{ agg: Agg; byRarity: Agg; byType: Record<string, [number, number]>; scores: number[]; ms: number }> {
+async function runWorkers(): Promise<{ agg: Agg; byRarity: Agg; scores: number[]; ms: number }> {
   const t0 = Date.now();
   const per = Math.ceil(GAMES / WORKERS);
   const parts = await Promise.all(Array.from({ length: WORKERS }, (_, w) => new Promise<string>((res, rej) => {
@@ -24,19 +24,18 @@ async function runWorkers(): Promise<{ agg: Agg; byRarity: Agg; byType: Record<s
     p.stdout.on("data", (d) => (out += d));
     p.on("exit", (code) => (code === 0 ? res(out) : rej(new Error(`worker ${w} exited ${code}`))));
   })));
-  const agg: Agg = {}, byRarity: Agg = {}, byType: Record<string, [number, number]> = {};
+  const agg: Agg = {}, byRarity: Agg = {};
   const scores: number[] = [];
   for (const raw of parts) {
     const r = JSON.parse(raw);
     for (const [k, v] of Object.entries(r.agg as Agg)) agg[k] = (agg[k] ?? 0) + v;
     for (const [k, v] of Object.entries(r.byRarity as Agg)) byRarity[k] = (byRarity[k] ?? 0) + v;
-    for (const [k, [w, n]] of Object.entries(r.byType as Record<string, [number, number]>)) { const t = (byType[k] ??= [0, 0]); t[0] += w; t[1] += n; }
     scores.push(...r.scores);
   }
-  return { agg, byRarity, byType, scores, ms: Date.now() - t0 };
+  return { agg, byRarity, scores, ms: Date.now() - t0 };
 }
 
-const { agg: a, byRarity, byType, scores, ms } = await runWorkers();
+const { agg: a, byRarity, scores, ms } = await runWorkers();
 const teamGames = a.games! * 2;
 const per = (k: string) => (a[k] ?? 0) / teamGames;
 const pct = (n: number, d: number) => (d ? (100 * n) / d : 0);
@@ -73,10 +72,8 @@ for (const [label, v, lo, hi] of rows) {
 }
 scores.sort((x, y) => x - y);
 console.log(`\nscore spread: p10 ${scores[Math.floor(scores.length * 0.1)]}  median ${scores[Math.floor(scores.length / 2)]}  p90 ${scores[Math.floor(scores.length * 0.9)]}  max ${scores[scores.length - 1]}`);
-console.log(`\nwin % by rarity edge (team with more Epic+ starters): ${pct(byRarity.moreWins ?? 0, byRarity.moreGames ?? 0).toFixed(1)}% of ${byRarity.moreGames ?? 0} games`);
+console.log(`\nwin % by talent edge (team with more Pro Bowl+ starters): ${pct(byRarity.moreWins ?? 0, byRarity.moreGames ?? 0).toFixed(1)}% of ${byRarity.moreGames ?? 0} games`);
 console.log(`win % by starters' grade edge (higher team OVR wins):    ${pct(byRarity.gradeWins ?? 0, byRarity.gradeGames ?? 0).toFixed(1)}%`);
-console.log("\nwin % when a team has 2+ more starters of a type than its opponent:");
-for (const [t, [w, n]] of Object.entries(byType).sort()) console.log(`  ${t.padEnd(7)} ${pct(w, n).toFixed(1).padStart(5)}%  (${n} games)`);
 console.log("\nper play call (all downs, in games):");
 const names = [...new Set(Object.keys(a).filter((k) => k.startsWith("play:")).map((k) => k.split(":")[1]!))];
 for (const nm of names.sort((x, y) => (a[`play:${y}:n`] ?? 0) - (a[`play:${x}:n`] ?? 0)))

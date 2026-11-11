@@ -1,9 +1,9 @@
 // Parse raw JSON (from fs in Node, fetch/import in the browser) into validated game data.
 // Loading is kept separate from reading so the same code runs on client, server and in tests.
 import {
-  AbilitiesFileSchema, BaseStatsConfigSchema, BodyConfigSchema, DraftConfigSchema, GradeConfigSchema,
+  AbilitiesFileSchema, DraftConfigSchema, GradeConfigSchema,
   IconsFileSchema, MaddenAbilitiesFileSchema, PlayersFileSchema, PositionsConfigSchema, PositionWeightsSchema,
-  RarityConfigSchema, RulesConfigSchema, TuningSchema, FormationsFileSchema, RoutesFileSchema, OffenseFileSchema, DefenseFileSchema, StatGroupsFileSchema, TeamsFileSchema, TypesFileSchema,
+  TiersConfigSchema, RulesConfigSchema, TuningSchema, FormationsFileSchema, RoutesFileSchema, OffenseFileSchema, DefenseFileSchema, StatGroupsFileSchema, TeamsFileSchema,
 } from "./schemas.js";
 
 /** File names, relative to packages/shared/. */
@@ -12,14 +12,11 @@ export const DATA_FILES = {
   teams: "data/teams.json",
   maddenAbilities: "data/madden_abilities.json",
   statGroups: "data/stat_groups.json",
-  types: "data/types.json",
   abilities: "data/abilities.json",
   icons: "data/icons.json",
   positionWeights: "config/position_weights.json",
   positions: "config/positions.json",
-  rarity: "config/rarity.json",
-  body: "config/body.json",
-  baseStats: "config/base_stats.json",
+  tiers: "config/tiers.json",
   grade: "config/grade.json",
   draft: "config/draft.json",
   rules: "config/rules.json",
@@ -33,9 +30,9 @@ export type DataKey = keyof typeof DATA_FILES;
 
 const SCHEMAS = {
   players: PlayersFileSchema, teams: TeamsFileSchema, maddenAbilities: MaddenAbilitiesFileSchema,
-  statGroups: StatGroupsFileSchema, types: TypesFileSchema, abilities: AbilitiesFileSchema, icons: IconsFileSchema,
-  positionWeights: PositionWeightsSchema, positions: PositionsConfigSchema, rarity: RarityConfigSchema,
-  body: BodyConfigSchema, baseStats: BaseStatsConfigSchema, grade: GradeConfigSchema, draft: DraftConfigSchema,
+  statGroups: StatGroupsFileSchema, abilities: AbilitiesFileSchema, icons: IconsFileSchema,
+  positionWeights: PositionWeightsSchema, positions: PositionsConfigSchema, tiers: TiersConfigSchema,
+  grade: GradeConfigSchema, draft: DraftConfigSchema,
   rules: RulesConfigSchema,
   tuning: TuningSchema,
   formations: FormationsFileSchema, routes: RoutesFileSchema, offense: OffenseFileSchema, defense: DefenseFileSchema,

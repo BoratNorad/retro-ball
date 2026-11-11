@@ -1,14 +1,14 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { PoolFileSchema, type Creature, type GameData } from "@tdf/shared";
+import { PoolFileSchema, type PlayerCard, type GameData } from "@tdf/shared";
 import { nodeGameData, readShared } from "@tdf/shared/node";
 import { ALL_SLOTS, nflRoster, slotPos } from "../src/roster.js";
-import { slotOverall } from "../src/creatures.js";
+import { slotOverall } from "../src/cards.js";
 
 let data: GameData;
-let pool: Creature[];
+let pool: PlayerCard[];
 beforeAll(async () => {
   data = await nodeGameData();
-  pool = PoolFileSchema.parse(readShared("data/pool.json")).creatures;
+  pool = PoolFileSchema.parse(readShared("data/pool.json")).players;
 });
 
 describe("rosters", () => {

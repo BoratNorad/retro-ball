@@ -7,10 +7,10 @@ import type { Stats } from "../src/engine/play.js";
 
 let data: GameData;
 let ratings: (id: number) => Stats;
-let pool: ReturnType<typeof PoolFileSchema.parse>["creatures"];
+let pool: ReturnType<typeof PoolFileSchema.parse>["players"];
 beforeAll(async () => {
   data = await nodeGameData();
-  pool = PoolFileSchema.parse(readShared("data/pool.json")).creatures;
+  pool = PoolFileSchema.parse(readShared("data/pool.json")).players;
   const byId = new Map(data.players.players.map((p) => [p.id, p.stats]));
   ratings = (id) => byId.get(id) ?? {};
 });

@@ -9,16 +9,9 @@ const abbrs = env.data.teams.teams.map((t) => t.abbr);
 const agg: Record<string, number> = {};
 const add = (k: string, v: number) => { agg[k] = (agg[k] ?? 0) + v; };
 const byRarity: Record<string, number> = {};
-const byType: Record<string, [number, number]> = {};
 const scores: number[] = [];
-const epicPlus = (r: Roster) => Object.values(r.starters).filter((c) => c.rarity === "MYTHIC" || c.rarity === "EPIC").length;
+const epicPlus = (r: Roster) => Object.values(r.starters).filter((c) => c.tier === "ELITE" || c.tier === "PRO_BOWL").length;
 const teamOvr = (r: Roster) => Object.entries(r.starters).reduce((s, [slot, c]) => s + slotOverall(c, slotPos(slot), env.data), 0);
-const typeCount = (r: Roster) => {
-  const m: Record<string, number> = {};
-  for (const c of Object.values(r.starters)) m[c.types[0]!] = (m[c.types[0]!] ?? 0) + 1;
-  return m;
-};
-
 for (let g = from; g < to; g++) {
   const pick = new Rng(`${seed}-match-${g}`);
   const i = pick.int(32);
@@ -42,13 +35,5 @@ for (let g = from; g < to; g++) {
   if (ep[0] !== ep[1]) { byRarity.moreGames = (byRarity.moreGames ?? 0) + 1; if (ep[winner]! > ep[1 - winner]!) byRarity.moreWins = (byRarity.moreWins ?? 0) + 1; }
   const ov = rs.map(teamOvr);
   if (ov[0] !== ov[1]) { byRarity.gradeGames = (byRarity.gradeGames ?? 0) + 1; if (ov[winner]! > ov[1 - winner]!) byRarity.gradeWins = (byRarity.gradeWins ?? 0) + 1; }
-  const tc = rs.map(typeCount);
-  for (const t of env.data.types.types) {
-    const d = (tc[0]![t.id] ?? 0) - (tc[1]![t.id] ?? 0);
-    if (Math.abs(d) < 2) continue;
-    const more = d > 0 ? 0 : 1;
-    const e = (byType[t.id] ??= [0, 0]);
-    e[1]++; if (more === winner) e[0]++;
-  }
 }
-process.stdout.write(JSON.stringify({ agg, byRarity, byType, scores }));
+process.stdout.write(JSON.stringify({ agg, byRarity, scores }));

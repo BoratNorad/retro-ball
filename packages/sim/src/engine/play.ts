@@ -3,11 +3,10 @@
 //
 // Frame: x = 0 at the offense's left sideline .. field width; y = yards from the offense's own
 // goal line (attacking toward +y). The line of scrimmage is y = ballOn.
-import type { Creature, DefenseCall, GameData, OffensePlay, Tuning } from "@tdf/shared";
+import type { PlayerCard, DefenseCall, GameData, OffensePlay, Tuning } from "@tdf/shared";
 import * as F from "../fixed.js";
 import type { Fx, V2 } from "../fixed.js";
 import { Rng } from "../rng.js";
-import { typeModifier } from "../creatures.js";
 import type { Foul, PlayOutcome } from "../rules.js";
 import type { Roster } from "../roster.js";
 
@@ -38,7 +37,7 @@ export interface PlayResult { outcome: PlayOutcome; stats: StatEvent[]; endX: Fx
 
 type Task = "block" | "route" | "qb" | "carry" | "rush" | "man" | "zone" | "pursue" | "idle";
 interface Actor {
-  i: number; c: Creature; st: Stats; side: "O" | "D"; role: string;
+  i: number; c: PlayerCard; st: Stats; side: "O" | "D"; role: string;
   pos: V2; vel: V2; maxSpeed: Fx; accel: Fx;
   task: Task;
   // blocking
@@ -79,7 +78,7 @@ export function simulatePlay(inp: PlayInput): PlayResult {
 
   // ------------------------------------------------------------------ actors
   const actors: Actor[] = [];
-  const mk = (c: Creature, side: "O" | "D", role: string, at: V2): Actor => {
+  const mk = (c: PlayerCard, side: "O" | "D", role: string, at: V2): Actor => {
     const st = inp.ratings(c.id);
     const g = (k: string) => st[k] ?? 50;
     return {
@@ -555,11 +554,10 @@ export function simulatePlay(inp: PlayInput): PlayResult {
           : (R(b, "runBlock") * 2 + R(b, "runBlockPower") + R(b, "impactBlocking")) / 4;
         const rush = passing ? (Math.max(R(d, "powerMoves"), R(d, "finesseMoves")) * 2 + R(d, "blockShedding") + R(d, "strength")) / 4
           : (R(d, "blockShedding") * 2 + R(d, "strength") + R(d, "playRecognition")) / 4;
-        const typeEdge = typeModifier(b.c.types, d.c.types, data) * 10; // +-0.6 s at the default 6%
         const base = passing ? T.blocking.passHoldBase : T.blocking.runHoldBase;
         const per = passing ? T.blocking.passHoldPer : T.blocking.runHoldPer;
         const jit = passing ? T.blocking.passHoldJitter : T.blocking.runHoldJitter;
-        let hold = base + per * (blk - rush) + typeEdge + (rng.int(1000) / 1000 - 0.5) * 2 * jit;
+        let hold = base + per * (blk - rush) + (rng.int(1000) / 1000 - 0.5) * 2 * jit;
         if (d.engagedWith >= 0) {
           // double team: extend the existing block instead
           const first = actors[d.engagedWith]!;
@@ -612,9 +610,8 @@ export function simulatePlay(inp: PlayInput): PlayResult {
       const best = Math.max(...moves), avg = moves.reduce((x, y) => x + y, 0) / moves.length;
       const elusive = best * T.tackle.elusiveMaxWeight + avg * (1 - T.tackle.elusiveMaxWeight);
       const gang = near.length - 1;
-      const typ = typeModifier(d.c.types, c.c.types, data) * 1000;
       const p = clampPm(T.tackle.base + T.tackle.per * (R(d, "tackle") - elusive) + T.tackle.powerPer * (R(d, "hitPower") - R(c, "strength")) +
-        gang * T.tackle.gangBonus + typ);
+        gang * T.tackle.gangBonus);
       dbg.tries++;
       if (rng.int(1000) < p) {
         stats.push({ k: "tackle", id: d.c.id, team: c.side === "O" ? defSide : inp.offSide });
@@ -675,7 +672,6 @@ export function simulatePlay(inp: PlayInput): PlayResult {
         const cov = (Math.max(R(def, "manCoverage"), R(def, "zoneCoverage")) + R(def, "playRecognition")) / 2;
         const closeness = 1 - dd / contest;
         pCatch -= (T.catch.contestPenalty - T.catch.contestSkillPer * (skill - cov)) * closeness;
-        pCatch += typeModifier(r.c.types, def.c.types, data) * 1000;
       }
     }
     const roll = rng.int(1000);

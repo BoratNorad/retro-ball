@@ -1,13 +1,13 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { PoolFileSchema, type Creature, type GameData } from "@tdf/shared";
+import { PoolFileSchema, type PlayerCard, type GameData } from "@tdf/shared";
 import { nodeGameData, readShared } from "@tdf/shared/node";
 import {
-  buildPool, outOfPositionPenalty, overallAt, poolHash, rarityOf, slotOverall, typeChart, typeModifier,
-} from "../src/creatures.js";
+  buildPool, outOfPositionPenalty, overallAt, poolHash, slotOverall, tierOfOvr,
+} from "../src/cards.js";
 import { letterFor, teamGrade, type Lineup } from "../src/grade.js";
 
 let data: GameData;
-let pool: Creature[];
+let pool: PlayerCard[];
 beforeAll(async () => {
   data = await nodeGameData();
   pool = buildPool(data);
@@ -59,38 +59,21 @@ describe("position overalls", () => {
   });
 });
 
-describe("types", () => {
-  it("chart: every type strong vs exactly 2 and weak vs exactly 2, never both ways", () => {
-    const chart = typeChart(data);
-    for (const [t, strong] of chart) {
-      expect(strong.size).toBe(2);
-      const weak = [...chart].filter(([, s]) => s.has(t)).map(([k]) => k);
-      expect(weak).toHaveLength(2);
-      for (const s of strong) expect(chart.get(s)!.has(t)).toBe(false);
-    }
-  });
-
-  it("modifier is symmetric and bounded", () => {
-    const m = data.types.modifier;
-    expect(typeModifier(["BLAZE"], ["SHADOW"], data)).toBe(m);
-    expect(typeModifier(["SHADOW"], ["BLAZE"], data)).toBe(-m);
-    expect(typeModifier(["BLAZE"], ["BLAZE"], data)).toBe(0);
-  });
-
-  it("every creature has 1-2 types, each eligible for its position group", () => {
-    for (const c of pool) {
-      expect(c.types.length).toBeGreaterThanOrEqual(1);
-      for (const t of c.types) expect(data.types.types.find((d) => d.id === t)!.eligible).toContain(c.group);
-    }
+describe("real-football identity", () => {
+  it("cards keep the Madden archetype and real bio, with no invented attributes", () => {
+    const allen = pool.find((c) => c.name === "Josh Allen" && c.pos === "QB")!;
+    expect(allen.arch).toBe("Improviser");
+    expect([allen.htIn, allen.wt]).toEqual([77, 237]);
+    expect(Object.keys(allen)).not.toContain("types");
   });
 });
 
-describe("rarity, abilities, grades", () => {
-  it("rarity follows the configured thresholds", () => {
-    expect(rarityOf(99, data)).toBe("MYTHIC");
-    expect(rarityOf(85, data)).toBe("EPIC");
-    expect(rarityOf(70, data)).toBe("RARE");
-    expect(rarityOf(55, data)).toBe("COMMON");
+describe("tiers, abilities, grades", () => {
+  it("talent tiers follow the configured overall thresholds", () => {
+    expect(tierOfOvr(99, data)).toBe("ELITE");
+    expect(tierOfOvr(85, data)).toBe("PRO_BOWL");
+    expect(tierOfOvr(70, data)).toBe("STARTER");
+    expect(tierOfOvr(55, data)).toBe("DEPTH");
   });
 
   it("every creature has a passive and an active ability; 88+ get a signature", () => {
@@ -118,6 +101,9 @@ describe("rarity, abilities, grades", () => {
     expect(g.overall.score).toBeGreaterThan(70);
     expect(g.overall.score).toBeLessThan(95);
     expect(g.chemistry.total).toBeLessThanOrEqual(data.grade.chemistry.maxTotal);
+    // a real team's QB throws to his own receivers and its line plays together -> chemistry
+    expect(g.chemistry.qbTargets).toBeGreaterThan(0);
+    expect(g.chemistry.olCohesion).toBeGreaterThan(0);
     expect(g.offense.letter).toMatch(/^[A-F][+-]?$/);
   });
 });

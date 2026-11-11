@@ -1,16 +1,16 @@
 // Team grade: weighted mean of starters' effective overall at their slot, per unit, plus a small,
 // capped chemistry bonus. Letter grades A+..F come from config/grade.json.
-import type { Creature, GameData } from "@tdf/shared";
-import { slotOverall } from "./creatures.js";
+import type { PlayerCard, GameData } from "@tdf/shared";
+import { slotOverall } from "./cards.js";
 
 /** A lineup: slot id (e.g. "QB", "WR", "CB") -> creature. Repeated slots (3 WRs) use suffixes "WR#2". */
-export type Lineup = Record<string, Creature>;
+export type Lineup = Record<string, PlayerCard>;
 export const slotBase = (slot: string) => slot.replace(/#?\d+$/, "");
 
 export interface UnitGrade { score: number; letter: string }
 export interface TeamGrade {
   offense: UnitGrade; defense: UnitGrade; special: UnitGrade; overall: UnitGrade;
-  chemistry: { typeDiversity: number; qbWr: number; olCohesion: number; total: number };
+  chemistry: { qbTargets: number; olCohesion: number; total: number };
 }
 
 export function letterFor(score: number, data: GameData): string {
@@ -29,26 +29,18 @@ function unit(lineup: Lineup, weights: Record<string, number>, data: GameData): 
   return tot ? sum / tot : null;
 }
 
+/** Real-life chemistry: a QB throwing to his actual NFL teammates, linemen who play together. */
 export function chemistry(lineup: Lineup, data: GameData) {
   const cfg = data.grade.chemistry;
-  const sideTypes = (side: "O" | "D") => {
-    const s = new Set<string>();
-    for (const [slot, c] of Object.entries(lineup)) {
-      const pos = data.positions.positions.find((p) => p.id === slotBase(slot));
-      if (pos?.side === side) c.types.forEach((t) => s.add(t));
-    }
-    return s.size;
-  };
-  const typeDiversity = Math.min(cfg.typeDiversityCap, (sideTypes("O") + sideTypes("D") - 2) * cfg.typeDiversityPerType / 2);
   const qb = Object.entries(lineup).find(([s]) => slotBase(s) === "QB")?.[1];
-  const wrs = Object.entries(lineup).filter(([s]) => ["WR", "TE"].includes(slotBase(s))).map(([, c]) => c);
-  const qbWr = qb ? Math.min(cfg.qbWrCap, wrs.filter((w) => w.types.some((t) => qb.types.includes(t))).length * cfg.qbWrSharedTypeBonus) : 0;
+  const targets = Object.entries(lineup).filter(([s]) => ["WR", "TE", "RB"].includes(slotBase(s))).map(([, c]) => c);
+  const qbTargets = qb ? Math.min(cfg.qbTargetCap, targets.filter((t) => t.team === qb.team).length * cfg.qbTargetSameTeamBonus) : 0;
   const ol = Object.entries(lineup).filter(([s]) => ["LT", "LG", "C", "RG", "RT"].includes(slotBase(s))).map(([, c]) => c.team);
   let pairs = 0;
   for (let i = 0; i < ol.length; i++) for (let j = i + 1; j < ol.length; j++) if (ol[i] === ol[j]) pairs++;
   const olCohesion = Math.min(cfg.olCap, pairs * cfg.olSameTeamPairBonus);
-  const total = Math.min(cfg.maxTotal, typeDiversity + qbWr + olCohesion);
-  return { typeDiversity, qbWr, olCohesion, total };
+  const total = Math.min(cfg.maxTotal, qbTargets + olCohesion);
+  return { qbTargets, olCohesion, total };
 }
 
 export function teamGrade(lineup: Lineup, data: GameData): TeamGrade {
