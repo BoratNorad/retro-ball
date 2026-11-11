@@ -8,8 +8,13 @@ import { Controller, ordinal, spotText, toGoText, type UiState } from "../game/c
 import { FieldScene } from "../render/FieldScene.js";
 import { helmetCanvas } from "../render/sprites.js";
 import { BoxScore } from "./BoxScore.js";
+import { DraftScreen, DraftSetup, Lineup, PostDraft, type DraftConfigUi } from "./Draft.js";
+import type { Draft, Roster } from "@tdf/sim";
 
-type Screen = { kind: "loading" } | { kind: "error"; msg: string } | { kind: "menu" } | { kind: "game"; ctl: Controller };
+type Screen = { kind: "loading" } | { kind: "error"; msg: string } | { kind: "menu" } | { kind: "game"; ctl: Controller; back?: Screen }
+  | { kind: "draftSetup"; mode: "ai" | "hotseat" } | { kind: "draft"; cfg: DraftConfigUi }
+  | { kind: "postDraft"; cfg: DraftConfigUi; d: Draft; rosters: [Roster, Roster] }
+  | { kind: "lineup"; cfg: DraftConfigUi; d: Draft; rosters: [Roster, Roster]; side: 0 | 1 };
 
 export function App() {
   const [cd, setCd] = useState<ClientData | null>(null);
@@ -19,8 +24,26 @@ export function App() {
   }, []);
   if (screen.kind === "loading") return <div class="center"><div class="title">LOADING…</div></div>;
   if (screen.kind === "error") return <div class="center"><div class="title">ERROR</div><p>{screen.msg}</p></div>;
-  if (screen.kind === "menu") return <Menu cd={cd!} onStart={(u, o, q) => setScreen({ kind: "game", ctl: new Controller(cd!, u, o, q) })} />;
-  return <Game ctl={screen.ctl} onExit={() => setScreen({ kind: "menu" })} />;
+  const c = cd!;
+  if (screen.kind === "menu") return <Menu cd={c} onStart={(u, o, q) => setScreen({ kind: "game", ctl: new Controller(c, [c.roster(u), c.roster(o)], q) })}
+    onDraft={(mode) => setScreen({ kind: "draftSetup", mode })} />;
+  if (screen.kind === "draftSetup") return <DraftSetup cd={c} mode={screen.mode} onBack={() => setScreen({ kind: "menu" })} onStart={(cfg) => setScreen({ kind: "draft", cfg })} />;
+  if (screen.kind === "draft") return <DraftScreen cd={c} cfg={screen.cfg} onDone={(d) => setScreen({ kind: "postDraft", cfg: screen.cfg, d, rosters: [d.toRoster(0), d.toRoster(1)] })} />;
+  if (screen.kind === "postDraft") {
+    const sc = screen;
+    return <PostDraft cd={c} d={sc.d} cfg={sc.cfg} rosters={sc.rosters} setRosters={(r) => setScreen({ ...sc, rosters: r })}
+      onLineup={(side) => setScreen({ kind: "lineup", cfg: sc.cfg, d: sc.d, rosters: sc.rosters, side })}
+      onKickoff={() => setScreen({ kind: "game", ctl: new Controller(c, sc.rosters, sc.cfg.quarter, { hotseat: sc.cfg.mode === "hotseat" }), back: sc })} />;
+  }
+  if (screen.kind === "lineup") {
+    const sc = screen;
+    return <Lineup cd={c} roster={sc.rosters[sc.side]} onDone={(r) => {
+      const rosters: [Roster, Roster] = sc.side === 0 ? [r, sc.rosters[1]] : [sc.rosters[0], r];
+      setScreen({ kind: "postDraft", cfg: sc.cfg, d: sc.d, rosters });
+    }} />;
+  }
+  const back = screen.back;
+  return <Game ctl={screen.ctl} onExit={() => setScreen(back ?? { kind: "menu" })} exitLabel={back ? "BACK TO DRAFT" : "PLAY AGAIN"} />;
 }
 
 // ---------------------------------------------------------------- menu
@@ -29,7 +52,7 @@ function Helmet({ team, scale = 3 }: { team: { abbr: string; c1: string; c2: str
   return <img class="helmet" src={src} alt={team.abbr} />;
 }
 
-function Menu({ cd, onStart }: { cd: ClientData; onStart: (user: string, opp: string, quarterMinutes: number) => void }) {
+function Menu({ cd, onStart, onDraft }: { cd: ClientData; onStart: (user: string, opp: string, quarterMinutes: number) => void; onDraft: (mode: "ai" | "hotseat") => void }) {
   const teams = [...cd.data.teams.teams].sort((a, b) => a.name.localeCompare(b.name));
   const [user, setUser] = useState<string | null>(null);
   const [opp, setOpp] = useState<string | null>(null);
@@ -38,6 +61,11 @@ function Menu({ cd, onStart }: { cd: ClientData; onStart: (user: string, opp: st
   return (
     <div class="menu">
       <h1>TRIPLE DRAFT <span>FOOTBALL</span></h1>
+      <div class="plays modes">
+        <button class="play" onClick={() => onDraft("ai")}><b>TRIPLE DRAFT vs AI</b><small>draft 24 real players, then play</small></button>
+        <button class="play" onClick={() => onDraft("hotseat")}><b>HOT-SEAT DRAFT</b><small>two players, one device</small></button>
+      </div>
+      <div class="sub">OR PLAY AN EXHIBITION WITH REAL NFL ROSTERS</div>
       <div class="sub">PICK {picking}</div>
       <div class="teams">
         {teams.map((t) => (
@@ -70,7 +98,7 @@ function useUi(ctl: Controller): UiState {
   return ui;
 }
 
-function Game({ ctl, onExit }: { ctl: Controller; onExit: () => void }) {
+function Game({ ctl, onExit, exitLabel = "PLAY AGAIN" }: { ctl: Controller; onExit: () => void; exitLabel?: string }) {
   const host = useRef<HTMLDivElement>(null);
   const ui = useUi(ctl);
   useEffect(() => {
@@ -93,6 +121,12 @@ function Game({ ctl, onExit }: { ctl: Controller; onExit: () => void }) {
         {ui.mode === "callOffense" && <OffenseSheet ctl={ctl} />}
         {ui.mode === "callDefense" && <DefenseSheet ctl={ctl} />}
         {ui.mode === "callTry" && <TrySheet ctl={ctl} />}
+        {ui.mode === "pass" && ui.passTo && (
+          <div class="sheet privacy" onClick={() => ctl.passed()}>
+            <div class="title">PASS THE DEVICE TO {ui.passTo.team.toUpperCase()}</div>
+            <p class="hint">{ui.passTo.next === "defense" ? "Call your defense — the offense looks away." : "Your offense — the defense looks away."} Tap when ready.</p>
+          </div>
+        )}
         {ui.mode === "callKickoff" && <KickoffSheet ctl={ctl} />}
         {ui.mode === "callReturn" && <ReturnSheet ctl={ctl} />}
         {ui.mode === "callST" && <StSheet ctl={ctl} />}
@@ -112,7 +146,7 @@ function Game({ ctl, onExit }: { ctl: Controller; onExit: () => void }) {
       {ui.mode === "final" && (
         <div class="overlay">
           <BoxScore r={ctl.result()} />
-          <button class="big" onClick={onExit}>PLAY AGAIN</button>
+          <button class="big" onClick={onExit}>{exitLabel}</button>
         </div>
       )}
     </div>

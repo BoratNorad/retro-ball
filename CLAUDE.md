@@ -38,9 +38,11 @@ packages/shared   Zod schemas, data/ (players, teams, abilities, icons, pool, pl
 packages/sim      headless core: seeded RNG, Q16.16 fixed-point maths, cards.ts (player cards), team grades,
                   rules.ts (rules engine), roster.ts, engine/play.ts (30 Hz 22-player engine), engine/special.ts
                   (30 Hz kicks + returns), engine/kicks.ts (FG distance helper, legacy rating models),
-                  coach.ts (AI play calling + clock management), game.ts (full game loop + box score)
+                  coach.ts (AI play calling + clock management), game.ts (full game loop + box score),
+                  draft.ts (Triple Draft engine, AI drafters, spread prediction)
 apps/client       Vite + Phaser 3 + Preact: src/game/controller.ts (GameSession + 30 Hz live loop + UI state),
-                  src/render/FieldScene.ts (Bowl camera, sprites, slingshot aim, steer-to-finger), src/ui/*.tsx (menus, HUD)
+                  src/render/FieldScene.ts (Bowl camera, sprites, slingshot aim, steer-to-finger), src/ui/*.tsx (menus, HUD),
+                  src/ui/Draft.tsx (draft setup / board / reveal / post-draft / lineup builder)
 apps/server       Colyseus (M8)
 apps/dex          Gridiron Dex, the original static roster browser (kept working; parts get ported to client)
 tools/import      Python importers (Madden xlsx + nflverse → JSON), position-weight fitter, headshot baker, icon maker
@@ -132,6 +134,21 @@ data/raw          source spreadsheet
     what the AI and the FG % on the call sheet use. Units come from the roster (fast/tackling bench
     players cover, blockers return, best KR returns).
 
+15. **Triple Draft engine (M7)** lives in `packages/sim/src/draft.ts`, deterministic from (seed, settings,
+    actions) so the M8 server can run the same code. Offers: tier shares from `draft.json` tierWeights
+    (uniform inside a tier), players who fit an open slot x needWeight, at least one fit always, all
+    fits from lateOpenSlots open slots; the two teams' offers never overlap; Elite cap; passed
+    options go back into the pool (only drafted players leave). Mirror mode: same offers, a priority
+    token alternates (coin flip in round 1); the loser of a double pick gets the better of his other
+    two. Auto-assign = the open slot that raises the team grade most. Backups for a Quick Draft are
+    real undrafted players at a lower tier (overall <= backupMaxOvr), natural at the position. The
+    pool's "rarity" = talent tier (decision 4). Themed rounds use real-football themes (one NFL team,
+    one division, young players) instead of the spec's types/archetypes. AI drafters: Best Available,
+    Need-Based, Team Stacker (real teammates = chemistry; replaces the spec's "Type Stacker"), Chaos.
+16. **Hot-seat** = `GameSession({ hotseat: true })`: the side with the ball is the user; the defending
+    player calls the defense first behind a privacy screen (passed in as `defCall`); kick returns and
+    defensive play are AI-run in hot-seat.
+
 ## Balance targets (for the M2 harness)
 
 Per team per game, arcade-realistic: 20–31 pts avg, 55–75 offensive plays, run/pass 42/58 ±8,
@@ -203,7 +220,19 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   wall, blocked FGs/punts (rush vs protection; ALL-OUT BLOCK raises it) with scoop-and-score, fake
   punt pass/run and fake FG pass from real punt / field-goal formations (the punter throws), AI
   onside kicks when trailing late, squibs to end halves. Goal posts drawn on both end lines. **10,000 real-team games: all 27 harness metrics in range** (9 new special-teams rows) — punts 47.5 gross / 36.6 net, KR 19.9, PR 9.8, touchbacks 34%, onside 11%, FG 96/81/72% (<40 / 40s / 50+), PAT 96.6%; tackle fall-forward base +0.25 kept ypc at 4.0 (4,000-game recheck). Grade weights refitted (SS, DE, QB on top).
-- [ ] M7 Triple Draft offline
+- [x] **M7 Triple Draft offline** — main menu modes (Triple Draft vs AI, Hot-seat draft, Exhibition).
+  Setup: team name (abbr derived), 8 colour palettes, pixel logo from `icons.json`, AI personality,
+  Quick (24) / Full (32, +8 bench), mirror, reveal passed, themed rounds, 30 s pick timer (warning at
+  10 s, auto-pick on expiry), quarter length. Draft board: three offer cards (real team helmet, tier,
+  archetype, key ratings, abilities, best-fit slot), All-22-style slot board showing what the selected
+  player would rate in every open slot (green natural / yellow playable / red out of position), BEST
+  FIT, 2 rerolls, live unit grades, the opponent's picks; simultaneous reveal with grade change (and
+  passed options when enabled); hot-seat privacy screens between picks. Post-draft: side-by-side
+  unit grades + chemistry + starters, predicted spread from 12 simulated games, full draft log.
+  Lineup builder: field view, tap-tap swaps, bench-in, sub-package depth chart (WR4, TE2, CB3...),
+  KR / PR choice (used by the return game), base offense (balanced / spread / pro-style / run-heavy /
+  air raid: pass-rate shift + personnel preference in `coach.json` styles) and base defense (4-3/3-4),
+  then kick off with the drafted rosters (hot-seat: pass-the-device play calling).
 - [ ] M8 Online (rollback) · [ ] M9 Pro camera + presentation · [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
 
 ## Known issues / todo
@@ -225,4 +254,8 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
 - Gridiron Dex on GitHub Pages showed blank portraits (headshot load or processing failed without
   falling back to the helmet). Fix when porting the portrait pipeline to the client in M3; baking
   headshots (`tools/import/bake_headshots.py`) avoids it.
-- Spec wants ~40 passive abilities; we have 23 — add more in M7 when the draft UI shows them.
+- Spec wants ~40 passive abilities; we have 23. Abilities are still display-only (no on-field effect,
+  no active abilities / momentum in the engine yet) — decide with the owner whether to wire them in
+  before adding more.
+- Draft extras not done: draft card share image, spectator link, daily draft (M10), drag-and-drop
+  lineup (tap-tap only), stamina-based auto-sub thresholds (no fatigue model yet).

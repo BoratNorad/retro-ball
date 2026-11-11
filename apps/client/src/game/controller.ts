@@ -4,7 +4,7 @@ import type { DefenseCall } from "@tdf/shared";
 import {
   Fx, GameSession, fgDistance, suggestPlays,
   type GameResult, type LivePlay, type PlayCall, type PlaySnapshot, type PlaySummary, type Side, type UserCall, type UserInput,
-  type PreSnapDefense, type PreSnapOffense,
+  type PreSnapDefense, type PreSnapOffense, type Roster,
 } from "@tdf/sim";
 import type { OffensePlay } from "@tdf/shared";
 import type { ClientData } from "../data.js";
@@ -17,6 +17,7 @@ export type Mode =
   | "callReturn"    // they kick off: pick your return wall
   | "callST"        // they line up to punt / kick a field goal: return side, block or safe
   | "kick"          // waiting for your kick flick
+  | "pass"          // hot-seat: hand the device to the other player
   | "presnap"       // lined up, waiting for SNAP
   | "live"          // play running
   | "result"        // brief result banner
@@ -47,6 +48,8 @@ export interface UiState {
   lineup: number;
   /** returns: fair catch / kneel available; loose-ball scramble (onside) under your control */
   canFairCatch: boolean; canKneel: boolean; scramble: boolean;
+  /** hot-seat privacy screen: who takes the device, and for what */
+  passTo: { team: string; next: "defense" | "offense" } | null;
 }
 
 export interface Settings {
@@ -67,7 +70,8 @@ const TICK_MS = 1000 / 30;
 export class Controller {
   readonly cd: ClientData;
   readonly session: GameSession;
-  readonly userSide: Side;
+  /** the side the human controls now (hot-seat: whoever has the ball) */
+  get userSide(): Side { return this.session.userSide ?? 0; }
   live: LivePlay | null = null;
   prev: PlaySnapshot | null = null;
   cur: PlaySnapshot | null = null;
@@ -82,17 +86,16 @@ export class Controller {
   lastSummary: PlaySummary | null = null;
   settings: Settings = loadSettings();
 
-  constructor(cd: ClientData, user: string, opp: string, quarterMinutes: number, seed = String(Date.now() % 1e9)) {
+  constructor(cd: ClientData, teams: [Roster, Roster], quarterMinutes: number, opts: { hotseat?: boolean; seed?: string } = {}) {
     this.cd = cd;
-    this.userSide = 0;
     this.session = new GameSession({
-      data: cd.data, ratings: cd.ratings, teams: [cd.roster(user), cd.roster(opp)], seed, userSide: 0,
+      data: cd.data, ratings: cd.ratings, teams, seed: opts.seed ?? String(Date.now() % 1e9), userSide: 0, hotseat: opts.hotseat,
       quarterSeconds: Math.round(quarterMinutes * 60),
     });
     this.ui = {
       mode: "result", toast: null, bigToast: null, live: false, userOffense: false, qbCanThrow: false, userCarrier: false,
       cooldowns: { juke: 0, spin: 0, burst: 0 }, fg: null, tryForTwo: false, fast: false,
-      userDefense: false, userDefender: -1, canKeep: false, preview: null, playClock: 0, lineup: 0, canFairCatch: false, canKneel: false, scramble: false,
+      userDefense: false, userDefender: -1, canKeep: false, preview: null, playClock: 0, lineup: 0, canFairCatch: false, canKneel: false, scramble: false, passTo: null,
     };
     queueMicrotask(() => this.advance());
   }
@@ -131,6 +134,12 @@ export class Controller {
       this.set({ mode: "callDefense", live: false, userOffense: false });
       return;
     }
+    if (this.session.hotseat) {
+      // the defending player calls first, privately; then the offense
+      this.hsDef = null;
+      this.set({ mode: "pass", live: false, userOffense: false, passTo: { team: this.team(this.state.possession === 0 ? 1 : 0).name, next: "defense" } });
+      return;
+    }
     if (userOff) { this.set({ mode: "callOffense", live: false, userOffense: true, fg: this.fgInfo() }); return; }
     // the AI offense decides first; its personnel comes on the field before you call the defense
     const dec = this.session.previewAiOffense();
@@ -161,7 +170,8 @@ export class Controller {
       this.handle(this.session.snap({ tryChoice: "twoPoint", userCall: call }));
       return;
     }
-    this.handle(this.session.snap({ userCall: call, timeout }));
+    const hs = this.session.hotseat && this.hsDef?.call ? { defCall: this.hsDef.call, defFront: this.hsDef.front ?? undefined } : {};
+    this.handle(this.session.snap({ userCall: call, timeout, ...hs }));
   }
   /** what the opponent is lining up for (callST) */
   stKind: "punt" | "fieldGoal" = "punt";
@@ -179,7 +189,21 @@ export class Controller {
     this.pendingTry = "twoPoint";
     this.set({ mode: "callOffense", userOffense: true, fg: null });
   }
+  /** hot-seat: the defending player's call, held until the offense snaps */
+  hsDef: { call: DefenseCall | null; front: string | null } | null = null;
+  /** hot-seat: the device has been handed over */
+  passed() {
+    const p = this.ui.passTo;
+    if (!p) return;
+    if (p.next === "defense") this.set({ mode: "callDefense", passTo: null, userOffense: false, preview: null });
+    else this.set({ mode: "callOffense", passTo: null, userOffense: true, fg: this.fgInfo() });
+  }
   callDefense(call: DefenseCall | null, front: string | null = null, timeout = this.takeTimeout()) {
+    if (this.session.hotseat) {
+      this.hsDef = { call, front };
+      this.set({ mode: "pass", passTo: { team: this.team(this.state.possession).name, next: "offense" } });
+      return;
+    }
     this.handle(this.session.snap({ defCall: call ?? undefined, defFront: call ? front ?? undefined : undefined, timeout, controlDefender: this.settings.controlDefense }));
   }
   callTimeout() {
