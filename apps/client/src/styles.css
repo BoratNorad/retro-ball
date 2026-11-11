@@ -185,3 +185,17 @@ table.drives tr.score td { color: var(--gold); }
 table.drives tr.next td { color: #7fd6ff; }
 .teams.saved { border-bottom: 2px dashed #ffffff33; padding-bottom: 8px; }
 .namebox input { width: 10em; }
+/* M11 franchise */
+.franchise .meters { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; align-items: center; }
+.meter { display: inline-flex; flex-direction: column; gap: 2px; font-family: var(--pixel); font-size: 7px; }
+.meter b { display: block; width: 90px; height: 8px; background: #000; border: 2px solid var(--line); position: relative; }
+.meter b u { position: absolute; left: 0; top: 0; bottom: 0; text-decoration: none; }
+.slotrow { display: flex; gap: 6px; align-items: stretch; padding: 0; border: none; background: none; }
+.slotrow .play { flex: 1; }
+.homecol { width: 100%; max-width: 760px; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+.newslist { display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
+.newslist .mine { color: var(--gold); }
+table.roster td.acts { display: flex; gap: 3px; flex-wrap: wrap; }
+table.roster td.acts .chip { padding: 3px 5px; font-size: 7px; }
+.leadgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.nextgame.event { border-color: #ff7a6b; }

@@ -15,3 +15,4 @@ export * from "./online.js";
 export * from "./net.js";
 export * from "./replay.js";
 export * from "./modes.js";
+export * from "./franchise.js";

@@ -11,6 +11,7 @@ import { AbilitiesToggle } from "./AbilitiesToggle.js";
 import { DraftScreen, DraftSetup, Lineup, PostDraft, type DraftConfigUi } from "./Draft.js";
 import { OnlineScreen } from "./Online.js";
 import { Leaderboards, ModeScreen } from "./Modes.js";
+import { FranchiseScreen } from "./Franchise.js";
 import { deleteTeam, loadTeam, savedTeams } from "./saved.js";
 import { applyAudioSettings, GameSummary, ReplayBar, SettingsPanel } from "./Presentation.js";
 import { audio } from "../audio/audio.js";
@@ -18,7 +19,7 @@ import { hasOnlineSeat } from "../net/client.js";
 import type { Draft, Roster } from "@tdf/sim";
 
 type Screen = { kind: "loading" } | { kind: "error"; msg: string } | { kind: "menu" } | { kind: "game"; ctl: Controller; back?: Screen }
-  | { kind: "online" } | { kind: "gauntlet" } | { kind: "daily" } | { kind: "boards" }
+  | { kind: "online" } | { kind: "gauntlet" } | { kind: "daily" } | { kind: "boards" } | { kind: "franchise" }
   | { kind: "draftSetup"; mode: "ai" | "hotseat" } | { kind: "draft"; cfg: DraftConfigUi }
   | { kind: "postDraft"; cfg: DraftConfigUi; d: Draft; rosters: [Roster, Roster] }
   | { kind: "lineup"; cfg: DraftConfigUi; d: Draft; rosters: [Roster, Roster]; side: 0 | 1 };
@@ -48,6 +49,7 @@ export function App() {
     onDraft={(mode) => setScreen({ kind: "draftSetup", mode })} onOnline={() => setScreen({ kind: "online" })} onMode={(k) => setScreen({ kind: k })} />;
   if (screen.kind === "gauntlet" || screen.kind === "daily") return <ModeScreen cd={c} kind={screen.kind} onExit={() => setScreen({ kind: "menu" })} />;
   if (screen.kind === "boards") return <Leaderboards onExit={() => setScreen({ kind: "menu" })} />;
+  if (screen.kind === "franchise") return <FranchiseScreen cd={c} onExit={() => setScreen({ kind: "menu" })} />;
   if (screen.kind === "online") return <OnlineScreen cd={c} onExit={() => setScreen({ kind: "menu" })} />;
   if (screen.kind === "draftSetup") return <DraftSetup cd={c} mode={screen.mode} onBack={() => setScreen({ kind: "menu" })} onStart={(cfg) => setScreen({ kind: "draft", cfg })} />;
   if (screen.kind === "draft") return <DraftScreen cd={c} cfg={screen.cfg} onDone={(d) => setScreen({ kind: "postDraft", cfg: screen.cfg, d, rosters: [d.toRoster(0), d.toRoster(1)] })} />;
@@ -80,7 +82,7 @@ function exhibitionRoster(cd: ClientData, key: string) {
   return cd.roster(key.startsWith("saved:") ? cd.data.teams.teams[0]!.abbr : key);
 }
 
-function Menu({ cd, onStart, onDraft, onOnline, onMode }: { cd: ClientData; onStart: (user: string, opp: string, quarterMinutes: number) => void; onDraft: (mode: "ai" | "hotseat") => void; onOnline: () => void; onMode: (k: "gauntlet" | "daily" | "boards") => void }) {
+function Menu({ cd, onStart, onDraft, onOnline, onMode }: { cd: ClientData; onStart: (user: string, opp: string, quarterMinutes: number) => void; onDraft: (mode: "ai" | "hotseat") => void; onOnline: () => void; onMode: (k: "gauntlet" | "daily" | "boards" | "franchise") => void }) {
   const [settings, setSettings] = useState(false);
   const [saved, setSaved] = useState(() => savedTeams());
   const teams = [...cd.data.teams.teams].sort((a, b) => a.name.localeCompare(b.name));
@@ -97,6 +99,7 @@ function Menu({ cd, onStart, onDraft, onOnline, onMode }: { cd: ClientData; onSt
       <div class="plays modes">
         <button class="play online" onClick={onOnline}><b>ONLINE TRIPLE DRAFT</b><small>quick match or a private room · draft head to head, then play</small></button>
         <button class="play" onClick={() => onMode("gauntlet")}><b>BOSS GAUNTLET</b><small>draft, then a 17-game season vs the League Bosses + playoffs</small></button>
+        <button class="play" onClick={() => onMode("franchise")}><b>FRANCHISE</b><small>run a club for years: cap, staff, draft, free agency, trades</small></button>
         <button class="play" onClick={() => onMode("daily")}><b>DAILY DRAFT</b><small>today's draft is the same for everyone · 5 games · leaderboard</small></button>
         <button class="play" onClick={() => onDraft("ai")}><b>TRIPLE DRAFT vs AI</b><small>draft 24 real players, then play</small></button>
         <button class="play" onClick={() => onDraft("hotseat")}><b>HOT-SEAT DRAFT</b><small>two players, one device</small></button>

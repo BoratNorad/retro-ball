@@ -121,10 +121,11 @@ export class Controller {
   lastSummary: PlaySummary | null = null;
   settings: Settings = loadSettings();
 
-  constructor(cd: ClientData, teams: [Roster, Roster], quarterMinutes: number, opts: { hotseat?: boolean; seed?: string; session?: GameSession } = {}) {
+  constructor(cd: ClientData, teams: [Roster, Roster], quarterMinutes: number,
+    opts: { hotseat?: boolean; seed?: string; session?: GameSession; ratings?: (id: number) => import("@tdf/sim").Stats } = {}) {
     this.cd = cd;
     this.session = opts.session ?? new GameSession({
-      data: cd.data, ratings: cd.ratings, teams, seed: opts.seed ?? String(Date.now() % 1e9), userSide: 0, hotseat: opts.hotseat,
+      data: cd.data, ratings: opts.ratings ?? cd.ratings, teams, seed: opts.seed ?? String(Date.now() % 1e9), userSide: 0, hotseat: opts.hotseat,
       quarterSeconds: Math.round(quarterMinutes * 60), abilities: loadSettings().abilities !== false,
     });
     this.ui = {

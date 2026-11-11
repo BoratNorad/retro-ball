@@ -377,3 +377,31 @@ export const ModesConfigSchema = z.object({
   daily: z.object({ dailyGames: z.number().int(), dailyStrengthStart: z.number(), dailyStrengthEnd: z.number(), winPoints: z.number(), quarterMinutes: z.number() }),
   ranked: z.object({ eloK: z.number(), ratingStart: z.number(), ratingWindow: z.number(), windowGrowthPerSec: z.number(), trajectoryGuide: z.boolean(), quarterMinutes: z.number() }),
 });
+
+// ---------------------------------------------------------------- franchise (M11)
+const NumList = z.array(z.number());
+export const FranchiseConfigSchema = z.object({
+  _doc: z.string().optional(),
+  rosterMax: z.number().int(),
+  salary: z.object({ min: z.number(), max: z.number(), salaryFloorOvr: z.number(), salaryExp: z.number(), maxYears: z.number().int(), cap: z.number(), openingShare: z.number(),
+    deadCapShare: z.number(), posMult: z.record(z.string(), z.number()), personality: z.record(z.string(), z.number()) }),
+  credits: z.object({ win: z.number(), loss: z.number(), playoffWin: z.number(), title: z.number(), milestone: z.number(), fansPer25: z.number(), start: z.number(),
+    developBase: z.number(), developPer8: z.number(), developMaxPerSeason: z.number(), extendCredits: z.number(), staffCost: NumList, facilityCost: NumList, maintainPerLevel: z.number() }),
+  staff: z.object({ staffRating: z.number(), trainerInjury: z.number(), trainerProg: z.number(), maxLevel: z.number().int() }),
+  facilities: z.object({ maxLevel: z.number().int(), trainingProg: z.number(), rehabWeeks: z.number(), stadiumFans: z.number() }),
+  morale: z.object({ start: z.number(), moraleRating: z.number(), win: z.number(), loss: z.number() }),
+  fans: z.object({ start: z.number(), win: z.number(), loss: z.number(), playoff: z.number(), title: z.number() }),
+  injuries: z.object({ injuryPerGame: z.number(), injuryWeeks: z.array(z.tuple([z.number(), z.number()])) }),
+  progression: z.object({ bands: z.array(z.tuple([z.number(), z.number(), z.number()])) }),
+  retirement: z.object({ retireAge: z.number(), retireChancePerYear: z.number(), retireOvr: z.number() }),
+  draft: z.object({ draftRounds: z.number().int(), prospectsPerRound: z.number().int(), prospectNoise: z.number(), prospectAgeMin: z.number(), prospectAgeMax: z.number(),
+    prospectOvrMax: z.number(), prospectYears: z.number().int() }),
+  freeAgency: z.object({ aiBidMin: z.number(), aiBidMax: z.number(), teamAppeal: z.number(), maxUserBids: z.number().int() }),
+  trades: z.object({ tradeMargin: z.number() }),
+  security: z.object({ start: z.number(), securityWin: z.number(), securityLoss: z.number(), securityPerWin: z.number(), playoffBonus: z.number(), titleBonus: z.number() }),
+  events: z.object({ eventChance: z.number(), dealMinOvr: z.number(), moraleSwing: z.number() }),
+  playoffs: z.object({ perConference: z.number().int(), rounds: z.array(z.string()) }),
+  awards: z.object({ mvpWeights: z.record(z.string(), z.number()), dpoyWeights: z.record(z.string(), z.number()), hofCareerScore: z.number() }),
+  names: z.object({ _doc: z.string().optional(), first: z.array(z.string()).min(4), last: z.array(z.string()).min(4) }),
+  news: z.record(z.string(), z.array(z.string()).min(1)),
+});

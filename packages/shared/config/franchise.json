@@ -1,0 +1,327 @@
+{
+  "_doc": "Franchise mode (M11). Money in tenths of $1M (salary 250 = $25.0M). salary = min + (max - min) x clamp((ovr - salaryFloorOvr) / (99 - salaryFloorOvr))^salaryExp x posMult[group]; contracts last 1..maxYears; the cap is fixed (cap); a club over openingShare x the cap at the start has its contracts scaled down to fit; a cut costs deadCapShare of the rest of this year's salary. Credits: earned per win/loss/playoff win/milestone and per 25 points of fan support at home; spent on development (developBase + per 8 overall above 60), extensions (extendCredits), staff levels (staffCost[level]) and facility levels (facilityCost[level]); each off-season every facility needs maintainPerLevel x level credits or loses a level. Staff: OC / DC / ST add staffRating x level to their unit's ratings in games, the Trainer cuts injury rates (trainerInjury per level) and adds progression (trainerProg). Facilities: stadium = fans and home credits, training = progression (trainingProg per level), rehab = injury weeks x (1 - rehabWeeks x level). Morale 0..100: ratings +/- moraleRating x (morale - 50) / 50; changes per win/loss/event. Injuries: injuryPerGame per player per game, weeks from injuryWeeks (weighted). Progression by age bands [maxAge, mean, spread]. Retirement: from retireAge, retireChancePerYear per year over it; weak veterans (below retireOvr from age 30) too. Rookie draft: draftRounds rounds, the human picks from three offers per round (Triple Draft), AI teams pick in reverse standings; prospects are built from real young players' ratings with noise (prospectNoise) and invented names. Free agency: AI teams bid aiBidMin..aiBidMax x the asking price; a player takes the best offer x (1 + teamAppeal x fans / 100). Trades: the AI accepts when the value it gets is >= tradeMargin x what it gives. Job security 0..100: per game +securityWin / -securityLoss, season-end + (wins - expected) x securityPerWin; under 0 = fired. Owner expectation: expected wins from the team's grade rank. Events: eventChance per week. rosterMax players per team.",
+  "rosterMax": 48,
+  "salary": {
+    "min": 9,
+    "max": 520,
+    "salaryFloorOvr": 60,
+    "salaryExp": 2.6,
+    "maxYears": 5,
+    "deadCapShare": 0.5,
+    "posMult": {
+      "QB": 1.0,
+      "RB": 0.45,
+      "WR": 0.8,
+      "TE": 0.55,
+      "OL": 0.65,
+      "DL": 0.8,
+      "LB": 0.6,
+      "DB": 0.65,
+      "ST": 0.2
+    },
+    "personality": {
+      "Diva": 1.25,
+      "Loyal": 0.85,
+      "Leader": 1.0,
+      "Hothead": 1.05,
+      "Steady": 1.0
+    },
+    "cap": 2550,
+    "openingShare": 0.93
+  },
+  "credits": {
+    "win": 3,
+    "loss": 1,
+    "playoffWin": 5,
+    "title": 10,
+    "milestone": 1,
+    "fansPer25": 1,
+    "start": 10,
+    "developBase": 2,
+    "developPer8": 1,
+    "developMaxPerSeason": 3,
+    "extendCredits": 2,
+    "staffCost": [
+      3,
+      6,
+      10
+    ],
+    "facilityCost": [
+      3,
+      5,
+      8,
+      12,
+      16
+    ],
+    "maintainPerLevel": 1
+  },
+  "staff": {
+    "staffRating": 1,
+    "trainerInjury": 0.15,
+    "trainerProg": 0.3,
+    "maxLevel": 3
+  },
+  "facilities": {
+    "maxLevel": 5,
+    "trainingProg": 0.3,
+    "rehabWeeks": 0.12,
+    "stadiumFans": 2
+  },
+  "morale": {
+    "start": 60,
+    "moraleRating": 2,
+    "win": 3,
+    "loss": -3
+  },
+  "fans": {
+    "start": 50,
+    "win": 2,
+    "loss": -2,
+    "playoff": 6,
+    "title": 12
+  },
+  "injuries": {
+    "injuryPerGame": 0.008,
+    "injuryWeeks": [
+      [
+        1,
+        50
+      ],
+      [
+        2,
+        25
+      ],
+      [
+        3,
+        12
+      ],
+      [
+        4,
+        7
+      ],
+      [
+        6,
+        4
+      ],
+      [
+        10,
+        2
+      ]
+    ]
+  },
+  "progression": {
+    "bands": [
+      [
+        23,
+        2.5,
+        1.5
+      ],
+      [
+        26,
+        1.2,
+        1.5
+      ],
+      [
+        29,
+        0,
+        1.2
+      ],
+      [
+        31,
+        -1,
+        1.2
+      ],
+      [
+        33,
+        -2,
+        1.5
+      ],
+      [
+        99,
+        -3.5,
+        1.5
+      ]
+    ]
+  },
+  "retirement": {
+    "retireAge": 33,
+    "retireChancePerYear": 0.25,
+    "retireOvr": 60
+  },
+  "draft": {
+    "draftRounds": 4,
+    "prospectsPerRound": 40,
+    "prospectNoise": 6,
+    "prospectAgeMin": 21,
+    "prospectAgeMax": 23,
+    "prospectOvrMax": 82,
+    "prospectYears": 4
+  },
+  "freeAgency": {
+    "aiBidMin": 0.9,
+    "aiBidMax": 1.15,
+    "teamAppeal": 0.3,
+    "maxUserBids": 5
+  },
+  "trades": {
+    "tradeMargin": 1.1
+  },
+  "security": {
+    "start": 65,
+    "securityWin": 1.5,
+    "securityLoss": 2,
+    "securityPerWin": 6,
+    "playoffBonus": 10,
+    "titleBonus": 25
+  },
+  "events": {
+    "eventChance": 0.3,
+    "dealMinOvr": 80,
+    "moraleSwing": 6
+  },
+  "playoffs": {
+    "perConference": 7,
+    "rounds": [
+      "Wild Card",
+      "Divisional",
+      "Conference",
+      "Championship"
+    ]
+  },
+  "awards": {
+    "mvpWeights": {
+      "passYds": 0.025,
+      "passTd": 4,
+      "rushYds": 0.1,
+      "rushTd": 6,
+      "recYds": 0.1,
+      "recTd": 6
+    },
+    "dpoyWeights": {
+      "sacks": 4,
+      "defInts": 5,
+      "tackles": 0.6,
+      "passesDefended": 1.5
+    },
+    "hofCareerScore": 400
+  },
+  "names": {
+    "_doc": "invented prospect names are mixed from these lists",
+    "first": [
+      "Avery",
+      "Brock",
+      "Cade",
+      "Dante",
+      "Elijah",
+      "Finn",
+      "Gavin",
+      "Holden",
+      "Isaiah",
+      "Jalen",
+      "Kade",
+      "Landon",
+      "Marcus",
+      "Nolan",
+      "Omar",
+      "Pierce",
+      "Quentin",
+      "Reid",
+      "Silas",
+      "Tate",
+      "Uriah",
+      "Vance",
+      "Wes",
+      "Xavier",
+      "Yusuf",
+      "Zion",
+      "Bryce",
+      "Corbin",
+      "Desmond",
+      "Ezra",
+      "Grady",
+      "Jabari",
+      "Keon",
+      "Malik",
+      "Rashad",
+      "Tobias"
+    ],
+    "last": [
+      "Ashford",
+      "Bellamy",
+      "Crowder",
+      "Dunmore",
+      "Ellison",
+      "Fairley",
+      "Garrity",
+      "Holloway",
+      "Ingram",
+      "Jessup",
+      "Kingsley",
+      "Lockhart",
+      "Merriweather",
+      "Northcutt",
+      "Oakes",
+      "Prather",
+      "Quarles",
+      "Rutledge",
+      "Stroud",
+      "Thibodeaux",
+      "Underwood",
+      "Vickers",
+      "Whitlock",
+      "Yarbrough",
+      "Zeller",
+      "Ballard",
+      "Coldwell",
+      "Draper",
+      "Easley",
+      "Fontenot",
+      "Granger",
+      "Hightower",
+      "Langford",
+      "Mayfield",
+      "Pettway",
+      "Sandoval"
+    ]
+  },
+  "news": {
+    "win": [
+      "{W} beat {L} {ws}-{ls}",
+      "{W} handle {L}, {ws}-{ls}",
+      "{star} leads {W} past {L} {ws}-{ls}"
+    ],
+    "upset": [
+      "UPSET: {W} stun {L} {ws}-{ls}",
+      "{W} shock {L} {ws}-{ls} behind {star}"
+    ],
+    "blowout": [
+      "{W} rout {L} {ws}-{ls}",
+      "{L} embarrassed by {W}, {ws}-{ls}"
+    ],
+    "injury": [
+      "{player} ({team}) out {weeks} week{s} with an injury"
+    ],
+    "signing": [
+      "{team} sign {player} ({years} yrs, ${money}M)"
+    ],
+    "retire": [
+      "{player} retires after {seasons} seasons"
+    ],
+    "trade": [
+      "TRADE: {team} acquire {player} from {from}"
+    ],
+    "streak": [
+      "{team} have won {n} straight",
+      "{team} have lost {n} in a row"
+    ],
+    "award": [
+      "{player} ({team}) named {award}"
+    ],
+    "fired": [
+      "{team} fire their head coach after a {record} season"
+    ],
+    "title": [
+      "{team} win the championship!"
+    ]
+  }
+}

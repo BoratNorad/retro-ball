@@ -46,7 +46,8 @@ packages/sim      headless core: seeded RNG, Q16.16 fixed-point maths, cards.ts 
                   draft.ts (Triple Draft engine, AI drafters, spread prediction),
                   online.ts (match/draft action logs, OnlineMatch, wire rosters/inputs), net.ts (client/server messages),
                   replay.ts (replay frames from seed + inputs, highlights, drive chart),
-                  modes.ts (League Boss rosters, Boss Gauntlet season + playoffs, Daily Draft, Elo)
+                  modes.ts (League Boss rosters, Boss Gauntlet season + playoffs, Daily Draft, Elo),
+                  franchise.ts (Franchise mode: league, schedule, contracts, credits, staff, off-season; GameJob for workers)
 apps/client       Vite + Phaser 3 + Preact: src/game/controller.ts (GameSession + 30 Hz live loop + UI state),
                   src/game/netcontroller.ts (online match: decisions -> server, rollback), src/net/client.ts (socket + replicas),
                   src/ui/Online.tsx (lobby, room, online draft, lineup, match),
@@ -54,6 +55,7 @@ apps/client       Vite + Phaser 3 + Preact: src/game/controller.ts (GameSession 
                   src/render/view.ts (Bowl / Pro projections), src/audio/audio.ts (generated SFX, music, crowd),
                   src/ui/Presentation.tsx (settings, replay bar, halftime/final summary), src/ui/Modes.tsx (Gauntlet / Daily
                   hubs, leaderboards, name), src/ui/saved.ts (saved teams), src/net/api.ts (accounts, boards), src/ui/*.tsx (menus, HUD),
+                  src/ui/Franchise.tsx (slots, new franchise, hub tabs, off-season), src/franchise/ (Web Worker game pool),
                   src/ui/Draft.tsx (draft setup / board / reveal / post-draft / lineup builder)
 apps/server       online game server (M8): ws rooms, timers, referee (src/room.ts), sockets/codes/quick match/ranked queue +
                   HTTP API (src/server.ts), SQLite accounts/ratings/leaderboards (src/store.ts, node:sqlite)
@@ -230,6 +232,27 @@ data/raw          source spreadsheet
     *Saved teams*: any drafted team can be saved (post-draft) and picked in Exhibition. Numbers:
     `config/modes.json`.
 
+21. **Franchise (M11)** = `sim/franchise.ts`, a plain-JSON `Franchise` (3 save slots in localStorage,
+    ~450 KB each, autosaved every week) driven by pure functions + seeded Rngs. League = the 32 real
+    clubs in their real divisions; you take one over, with its roster or a saved drafted team (the
+    drafted players join it, its own players become free agents). Schedule: 6 division games + 11
+    others, 17 weeks; playoffs 7 per conference (1 seed bye), 4 rounds. **Ratings stay Madden's**:
+    progression adds `delta` to every rating of a player and his card is rebuilt with `buildCard`
+    (the pool's own formulas); rookies are built from real young players' ratings + noise with
+    invented names (the only invented people, needed for the rookie draft). In games, ratings also
+    get staff bonuses (OC / DC / ST for your units) and team morale. Contracts: asking salary from
+    overall x position x personality; fixed $255M cap, clubs over 93% at the start are scaled down;
+    cuts leave dead cap. Coaching credits from wins, playoff wins, milestones and home crowds buy
+    development, extensions, staff and facilities (upkeep each off-season or they drop a level).
+    Personalities (Loyal / Diva / Leader / Hothead) raise choice events. Injuries roll per starter per
+    game (Trainer, Rehab help). Off-season: awards, records, Hall of Fame, aging / progression /
+    retirement, re-sign, a Triple Draft rookie draft (you pick one of three offers; AI teams in
+    reverse standings order), free agency (offers vs AI bids, fan appeal), then a new schedule. Job
+    security from results vs the owner's expectation (by grade rank); below 0 = fired, take another
+    job. **Performance**: every league game is a full 22-man sim (~250 ms); the client runs each week's
+    games in a Web Worker pool (`GameJob` = rosters with cards + ratings, `runGameJob`) while you play
+    yours: a week sims in ~1.5 s, a season in ~30 s. Numbers + news templates: `config/franchise.json`.
+
 ## Balance targets (for the M2 harness)
 
 Per team per game, arcade-realistic: 20–31 pts avg, 55–75 offensive plays, run/pass 42/58 ±8,
@@ -363,7 +386,20 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   board validation + best-score keeping, a full ranked game over sockets moving both ratings equally.
   Browser (Playwright): two browsers get the same Daily offers, a Daily run simmed and posted to the
   board, a Gauntlet drafted + simmed + a boss game started, the leaderboard screen.
-- [ ] M11 Franchise · [ ] M12 Polish
+- [x] **M11 Franchise** (decision 21) — FRANCHISE on the menu: 3 save slots; new franchise (club, real
+  roster or a saved drafted team, your game length, injuries on/off); hub with job security / morale /
+  fans meters, credits, cap; HOME (this week's game: PLAY or SIM, every other game simming in workers,
+  locker-room choice events, next week / playoffs, news), ROSTER (develop with credits, extend, cut,
+  trade offers, lineup & depth chart), LEAGUE (standings by conference, schedule, leaders), OFFICE
+  (OC / DC / ST coach / Trainer, Stadium / Training / Rehab), HISTORY (champions, records book single
+  game + season, awards, Hall of Fame), NEWS; off-season screens (re-sign, rookie Triple Draft, free
+  agency offers), fired → new job. Tests: a full season + playoffs + off-season + draft + free
+  agency + next season (17 games each, 6 in the division, 16 a week, caps respected, awards, records,
+  rookies, JSON save), injuries sit, dead cap, trade refusal, drafted-team takeover. Browser: a whole
+  season simmed in ~26 s through the off-season into season 2. Fixed on the way: a double tap on SIM
+  could record a game twice (now guarded in the UI and in `recordGame`); opening payrolls ($175-424M)
+  needed the fixed cap + scaling.
+- [ ] M12 Polish
 
 ## Known issues / todo
 
@@ -400,5 +436,11 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   SQLite file is lost on redeploys until a paid disk is attached (`render.yaml` has it commented);
   Daily later rounds differ between players (offers adapt to your picks); SIM is allowed in both modes
   (shown as "(sim)"); no Glicko / rating deviation; ranked pairing is first-fit in queue order.
+- **Franchise follow-ups:** the engine concentrates sacks and tackles on elite players (team totals are
+  realistic, ~2 sacks/game, but a top rusher can post 10+ in a game and ~60 in a season; top tacklers
+  ~15/game), so season records look inflated: spread credit / cap individual dominance in the engine;
+  player morale per player, playing-time morale and trade value of picks are not modelled; AI teams
+  don't trade with each other; no multi-week injuries for AI starters' depth (they auto-sub); the
+  rookie draft has no draft-day trades; one franchise sims only in the open tab.
 - Draft extras not done: draft card share image, spectator link, daily draft (M10), drag-and-drop
   lineup (tap-tap only), stamina-based auto-sub thresholds (no fatigue model yet).

@@ -3,7 +3,7 @@
 import {
   AbilitiesFileSchema, DraftConfigSchema, GradeConfigSchema,
   IconsFileSchema, MaddenAbilitiesFileSchema, PlayersFileSchema, PositionsConfigSchema, PositionWeightsSchema,
-  TiersConfigSchema, RulesConfigSchema, TuningSchema, FormationsFileSchema, RoutesFileSchema, OffenseFileSchema, DefenseFileSchema, StatGroupsFileSchema, TeamsFileSchema, CoachConfigSchema, OnlineConfigSchema, PresentationConfigSchema, BossesFileSchema, ModesConfigSchema,
+  TiersConfigSchema, RulesConfigSchema, TuningSchema, FormationsFileSchema, RoutesFileSchema, OffenseFileSchema, DefenseFileSchema, StatGroupsFileSchema, TeamsFileSchema, CoachConfigSchema, OnlineConfigSchema, PresentationConfigSchema, BossesFileSchema, ModesConfigSchema, FranchiseConfigSchema,
 } from "./schemas.js";
 
 /** File names, relative to packages/shared/. */
@@ -25,6 +25,7 @@ export const DATA_FILES = {
   online: "config/online.json",
   presentation: "config/presentation.json",
   modes: "config/modes.json",
+  franchise: "config/franchise.json",
   bosses: "data/bosses.json",
   formations: "data/playbook/formations.json",
   routes: "data/playbook/routes.json",
@@ -44,6 +45,7 @@ const SCHEMAS = {
   online: OnlineConfigSchema,
   presentation: PresentationConfigSchema,
   modes: ModesConfigSchema,
+  franchise: FranchiseConfigSchema,
   bosses: BossesFileSchema,
   formations: FormationsFileSchema, routes: RoutesFileSchema, offense: OffenseFileSchema, defense: DefenseFileSchema,
 } as const;
