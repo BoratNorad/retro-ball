@@ -1,0 +1,22 @@
+{
+  "name": "@tdf/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "copy-data": "node scripts/copy-data.mjs",
+    "dev": "node scripts/copy-data.mjs && vite",
+    "build": "node scripts/copy-data.mjs && tsc --noEmit -p . && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tdf/shared": "workspace:*",
+    "@tdf/sim": "workspace:*",
+    "phaser": "3.90.0",
+    "preact": "10.29.8"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "2.10.6",
+    "vite": "6.4.6"
+  }
+}

@@ -1,0 +1,13 @@
+# Render Blueprint (free tier). New → Blueprint → pick this repo.
+# The client is a static site; the Colyseus server (M8) will be added here as a web service.
+services:
+  - type: web
+    name: triple-draft-football
+    runtime: static
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    staticPublishPath: apps/client/dist
+    pullRequestPreviewsEnabled: false
+    headers:
+      - path: /game-data/*
+        name: Cache-Control
+        value: public, max-age=3600

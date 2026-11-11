@@ -21,6 +21,8 @@ decisions and milestone status. Keep it updated.
 | Summarise one play type over N reps | `pnpm tsx tools/sim/probe.ts slants cover1 300` |
 | Play x coverage yardage table | `pnpm tsx tools/sim/matrix.ts 60` (`KIND=run` for runs) |
 | Re-fit team-grade weights to what wins | `RANDOM_ROSTERS=1 FIT_OUT=/tmp/fit.jsonl pnpm sim:harness --games 10000` then `python3 tools/import/fit_grade_weights.py /tmp/fit.jsonl --write` |
+| Play in the browser (dev server) | `pnpm dev:client` (copies data to `apps/client/public/game-data`, Vite on :5173) |
+| Production build of the client | `pnpm build` → `apps/client/dist` (CI builds it; Render uses `render.yaml`) |
 | Gridiron Dex (legacy browser) | `pnpm dev:dex` |
 
 Data pipeline order after a new ratings week: `data:import` → `data:fit` → `data:report` → commit
@@ -33,7 +35,8 @@ packages/shared   Zod schemas, data/ (players, teams, abilities, icons, pool, pl
 packages/sim      headless core: seeded RNG, Q16.16 fixed-point maths, cards.ts (player cards), team grades,
                   rules.ts (rules engine), roster.ts, engine/play.ts (30 Hz 22-player engine), engine/kicks.ts,
                   coach.ts (AI play calling + clock management), game.ts (full game loop + box score)
-apps/client       Vite + Phaser 3 + Preact (M3)
+apps/client       Vite + Phaser 3 + Preact: src/game/controller.ts (GameSession + 30 Hz live loop + UI state),
+                  src/render/FieldScene.ts (Bowl camera, sprites, slingshot aim, steer-to-finger), src/ui/*.tsx (menus, HUD)
 apps/server       Colyseus (M8)
 apps/dex          Gridiron Dex, the original static roster browser (kept working; parts get ported to client)
 tools/import      Python importers (Madden xlsx + nflverse → JSON), position-weight fitter, headshot baker, icon maker
@@ -121,7 +124,16 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   (3rd-down 46.1% vs ≤45). Better team's win %: gap 1–2 pts 59%, 2–3 66%, 3–5 73%, 5+ 86%.
   **Team grade weights are fitted** to engine outcomes on random draft-like rosters
   (`fit_grade_weights.py`): QB and edge rushers matter most; grade gap 3–5 pts wins 69%, 5+ 81%.
-- [ ] M3 Playable offense vs AI (Bowl camera) — client deployed to Render from here
+- [x] **M3 Playable offense vs AI (Bowl camera)** — `GameSession` (step-wise game loop; `playGame` is
+  a loop over it, hash-identical) and `createPlay` (tick-by-tick play with `UserInput`: steer, throw
+  at a spot with power, juke/spin/burst/scramble; tuning in `tuning.json` `user`). Client: pick two
+  teams + quarter length, call plays (PASS/RUN tabs, FLIP, punt/FG with make %, kneel, spike,
+  timeout), tap SNAP, pull back & release to throw (lob vs bullet by pull length), steer the carrier
+  by holding a finger/arrow keys, JUKE/SPIN/BURST buttons (Space/E/Shift). On defense you pick a
+  coverage (or coach's call) and watch the AI play (SKIP fast-forwards). Your team always attacks up
+  the screen. Score bug, down & distance, LOS/first-down lines, result toasts, final box score.
+  Verified with Playwright on desktop and iPhone 13 emulation. Deployed as a Render static site
+  (`render.yaml`).
 - [ ] M4 Full play calling · [ ] M5 Pre-snap layer · [ ] M6 Special teams · [ ] M7 Triple Draft offline
 - [ ] M8 Online (rollback) · [ ] M9 Pro camera + presentation · [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
 
@@ -132,6 +144,7 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   `tools/sim/matrix.ts` (pass/run play x coverage table, `KIND=run`), `probe.ts`, `trace.ts`,
   and the harness "per play call" table.
 - Run game: backside LBs are unblocked on zone runs (no climbing/combo blocks yet) — add in M4.
+- Client bundle is 1.6 MB (Phaser); code-split later (M12). Portraits not yet in the client.
 - Two-point tries pick a random non-deep play; kickoffs/punts are rating models until M6.
 
 - Gridiron Dex on GitHub Pages showed blank portraits (headshot load or processing failed without
