@@ -202,14 +202,13 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   zone, muffs, return fumbles, live returns you steer (JUKE/SPIN/BURST) behind a left/middle/right
   wall, blocked FGs/punts (rush vs protection; ALL-OUT BLOCK raises it) with scoop-and-score, fake
   punt pass/run and fake FG pass from real punt / field-goal formations (the punter throws), AI
-  onside kicks when trailing late, squibs to end halves. Goal posts drawn on both end lines. 2,000-game check: punts 47.5 gross / 36.6 net, KR 19.7, PR 9.8, touchbacks 34%, onside 11%, FG 95/82/70% (<40 / 40s / 50+), PAT 96%.
+  onside kicks when trailing late, squibs to end halves. Goal posts drawn on both end lines. **10,000 real-team games: all 27 harness metrics in range** (9 new special-teams rows) — punts 47.5 gross / 36.6 net, KR 19.9, PR 9.8, touchbacks 34%, onside 11%, FG 96/81/72% (<40 / 40s / 50+), PAT 96.6%; tackle fall-forward base +0.25 kept ypc at 4.0 (4,000-game recheck). Grade weights refitted (SS, DE, QB on top).
 - [ ] M7 Triple Draft offline
 - [ ] M8 Online (rollback) · [ ] M9 Pro camera + presentation · [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
 
 ## Known issues / todo
 
-- **Balance follow-ups:** re-fit grade weights whenever the engine changes meaningfully (done for M4;
-  next after M6 kicking). Tools:
+- **Balance follow-ups:** re-fit grade weights whenever the engine changes meaningfully (done after M6). Tools:
   `tools/sim/matrix.ts` (pass/run play x coverage table, `KIND=run`), `probe.ts`, `trace.ts`,
   and the harness "per play call" table.
 - Play balance (`tools/sim/plays.ts`): option plays (zone read 2, inverted veer 1, QB power 2 yds) and

@@ -22,7 +22,7 @@
     "passHoldBase": 2.3,
     "passHoldPer": 0.108,
     "passHoldJitter": 0.72,
-    "runHoldBase": 4.6,
+    "runHoldBase": 4.8,
     "runHoldPer": 0.084,
     "runHoldJitter": 0.36,
     "doubleTeamMult": 1.7,
@@ -115,7 +115,7 @@
     "elusiveMaxWeight": 0.6,
     "fallForwardPerSpeed": 0.2,
     "fallForwardMax": 3.8,
-    "fallForwardBase": 1.8,
+    "fallForwardBase": 2.05,
     "afterContactPowerPer": 0.05,
     "fallForwardReceiverMult": 0.5
   },
