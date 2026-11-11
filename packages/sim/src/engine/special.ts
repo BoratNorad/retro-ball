@@ -800,9 +800,10 @@ export function createKick(inp: KickPlayInput): KickSim {
 
   // ------------------------------------------------------------------ main loop
   const maxTicks = sec(S.maxSeconds);
-  function step(input?: UserInput | null): boolean {
+  function step(input?: UserInput | null, defInput?: UserInput | null): boolean {
     if (done) return true;
-    applyUser(input);
+    // both teams human (online): the kicker's flick comes from the kicking side, everything else from the returner
+    applyUser(defInput !== undefined ? { ...(defInput ?? {}), kick: input?.kick ?? null } : input);
     if (phase === "setup") return false;
     if (ended) { done = true; return true; }
     pickUserPlayer();

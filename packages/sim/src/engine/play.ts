@@ -132,7 +132,9 @@ export interface KickView {
   good: boolean | null;
 }
 export interface PlaySim {
-  step(input?: UserInput | null): boolean;
+  /** one tick. `input` = the human's input (offense / kicking team when both sides are human);
+   *  `defInput` = the defending / receiving human's input when both sides are human (online) */
+  step(input?: UserInput | null, defInput?: UserInput | null): boolean;
   snapshot(): PlaySnapshot;
   result(): PlayResult;
   /** each defender's assignment at the snap: rush, man:<role>, spy, or the zone name */
@@ -1433,7 +1435,7 @@ export function createPlay(inp: PlayInput): PlaySim {
   // defensive control mode
   let udef = -1, udefMove: V2 | null = null, stripUntil = -1, swatUntil = -1, defReady = 0, manualAt = -999;
   let lastBallKey = "";
-  if (inp.userDefense && !inp.userOffense) udef = nearestDefender({ x: bx, y: los + fx(5) }, -1, true);
+  if (inp.userDefense) udef = nearestDefender({ x: bx, y: los + fx(5) }, -1, true);
   function nearestDefender(p: V2, except: number, offLine = false): number {
     let best = -1, bd = fx(1e4);
     for (const d of D) {
@@ -1472,8 +1474,9 @@ export function createPlay(inp: PlayInput): PlaySim {
       }
     }
   }
-  function applyUser(u: UserInput | null | undefined, now: number) {
-    if (!inp.userOffense) { applyDefense(u, now); userMove = null; return; }
+  function applyUser(u: UserInput | null | undefined, now: number, du?: UserInput | null) {
+    if (!inp.userOffense) { applyDefense(du !== undefined ? du : u, now); userMove = null; return; }
+    if (inp.userDefense) applyDefense(du, now);
     if (!u) { userMove = null; return; }
     userMove = u.move ?? null;
     if (u.throwAt && qbHasBall) userThrowAt(u.throwAt, now);
@@ -1587,12 +1590,12 @@ export function createPlay(inp: PlayInput): PlaySim {
   const maxTicks = sec(T.field.maxPlaySeconds);
   let tick = 0;
   let done = false;
-  function step(input?: UserInput | null): boolean {
+  function step(input?: UserInput | null, defInput?: UserInput | null): boolean {
     if (done) return true;
     if (!snapped) { presnapStep(input); return false; }
     if (tick >= maxTicks || ended) { done = true; return true; }
     curTick = tick;
-    applyUser(input, tick);
+    applyUser(input, tick, defInput);
     if (ended) { done = true; return true; }
     if (handoffAt >= 0 && tick >= handoffAt) handoff(tick);
     if (inp.play.screen && !screenOn && tick >= sec(S.screenRelease)) {

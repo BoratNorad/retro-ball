@@ -77,6 +77,11 @@ export interface GameSetup {
   wind?: F.V2;
   /** abilities ruleset (passives, armed actives, signature moves, momentum); default on */
   abilities?: boolean;
+  /** online: which sides are human (both, usually). Overrides userSide / hotseat. Each side's choices
+   *  come in explicitly through SnapOptions (offense / defense parts) and adjust(activeFor) */
+  humans?: [boolean, boolean];
+  /** online: human defenders are steered by their player (same rule for both sides) */
+  controlDefender?: boolean;
 }
 
 /** What has to happen next. */
@@ -111,8 +116,12 @@ export interface SnapOptions {
   stDefense?: "block" | "safe" | "normal";
   /** the human's armed active ability for this play (scrimmage or kick), paid from momentum if he plays */
   active?: ArmedActive | null;
-  /** hot-seat: the defending player's armed active */
+  /** hot-seat / online: the defending player's armed active */
   defActive?: ArmedActive | null;
+  /** online: the offense's armed active (else `active` when the offense is the human) */
+  offActive?: ArmedActive | null;
+  /** online: which side called the timeout (else the human, when `timeout`) */
+  timeoutBy?: Side;
 }
 
 /** A live scrimmage play in progress. */
@@ -128,6 +137,8 @@ export interface LivePlay {
   hardCounted?: boolean;
   /** armed actives this play (offense / kicking team = O) */
   actives?: PlayActives;
+  /** a fresh copy of this play's simulation at tick 0 (same seed, same calls): rollback re-simulates from it */
+  remake: () => PlaySim;
   /** internal bookkeeping for finish() */
   ctx: { before: GameState; at: GameState };
 }
@@ -141,7 +152,15 @@ export class GameSession {
   /** hot-seat: two humans on one device; whoever has the ball plays it, the other calls the defense */
   readonly hotseat: boolean;
   /** the side a human is controlling right now */
-  get userSide(): Side | null { return this.hotseat ? this.state.possession : this.fixedUser; }
+  get userSide(): Side | null { return this.humans ? null : this.hotseat ? this.state.possession : this.fixedUser; }
+  /** online: both humans (or one, while the other is replaced by the AI) */
+  private humans: [boolean, boolean] | null;
+  private readonly controlDefender: boolean;
+  /** Is this side's play called / played by a human right now? */
+  isHuman(side: Side): boolean { return this.humans ? this.humans[side] : this.userSide === side; }
+  /** online: hand a side to the AI (disconnect) or back to its player */
+  setHuman(side: Side, on: boolean) { if (this.humans) this.humans[side] = on; }
+  get online(): boolean { return this.humans !== null; }
   state: GameState;
   readonly box: [TeamBox, TeamBox] = [emptyBox(), emptyBox()];
   readonly log: PlayLog[] = [];
@@ -149,7 +168,7 @@ export class GameSession {
   readonly tend: [Tendencies, Tendencies] = [emptyTendencies(), emptyTendencies()];
   private readonly cfg: GameData["rules"];
   private readonly rng: Rng;
-  private readonly ratings: (id: number) => Stats;
+  readonly ratings: (id: number) => Stats;
   private readonly players = new Map<number, PlayerLine>();
   private readonly outcomesForHash: string[] = [];
   private ballX: F.Fx;
@@ -167,6 +186,8 @@ export class GameSession {
     this.ratings = setup.ratings;
     this.fixedUser = setup.userSide ?? null;
     this.hotseat = Boolean(setup.hotseat);
+    this.humans = setup.humans ? [...setup.humans] : null;
+    this.controlDefender = Boolean(setup.controlDefender);
     this.seed = setup.seed;
     this.abilities = setup.abilities !== false;
     this.cfg = setup.quarterSeconds ? { ...setup.data.rules, quarterSeconds: setup.quarterSeconds } : setup.data.rules;
@@ -213,7 +234,7 @@ export class GameSession {
 
   private startKick(s: GameState, before: GameState, kind: KickKind, opts: SnapOptions): LivePlay {
     const off = s.possession, def = other(off);
-    const userKick = this.userSide === off, userReturn = this.userSide === def;
+    const userKick = this.isHuman(off), userReturn = this.isHuman(def);
     const seed = this.rng.int(1_000_000_000);
     const prng = new Rng(seed);
     const C = this.data.coach;
@@ -225,13 +246,15 @@ export class GameSession {
     const ballX = kind === "kickoff" || kind === "squib" || kind === "onside" ? this.mid : this.ballX;
     const kin = {
       data: this.data, ratings: this.ratings, kicking: this.teams[off], receiving: this.teams[def], kickSide: off, kind, spot, ballX,
-      rng: prng, wind: this.windFor(off), pressure: this.pressure(s), userKick, userReturn, userKickTeam: userKick && kind === "onside",
+      rng: prng, wind: this.windFor(off), pressure: this.pressure(s), userKick, userReturn, userKickTeam: userKick && !userReturn && kind === "onside",
       returnSide, stDefense, abilities: this.abilities, actives: undefined as PlayActives | undefined,
     };
     kin.actives = this.armActives(s, seed, userKick, userReturn, opts, "kick");
-    const sim = createKick(kin);
+    const rs = prng.getState();
+    const remake = () => createKick({ ...kin, rng: new Rng(rs) });
+    const sim = remake();
     const play = this.data.offense.plays[0]!, call = this.data.defense.calls[0]!;
-    return { sim, offSide: off, userOffense: userKick, userDefense: false, play, call, formation: "", personnel: "", front: "", flip: false,
+    return { sim, remake, offSide: off, userOffense: userKick, userDefense: false, play, call, formation: "", personnel: "", front: "", flip: false,
       seed, twoPoint: false, actives: kin.actives, kick: { kind, userKick, userReturn }, ctx: { before, at: s } };
   }
   /** AI kickoff choice: onside when trailing late, squib to end the half, else deep. */
@@ -252,7 +275,7 @@ export class GameSession {
     if (s.phase === "try") return { kind: "try", options: tryOptions(s, this.cfg) };
     return { kind: "scrimmage" };
   }
-  isUserOffense(): boolean { return this.userSide !== null && this.state.possession === this.userSide; }
+  isUserOffense(): boolean { return this.isHuman(this.state.possession); }
 
   /** Everything decided by the AI (both sides). */
   stepAuto(): PlaySummary {
@@ -270,7 +293,9 @@ export class GameSession {
     const offense = teams[off], defense = teams[def];
     const kin = { data, rng, ratings, kicking: offense, receiving: defense, kickSide: off };
     const before = s;
-    const userOff = this.userSide === off;
+    const userOff = this.isHuman(off);
+    // the defense's own call: a human defense (hot-seat: the other player behind the privacy screen)
+    const defCalls = this.hotseat || this.isHuman(def);
 
     if (s.phase === "final") throw new Error("game is over");
     if (s.phase === "kickoff") {
@@ -290,12 +315,13 @@ export class GameSession {
       let pc = { play: p0, formation: p0.formations[0]!, personnel: data.formations.offense.find((f) => f.id === p0.formations[0])!.personnel[0]!, flip: rng.int(2) === 1 };
       if (userOff && opts.userCall?.kind === "play") pc = this.userPlayCall(opts.userCall);
       let dc = chooseDefense(s, data, rng, pc.personnel, defense, this.tend[off]);
-      if ((!userOff || this.hotseat) && this.userSide !== null && opts.defCall) dc = { call: opts.defCall, front: opts.defFront ?? dc.front };
+      if (defCalls && opts.defCall) dc = { call: opts.defCall, front: opts.defFront ?? dc.front };
       return { live: this.start(s, before, pc, dc, opts, true) };
     }
 
     // scrimmage: timeouts and runoff
-    const timeoutBy = opts.timeout && this.userSide !== null ? this.userSide : timeoutFor(s, data);
+    const humanTo = opts.timeoutBy ?? (opts.timeout ? this.userSide : null);
+    const timeoutBy = humanTo != null && s.timeouts[humanTo] > 0 ? humanTo : this.humans && this.humans[0] && this.humans[1] ? null : timeoutFor(s, data);
     const tempo = userOff ? "normal" : tempoFor(s, data);
     const pre = beforeSnap(s, { tempo, timeoutBy }, cfg);
     this.box[off].topTicks += before.clock - pre.state.clock > 0 && !pre.quarterEnded ? before.clock - pre.state.clock : 0;
@@ -313,13 +339,13 @@ export class GameSession {
         : opts.userCall)
       : this.preview ?? chooseScrimmage(s, offense, defense, data, ratings, rng, this.tend[off], this.tend[def], (b) => this.kickChanceFor("fieldGoal", b));
     this.preview = null;
-    if (dec.kind === "play" && (!userOff || this.hotseat) && this.userSide !== null && opts.defCall) dec = { ...dec, call: opts.defCall, front: opts.defFront ?? dec.front };
+    if (dec.kind === "play" && defCalls && opts.defCall) dec = { ...dec, call: opts.defCall, front: opts.defFront ?? dec.front };
     if (dec.kind === "punt" || dec.kind === "fieldGoal") return { live: this.startKick(s, before, dec.kind, opts) };
     if (dec.kind === "fake") {
       // the fake comes out of the kicking unit; the defense lined up for the kick it expected
       this.box[off].fakes++;
       const fo = data.formations.offense.find((f) => dec.play.formations.includes(f.id))!;
-      const mode = this.userSide === def ? opts.stDefense ?? "normal" : "normal";
+      const mode = this.isHuman(def) ? opts.stDefense ?? "normal" : "normal";
       const look = mode === "block" ? { front: "goal_line", call: "cover0" } : mode === "safe" ? { front: "base43", call: "cover3" } : { front: "nickel", call: "cover1" };
       const pc = { play: dec.play, formation: fo.id, personnel: fo.personnel[0]!, flip: rng.int(2) === 1 };
       const dc = { call: data.defense.calls.find((c) => c.id === look.call)!, front: look.front };
@@ -369,18 +395,19 @@ export class GameSession {
   /** Line up and create the live play. */
   private start(s: GameState, before: GameState, pc: PlayCall, dc: DefCall, opts: SnapOptions, twoPoint: boolean): LivePlay {
     const off = s.possession, def = other(off);
-    const userOff = this.userSide === off;
-    const userDefense = !userOff && this.userSide === def && Boolean(opts.controlDefender);
+    const userOff = this.isHuman(off);
+    const humanDef = this.isHuman(def);
+    const userDefense = humanDef && Boolean(this.humans ? this.controlDefender : opts.controlDefender);
     if (twoPoint) this.ballX = this.mid;
     const seed = this.rng.int(1_000_000_000);
     const preOff = userOff ? opts.preOff : pc.preOff;
-    const preDef = !userOff && this.userSide === def ? opts.preDef : dc.preDef;
-    const actives = this.armActives(s, seed, userOff, !userOff && this.userSide === def, opts, pc.play.kind === "run" ? "run" : "pass");
+    const preDef = humanDef ? opts.preDef : dc.preDef;
+    const actives = this.armActives(s, seed, userOff, humanDef, opts, pc.play.kind === "run" ? "run" : "pass");
     return this.build({ offSide: off, userOffense: userOff, userDefense, play: pc.play, call: dc.call, formation: pc.formation, personnel: pc.personnel,
       front: dc.front, flip: pc.flip, preOff, preDef, seed, twoPoint, actives, ctx: { before, at: s } });
   }
   /** Create (or re-create) the play's simulation from its description. */
-  private build(l: Omit<LivePlay, "sim">): LivePlay {
+  private build(l: Omit<LivePlay, "sim" | "remake">): LivePlay {
     const { data, ratings, teams } = this;
     const s = l.ctx.at;
     const off = l.offSide, def = other(off);
@@ -392,13 +419,14 @@ export class GameSession {
     }
     const C = data.coach.tendency;
     const paBiteMult = C.paBiteBase + C.paBitePerRunRate * runRate(this.tend[off], data);
-    const sim = createPlay({
+    const input = {
       data, ratings, offense: teams[off], defense: teams[def], offSide: off, ballOn: s.ballOn, ballX: this.ballX, toGo: s.toGo,
       play: l.play, formation: l.formation, personnel: l.personnel, call: l.call, front: l.front, flip: l.flip, rng: new Rng(l.seed),
       twoPoint: l.twoPoint, userOffense: l.userOffense, userDefense: l.userDefense, paBiteMult, preOff: l.preOff, preDef: l.preDef,
       actives: l.actives, abilities: this.abilities,
-    });
-    return { ...l, sim };
+    };
+    const remake = () => createPlay({ ...input, rng: new Rng(l.seed) });
+    return { ...l, sim: remake(), remake };
   }
 
   /** Pre-snap changes before the ball is snapped: audible (play/formation/flip), defensive audible,
@@ -468,8 +496,10 @@ export class GameSession {
       return chooseActive(cards, k, this.momentum[side], key, this.data, rng);
     };
     const hsDef = this.hotseat ? opts.defActive : undefined;
-    const O = userO ? (this.affordable(off, opts.active) ? opts.active! : null) : ai(off, kind);
-    const D = userD ? (this.affordable(def, opts.active) ? opts.active! : null)
+    const oPick = opts.offActive !== undefined ? opts.offActive : opts.active;
+    const dPick = opts.defActive !== undefined ? opts.defActive : userO ? null : opts.active;
+    const O = userO ? (this.affordable(off, oPick) ? oPick! : null) : ai(off, kind);
+    const D = userD ? (this.affordable(def, dPick) ? dPick! : null)
       : this.hotseat && hsDef !== undefined ? (this.affordable(def, hsDef) ? hsDef : null)
       : ai(def, kind === "kick" ? "return" : "defense");
     return O || D ? { O, D } : undefined;
