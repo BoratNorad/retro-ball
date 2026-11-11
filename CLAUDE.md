@@ -132,7 +132,7 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   by holding a finger/arrow keys, JUKE/SPIN/BURST buttons (Space/E/Shift). On defense you pick a
   coverage (or coach's call) and watch the AI play (SKIP fast-forwards). Your team always attacks up
   the screen. Score bug, down & distance, LOS/first-down lines, result toasts, final box score.
-  Verified with Playwright on desktop and iPhone 13 emulation. Deployed as a Render static site
+  Verified with Playwright on desktop and iPhone 13 emulation. Render static-site Blueprint ready
   (`render.yaml`).
 - [ ] M4 Full play calling · [ ] M5 Pre-snap layer · [ ] M6 Special teams · [ ] M7 Triple Draft offline
 - [ ] M8 Online (rollback) · [ ] M9 Pro camera + presentation · [ ] M10 Modes · [ ] M11 Franchise · [ ] M12 Polish
