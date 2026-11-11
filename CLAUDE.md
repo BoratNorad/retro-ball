@@ -374,7 +374,7 @@ completion 60–70%, sack rate 5–9% of dropbacks, 1.0–2.0 turnovers, FG% 85+
   two scripted clients over real sockets (quick match → draft → lineup → full game with a reconnect,
   checksums 0 mismatches, room codes, version mismatch). Two real browsers (Playwright,
   `tools/e2e/online_two_browsers.cjs`): draft in ~11 s, then plays in lockstep including a reload.
-  Render Blueprint now has the `tdf-server` web service (the static client gets its host via `fromService`).
+  Render Blueprint now has the `tdf-server` web service (the static client is built with `VITE_SERVER_URL` = the server's public wss URL, entered when the Blueprint is created).
 - [x] **M9 Pro camera + presentation** (decision 19) — Pro All-22 sideline camera with perspective,
   side-profile sprites, stands, carrier zoom; Bowl camera kept; Auto by screen shape, CAM toggle / V key,
   inputs through the projection (steer, slingshot throw, kick flick, arrow keys). Replays of any play

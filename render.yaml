@@ -9,11 +9,12 @@ services:
     buildCommand: corepack enable && pnpm install --frozen-lockfile
     startCommand: pnpm --filter @tdf/server start
     healthCheckPath: /health
-    # Accounts, ratings and leaderboards live in SQLite at $DATA_DIR/tdf.sqlite. Free web services have
-    # no persistent disk (the file is lost on every deploy/restart); on a paid plan uncomment the disk.
+    # Accounts, ratings and leaderboards live in SQLite at $DATA_DIR/tdf.sqlite (default ./data). Free web
+    # services have no persistent disk (the file is lost on every deploy/restart); on a paid plan add
+    # DATA_DIR=/var/data and uncomment the disk.
     envVars:
-      - key: DATA_DIR
-        value: /var/data
+      - key: NODE_VERSION
+        value: "22"
     # disk:
     #   name: tdf-data
     #   mountPath: /var/data
@@ -26,11 +27,13 @@ services:
     staticPublishPath: apps/client/dist
     pullRequestPreviewsEnabled: false
     envVars:
-      - key: VITE_SERVER_HOST
-        fromService:
-          type: web
-          name: tdf-server
-          property: host
+      - key: NODE_VERSION
+        value: "22"
+      # The game server's PUBLIC address, e.g. wss://tdf-server.onrender.com/ws (Render asks for it when
+      # the Blueprint is created; copy the server's .onrender.com URL). fromService only gives the
+      # private-network host name, which a browser cannot reach.
+      - key: VITE_SERVER_URL
+        sync: false
     headers:
       - path: /game-data/*
         name: Cache-Control
