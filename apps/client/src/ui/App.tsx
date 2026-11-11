@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import Phaser from "phaser";
-import type { OffensePlay } from "@tdf/shared";
+import type { DefenseCall, OffensePlay } from "@tdf/shared";
+import { runRate, situation, type PlayCall, type Tendencies, type UserInput } from "@tdf/sim";
+type UserInputAction = NonNullable<UserInput["action"]>;
 import { loadClientData, type ClientData } from "../data.js";
 import { Controller, ordinal, spotText, toGoText, type UiState } from "../game/controller.js";
 import { FieldScene } from "../render/FieldScene.js";
@@ -56,7 +58,7 @@ function Menu({ cd, onStart }: { cd: ClientData; onStart: (user: string, opp: st
           {user && opp ? `PLAY ${user} vs ${opp}` : "PICK TWO TEAMS"}
         </button>
       </div>
-      <p class="hint">Real Madden 27 rosters. You control the offense: pull back and release to throw, hold a finger on the field to run.</p>
+      <p class="hint">Real Madden 27 rosters. On offense: pull back and release to throw, hold a finger on the field to run. On defense: call a front and coverage, and (if you turn on CONTROL DEFENDER in the defense call screen) play one defender yourself.</p>
     </div>
   );
 }
@@ -91,15 +93,21 @@ function Game({ ctl, onExit }: { ctl: Controller; onExit: () => void }) {
         {ui.mode === "callOffense" && <OffenseSheet ctl={ctl} />}
         {ui.mode === "callDefense" && <DefenseSheet ctl={ctl} />}
         {ui.mode === "callTry" && <TrySheet ctl={ctl} />}
-        {ui.mode === "presnap" && (
+        {ui.mode === "presnap" && ctl.live && (
           <div class="bar">
-            <span class="playname">{ctl.live?.play.name} vs {ctl.live?.call.name}</span>
-            <button class="big" onClick={() => ctl.snapBall()}>SNAP ▶</button>
+            <span class="playname">{ui.userOffense
+              ? `${ctl.live.play.name} · ${formationName(ctl, ctl.live.formation)} vs ${frontName(ctl, ctl.live.front)}`
+              : `${ctl.live.call.name} (${frontName(ctl, ctl.live.front)}) vs ${ctl.live.personnel} personnel · drag to move your man`}</span>
+            {ui.userOffense && ctl.live.play.option && (
+              <button class={`chip ${ctl.optionKeep ? "on" : ""}`} onClick={() => ctl.setOptionKeep(!ctl.optionKeep)}>{ctl.optionKeep ? "QB KEEPS" : "HAND OFF"}</button>
+            )}
+            <button class="big" onClick={() => ctl.snapBall()}>{ui.userOffense ? "SNAP ▶" : "READY ▶"}</button>
           </div>
         )}
         {ui.mode === "live" && ui.userOffense && <LiveControls ctl={ctl} ui={ui} />}
-        {ui.mode === "live" && !ui.userOffense && (
-          <div class="bar"><span class="playname">{ctl.team(ctl.live!.offSide).abbr}: {ctl.live?.play.name} · you: {ctl.live?.call.name}</span>
+        {ui.mode === "live" && !ui.userOffense && ui.userDefense && <DefenseControls ctl={ctl} />}
+        {ui.mode === "live" && !ui.userOffense && !ui.userDefense && (
+          <div class="bar"><span class="playname">{ctl.team(ctl.live!.offSide).abbr} offense · you: {ctl.live?.call.name}</span>
             <button class="chip" onClick={() => ctl.fastForward()}>SKIP ▶▶</button></div>
         )}
       </div>
@@ -131,24 +139,73 @@ function ScoreBug({ ctl }: { ctl: Controller }) {
   );
 }
 
+const formationName = (ctl: Controller, id: string) => ctl.cd.data.formations.offense.find((f) => f.id === id)?.name ?? id;
+const frontName = (ctl: Controller, id: string) => ctl.cd.data.formations.defense.find((f) => f.id === id)?.name ?? id;
+const persName = (ctl: Controller, id: string) => ctl.cd.data.formations.personnel[id]?.name ?? id;
+
+type OTab = "suggested" | "run" | "pass" | "rpo";
 function OffenseSheet({ ctl }: { ctl: Controller }) {
-  const [tab, setTab] = useState<"run" | "pass">("pass");
+  const data = ctl.cd.data;
+  const [tab, setTab] = useState<OTab>("suggested");
   const [flip, setFlip] = useState(false);
-  const plays = ctl.cd.data.offense.plays.filter((p) => p.kind === tab && (p.weight > 0 || p.tags.includes("sneak")));
+  const [pers, setPers] = useState("all");
+  const [form, setForm] = useState("all");
+  const [q, setQ] = useState("");
+  const [scout, setScout] = useState(false);
   const s = ctl.state;
   const fg = ctl.ui.fg;
   const twoPt = ctl.pendingTry === "twoPoint";
-  const pick = (p: OffensePlay) => ctl.callOffense({ kind: "play", play: p, flip });
+  const forms = data.formations.offense.filter((f) => pers === "all" || f.personnel.includes(pers));
+  const fits = (p: OffensePlay) => p.formations.some((fid) => (form === "all" || fid === form) && forms.some((f) => f.id === fid));
+  const needle = q.trim().toLowerCase();
+  const match = (p: OffensePlay) => !needle || [p.name, p.group, ...p.tags].some((t) => t.toLowerCase().includes(needle));
+  let calls: PlayCall[];
+  if (tab === "suggested" && !needle) calls = ctl.suggestions();
+  else {
+    const kinds = tab === "suggested" ? ["run", "pass", "rpo"] : [tab];
+    calls = data.offense.plays
+      .filter((p) => kinds.includes(p.kind) && (p.weight > 0 || p.tags.includes("sneak") || p.tags.includes("hailMary")) && fits(p) && match(p))
+      .sort((x, y) => x.group.localeCompare(y.group) || x.name.localeCompare(y.name))
+      .map((p) => {
+        const fid = form !== "all" && p.formations.includes(form) ? form : p.formations.find((f) => forms.some((x) => x.id === f)) ?? p.formations[0]!;
+        const fo = data.formations.offense.find((f) => f.id === fid)!;
+        return { play: p, formation: fid, personnel: pers !== "all" && fo.personnel.includes(pers) ? pers : fo.personnel[0]!, flip: false };
+      });
+  }
+  const pick = (c: PlayCall) => ctl.callOffense({ kind: "play", play: c.play, formation: c.formation, personnel: c.personnel, flip });
   return (
     <div class="sheet">
       <div class="tabs">
-        <button class={`chip ${tab === "pass" ? "on" : ""}`} onClick={() => setTab("pass")}>PASS</button>
-        <button class={`chip ${tab === "run" ? "on" : ""}`} onClick={() => setTab("run")}>RUN</button>
+        {(["suggested", "run", "pass", "rpo"] as OTab[]).map((t) => <button class={`chip ${tab === t ? "on" : ""}`} onClick={() => setTab(t)}>{t === "suggested" ? "SUGGESTED" : t.toUpperCase()}</button>)}
         <button class={`chip ${flip ? "on" : ""}`} onClick={() => setFlip(!flip)}>FLIP ⇆</button>
+        <input class="search" placeholder="search" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} />
         {twoPt && <span class="tag">2-POINT TRY</span>}
       </div>
+      {tab !== "suggested" && (
+        <>
+          <div class="scroller">
+            <span class="lbl">PERSONNEL</span>
+            {["all", ...Object.keys(data.formations.personnel)].map((p) => (
+              <button class={`chip ${pers === p ? "on" : ""}`} title={p === "all" ? "" : persName(ctl, p)} onClick={() => { setPers(p); setForm("all"); }}>{p === "all" ? "ALL" : p}</button>
+            ))}
+          </div>
+          <div class="scroller">
+            <span class="lbl">FORMATION</span>
+            <button class={`chip ${form === "all" ? "on" : ""}`} onClick={() => setForm("all")}>ALL</button>
+            {forms.map((f) => <button class={`chip ${form === f.id ? "on" : ""}`} onClick={() => setForm(f.id)}>{f.name}</button>)}
+          </div>
+        </>
+      )}
+      {scout && <Scout ctl={ctl} side={s.possession === 0 ? 1 : 0} mode="defense" />}
       <div class="plays">
-        {plays.map((p) => <button class="play" onClick={() => pick(p)}><b>{p.name}</b><small>{p.tags.slice(0, 2).join(" · ")}</small></button>)}
+        {calls.map((c) => (
+          <button class="play" onClick={() => pick(c)}>
+            <b>{c.play.name}</b>
+            <small>{formationName(ctl, c.formation)} · {c.personnel}</small>
+            <small class="grp">{c.play.group}</small>
+          </button>
+        ))}
+        {!calls.length && <span class="tag">no plays match</span>}
       </div>
       {!twoPt && (
         <div class="tabs">
@@ -157,24 +214,71 @@ function OffenseSheet({ ctl }: { ctl: Controller }) {
           <button class="chip" onClick={() => ctl.callOffense({ kind: "kneel" })}>KNEEL</button>
           <button class="chip" onClick={() => ctl.callOffense({ kind: "spike" })}>SPIKE</button>
           {s.timeouts[ctl.userSide] > 0 && <button class={`chip ${ctl.timeoutQueued ? "on" : ""}`} onClick={() => ctl.callTimeout()}>TIMEOUT</button>}
+          <button class={`chip ${scout ? "on" : ""}`} onClick={() => setScout(!scout)}>SCOUT</button>
         </div>
       )}
     </div>
   );
 }
 
+/** Scouting report: what the other side has shown this game. */
+function Scout({ ctl, side, mode }: { ctl: Controller; side: 0 | 1; mode: "offense" | "defense" }) {
+  const t: Tendencies = ctl.session.tend[side];
+  const abbr = ctl.team(side).abbr;
+  if (mode === "defense") {
+    const n = t.defSnaps;
+    return (
+      <div class="scout">
+        <b>{abbr} DEFENSE</b> {n ? `${n} snaps · blitz ${Math.round(100 * t.blitz / n)}% · man ${Math.round(100 * t.man / n)}%` : "no snaps yet"}
+      </div>
+    );
+  }
+  const total = Object.values(t.calls).reduce((a, b) => a + b.run + b.pass, 0);
+  const rr = runRate(t, ctl.cd.data);
+  const here = t.calls[situation(ctl.state)];
+  const topF = Object.entries(t.formations).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  return (
+    <div class="scout">
+      <b>{abbr} OFFENSE</b> {total ? `${total} plays · run ${Math.round(rr * 100)}%` : "no plays yet"}
+      {here && <span> · on {situation(ctl.state)}: {here.run} run / {here.pass} pass</span>}
+      {topF.length > 0 && <span> · likes {topF.map(([f, c]) => `${formationName(ctl, f)} (${c})`).join(", ")}</span>}
+    </div>
+  );
+}
+
 function DefenseSheet({ ctl }: { ctl: Controller }) {
+  const data = ctl.cd.data;
   const s = ctl.state;
+  const ui = useUi(ctl);
+  const [front, setFront] = useState<string | null>(null);
+  const [scout, setScout] = useState(false);
+  const groups = [...new Set(data.defense.calls.map((c) => c.group))];
+  const call = (c: DefenseCall | null) => ctl.callDefense(c, front);
+  const off = ctl.team(s.possession).abbr;
   return (
     <div class="sheet">
-      <div class="tabs"><span class="tag">DEFENSE · {ctl.team(s.possession).abbr} has the ball{s.phase === "try" ? " (try)" : ""}</span></div>
-      <div class="plays">
-        <button class="play" onClick={() => ctl.callDefense(null)}><b>Coach's call</b><small>auto</small></button>
-        {ctl.cd.data.defense.calls.map((c) => <button class="play" onClick={() => ctl.callDefense(c)}><b>{c.name}</b><small>{c.tags.join(" · ")}</small></button>)}
+      <div class="tabs">
+        <span class="tag">DEFENSE · {off} {s.phase === "try" ? "try" : ui.preview ? `sends in ${persName(ctl, ui.preview.personnel)}` : "has the ball"}</span>
       </div>
-      {s.timeouts[ctl.userSide] > 0 && s.phase === "play" && (
-        <div class="tabs"><button class={`chip ${ctl.timeoutQueued ? "on" : ""}`} onClick={() => ctl.callTimeout()}>TIMEOUT</button></div>
-      )}
+      <div class="scroller">
+        <span class="lbl">FRONT</span>
+        <button class={`chip ${front === null ? "on" : ""}`} onClick={() => setFront(null)}>MATCH</button>
+        {data.formations.defense.map((f) => <button class={`chip ${front === f.id ? "on" : ""}`} onClick={() => setFront(f.id)}>{f.name}</button>)}
+      </div>
+      {scout && <Scout ctl={ctl} side={s.possession} mode="offense" />}
+      <div class="plays">
+        <button class="play" onClick={() => call(null)}><b>Coach's call</b><small>front + coverage</small></button>
+        {groups.flatMap((g) => data.defense.calls.filter((c) => c.group === g && !(front && c.notFrom.includes(front))).map((c) => (
+          <button class="play" onClick={() => call(c)}><b>{c.name}</b><small>{c.tags.join(" · ")}</small><small class="grp">{g}</small></button>
+        )))}
+      </div>
+      <div class="tabs">
+        <button class={`chip ${ctl.settings.controlDefense ? "on" : ""}`} onClick={() => ctl.setControlDefense(!ctl.settings.controlDefense)}>
+          CONTROL DEFENDER: {ctl.settings.controlDefense ? "ON" : "OFF"}
+        </button>
+        {s.timeouts[ctl.userSide] > 0 && s.phase === "play" && <button class={`chip ${ctl.timeoutQueued ? "on" : ""}`} onClick={() => ctl.callTimeout()}>TIMEOUT</button>}
+        <button class={`chip ${scout ? "on" : ""}`} onClick={() => setScout(!scout)}>SCOUT</button>
+      </div>
     </div>
   );
 }
@@ -193,11 +297,20 @@ function TrySheet({ ctl }: { ctl: Controller }) {
 
 function LiveControls({ ctl, ui }: { ctl: Controller; ui: UiState }) {
   const act = (a: "juke" | "spin" | "burst" | "scramble") => (e: Event) => { e.preventDefault(); ctl.input.action = a; };
-  if (ui.qbCanThrow) {
+  if (ui.canKeep) {
     return (
       <div class="bar">
-        <span class="playname">PULL BACK &amp; RELEASE TO THROW</span>
-        <button class="act" onPointerDown={act("scramble")}>RUN</button>
+        <span class="playname">READ OPTION · TAP KEEP OR IT'S A HANDOFF</span>
+        <button class="act" onPointerDown={(e) => { e.preventDefault(); ctl.input.action = "keep"; }}>KEEP</button>
+      </div>
+    );
+  }
+  if (ui.qbCanThrow) {
+    const rpo = ctl.live?.play.kind === "rpo";
+    return (
+      <div class="bar">
+        <span class="playname">{rpo ? "RPO · THROW NOW OR IT'S A HANDOFF" : "PULL BACK & RELEASE TO THROW"}</span>
+        {!rpo && <button class="act" onPointerDown={act("scramble")}>RUN</button>}
       </div>
     );
   }
@@ -212,6 +325,19 @@ function LiveControls({ ctl, ui }: { ctl: Controller; ui: UiState }) {
     );
   }
   return <div class="bar"><span class="playname">…</span></div>;
+}
+
+function DefenseControls({ ctl }: { ctl: Controller }) {
+  const act = (a: "dive" | "strip" | "swat" | "switch") => (e: Event) => { e.preventDefault(); ctl.input.action = a; };
+  return (
+    <div class="bar acts">
+      <span class="playname">DRAG TO MOVE</span>
+      <button class="act alt" onPointerDown={act("switch")}>SWITCH</button>
+      <button class="act alt" onPointerDown={act("swat")}>SWAT</button>
+      <button class="act alt" onPointerDown={act("strip")}>STRIP</button>
+      <button class="act" onPointerDown={act("dive")}>DIVE</button>
+    </div>
+  );
 }
 
 function useKeyboard(ctl: Controller) {
@@ -229,10 +355,16 @@ function useKeyboard(ctl: Controller) {
     const down = (e: KeyboardEvent) => {
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       if (k === "Enter") { ctl.snapBall(); return; }
-      if (k === " ") { ctl.input.action = "juke"; e.preventDefault(); return; }
-      if (k === "e") { ctl.input.action = "spin"; return; }
-      if (k === "Shift") { ctl.input.action = "burst"; return; }
-      if (k === "r") { ctl.input.action = "scramble"; return; }
+      if (ctl.live?.userDefense) {
+        // defense: Space dive, E swat, Q strip, Tab/C switch
+        const m: Record<string, UserInputAction> = { " ": "dive", e: "swat", q: "strip", Tab: "switch", c: "switch" };
+        if (m[k]) { ctl.input.action = m[k]; e.preventDefault(); return; }
+      } else {
+        if (k === " ") { ctl.input.action = ctl.ui.canKeep ? "keep" : "juke"; e.preventDefault(); return; }
+        if (k === "e") { ctl.input.action = "spin"; return; }
+        if (k === "Shift") { ctl.input.action = "burst"; return; }
+        if (k === "r") { ctl.input.action = "scramble"; return; }
+      }
       keys.add(k); update();
     };
     const up = (e: KeyboardEvent) => { keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key); update(); };

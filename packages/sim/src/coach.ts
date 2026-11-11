@@ -184,6 +184,42 @@ export function chooseOffensePlay(s: GameState, offense: Roster, data: GameData,
   }
 }
 
+/** Deterministic "Suggested" list for the play-call screen: the coach's weights for this down,
+ *  distance, field position and the opponent's tendencies, best first (one entry per play). */
+export function suggestPlays(s: GameState, offense: Roster, data: GameData, ratings: (id: number) => Stats, oppDefense?: Tendencies, n = 8): PlayCall[] {
+  const ballOn = yds(s.ballOn), togo = yds(s.toGo), t = secondsLeft(s, data.rules);
+  const C = data.coach;
+  const pr = passRate(s, data) / 1000;
+  const qbSpeed = ratings(offense.starters.QB!.id).speed ?? 60;
+  const qbRun = Math.max(C.qbRun.min, Math.min(C.qbRun.max, 1 + (qbSpeed - C.qbRun.speedRef) * C.qbRun.speedPer));
+  const blitzy = oppDefense && oppDefense.defSnaps >= 6 ? oppDefense.blitz / oppDefense.defSnaps : 0.2;
+  const scored = data.offense.plays.filter((p) => p.weight > 0 || (p.tags.includes("sneak") && togo <= 1)).map((p) => {
+    const pass = p.kind === "pass";
+    let w = (p.weight || 1) * (pass ? pr : 1 - pr);
+    if (!pass && togo <= 2 && !(p.tags.includes("short") || p.tags.includes("inside") || p.tags.includes("sneak"))) w *= 0.2;
+    if (pass && togo >= 12 && !p.tags.some((x) => x === "deep" || x === "medium")) w *= 0.2;
+    if (pass && ballOn >= 90 && p.tags.includes("deep")) w *= 0.1;
+    if (ballOn >= 95 && p.tags.includes("screen")) w *= 0.1;
+    if (p.tags.includes("qbRun") || p.tags.includes("option")) w *= qbRun;
+    if (p.tags.includes("screen") || p.tags.includes("quick")) w *= 0.7 + blitzy * 2;
+    if (p.tags.includes("redzone")) w *= ballOn >= 80 ? 3 : 0.3;
+    if (p.tags.includes("goalLine")) w *= ballOn >= 95 ? 3 : 1;
+    if (p.tags.includes("sneak")) w *= togo <= 1 ? 2 : 0;
+    return { p, w };
+  }).sort((a, b) => b.w - a.w || a.p.id.localeCompare(b.p.id)).slice(0, n);
+  const sitKey = ballOn >= 96 ? "goalLine" : togo <= 3 ? "short" : togo >= 8 || t <= 120 ? "passing" : "normal";
+  const pref = C.personnel[sitKey];
+  return scored.map(({ p }) => {
+    let best = { f: p.formations[0]!, per: "", w: -1 };
+    for (const fid of p.formations) {
+      const f = data.formations.offense.find((x) => x.id === fid);
+      if (!f) continue;
+      for (const per of f.personnel) { const w = pref[per] ?? 0; if (w > best.w) best = { f: fid, per, w }; }
+    }
+    return { play: p, formation: best.f, personnel: best.per || data.formations.offense.find((x) => x.id === best.f)!.personnel[0]!, flip: false };
+  });
+}
+
 /** The defense's front (answering the offense's personnel) and call. */
 export function chooseDefense(s: GameState, data: GameData, rng: Rng, personnel = "11", defense?: Roster, offTend?: Tendencies): DefCall {
   const togo = yds(s.toGo), d = s.down, t = secondsLeft(s, data.rules);

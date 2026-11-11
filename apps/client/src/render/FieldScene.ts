@@ -121,9 +121,11 @@ export class FieldScene extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------------- input
-  private userControlling(): "throw" | "run" | null {
+  private userControlling(): "throw" | "run" | "defend" | null {
     const c = this.ctl;
-    if (c.ui.mode !== "live" || !c.live?.userOffense || !c.cur) return null;
+    if (c.ui.mode !== "live" || !c.live || !c.cur) return null;
+    if (c.live.userDefense) return c.cur.userDefender >= 0 ? "defend" : null;
+    if (!c.live.userOffense) return null;
     if (c.cur.qbCanThrow) return "throw";
     if (c.cur.userCarrier) return "run";
     return null;
@@ -132,7 +134,7 @@ export class FieldScene extends Phaser.Scene {
     if (this.ctl.ui.mode === "presnap") { this.ctl.snapBall(); return; }
     const mode = this.userControlling();
     if (mode === "throw") { this.drag = { x: p.x, y: p.y }; this.aim = null; }
-    else if (mode === "run") this.steerTo(p);
+    else if (mode === "run" || mode === "defend") this.steerTo(p);
   }
   private onMove(p: Phaser.Input.Pointer) {
     if (!p.isDown) return;
@@ -149,7 +151,7 @@ export class FieldScene extends Phaser.Scene {
         y: qb.y - (dy / this.S) * k,
         power: Math.min(1, lenPx / (Math.min(this.scale.width, this.scale.height) * 0.42)),
       };
-    } else if (mode === "run") this.steerTo(p);
+    } else if (mode === "run" || mode === "defend") this.steerTo(p);
     else if (this.drag) { this.drag = null; this.aim = null; }
   }
   private onUp(_p: Phaser.Input.Pointer) {
@@ -159,15 +161,18 @@ export class FieldScene extends Phaser.Scene {
       this.ctl.input.throwAt = { x: Math.round(a.x * 65536), y: Math.round(a.y * 65536), power: a.power };
     }
     this.drag = null; this.aim = null;
-    if (this.userControlling() === "run") this.ctl.input.move = null;
+    const m = this.userControlling();
+    if (m === "run" || m === "defend") this.ctl.input.move = null;
   }
   private steerTo(p: Phaser.Input.Pointer) {
     const c = this.ctl.cur!;
-    const me = c.actors[c.carrier];
+    const defend = Boolean(this.ctl.live?.userDefense);
+    const me = c.actors[defend ? c.userDefender : c.carrier];
     if (!me) return;
     const wp = this.cameras.main.getWorldPoint(p.x, p.y);
     const tx = this.ux(wp.x), ty = this.uy(wp.y);
-    const pos = this.toUser(me.x, me.y, false);
+    // move is in your (screen) frame; the controller turns it around when the AI has the ball
+    const pos = this.toUser(me.x, me.y, defend && this.ctl.flipped());
     const dx = tx - pos.x, dy = ty - pos.y;
     if (Math.hypot(dx, dy) < 0.6) return;
     this.ctl.input.move = { x: Math.round(dx * 65536), y: Math.round(dy * 65536) };
@@ -216,7 +221,8 @@ export class FieldScene extends Phaser.Scene {
       spr.setPosition(this.wx(u.x), this.wy(u.y) - 9 * scale);
       spr.setAngle(a.down ? (a.side === "O" ? 90 : -90) : 0);
       // highlight: the player you control
-      if (ctl.live?.userOffense && ((cur.qbCanThrow && a.role === "QB" && a.side === "O") || (cur.userCarrier && i === cur.carrier))) {
+      if ((ctl.live?.userOffense && ((cur.qbCanThrow && a.role === "QB" && a.side === "O") || (cur.userCarrier && i === cur.carrier))) ||
+          (ctl.live?.userDefense && i === cur.userDefender)) {
         this.marks.lineStyle(Math.max(2, this.S * 0.25), 0xffd23e, 1).strokeEllipse(this.wx(u.x), this.wy(u.y) + 1, 2.8 * this.S, 1.4 * this.S);
       }
     });

@@ -13,7 +13,7 @@ import {
 } from "./rules.js";
 import type { Roster } from "./roster.js";
 import {
-  chooseDefense, chooseOffensePlay, chooseScrimmage, chooseTry, emptyTendencies, recordDefense, recordOffense, runRate, tempoFor, timeoutFor,
+  chooseDefense, chooseOffensePlay, type ScrimmageDecision, chooseScrimmage, chooseTry, emptyTendencies, recordDefense, recordOffense, runRate, tempoFor, timeoutFor,
   type Tendencies,
 } from "./coach.js";
 import { createPlay, type PlayResult, type PlaySim, type StatEvent, type Stats } from "./engine/play.js";
@@ -195,6 +195,7 @@ export class GameSession {
     s = pre.state;
     this.state = s;
     if (pre.quarterEnded) {
+      this.preview = null;
       const entry = this.entry(before, "—", "", pre.events.map((e) => e.text ?? e.t).join(", "), 0, pre.events);
       this.log.push(entry);
       return { done: { entry, events: pre.events, state: s } };
@@ -203,7 +204,8 @@ export class GameSession {
       ? (opts.userCall.kind === "play"
         ? (() => { const pc = this.userPlayCall(opts.userCall); return { kind: "play" as const, ...pc, ...chooseDefense(s, data, rng, pc.personnel, defense, this.tend[off]) }; })()
         : opts.userCall)
-      : chooseScrimmage(s, offense, defense, data, ratings, rng, this.tend[off], this.tend[def]);
+      : this.preview ?? chooseScrimmage(s, offense, defense, data, ratings, rng, this.tend[off], this.tend[def]);
+    this.preview = null;
     if (dec.kind === "play" && !userOff && this.userSide !== null && opts.defCall) dec = { ...dec, call: opts.defCall, front: opts.defFront ?? dec.front };
     if (dec.kind === "punt") {
       const k = punt(kin, s.ballOn);
@@ -234,6 +236,17 @@ export class GameSession {
     recordDefense(this.tend[def], dec.call);
     return { live: this.start(s, before, dec, dec, opts, false) };
   }
+
+  /** The AI offense's next call, decided now so a human defense can see the personnel group come on
+   *  the field (as in real football) before choosing its own call. snap() then uses this decision. */
+  previewAiOffense(): ScrimmageDecision | null {
+    const s = this.state;
+    if (s.phase !== "play" || this.isUserOffense()) return null;
+    const off = s.possession, def = other(off);
+    this.preview ??= chooseScrimmage(s, this.teams[off], this.teams[def], this.data, this.ratings, this.rng, this.tend[off], this.tend[def]);
+    return this.preview;
+  }
+  private preview: ScrimmageDecision | null = null;
 
   /** The offense's call when only the play is given: the first formation, its first personnel. */
   private userPlayCall(c: Extract<UserCall, { kind: "play" }>) {
