@@ -1,4 +1,1 @@
-{
-  "files": [],
-  "references": [{ "path": "packages/shared" }, { "path": "packages/sim" }, { "path": "tools" }]
-}
+{"files": [], "references": [{"path": "packages/shared"}, {"path": "packages/sim"}, {"path": "tools"}, {"path": "apps/server"}]}

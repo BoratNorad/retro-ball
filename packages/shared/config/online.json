@@ -1,0 +1,18 @@
+{
+  "_doc": "Online play (M8). Server timers: callSeconds = offense's play call, defenseSeconds = the defense's call after it sees the personnel, resultSeconds = pause after each play, lineupSeconds = lineup builder after the draft, idlePickSeconds = draft pick timer when the room has it off (a player who is away still gets auto-picks), kickSeconds = a human kicker who doesn't flick gets a default kick, aiAfterSeconds = a disconnected player's side is handed to the AI after this long, forfeitSeconds = reconnect window (spec: 90 s), aiPresnapSeconds = pre-snap window for the defense when the AI has the ball. Netcode: inputDelayTicks = local input is applied this many ticks late (fewer rollbacks), maxPredictTicks = how far a client may run ahead of the confirmed inputs before it waits, fillMs = a tick missing one side's input is confirmed with no input after this long. codeLength = private room code length; maxMsgsPerSecond = flood limit per connection.",
+  "callSeconds": 25,
+  "defenseSeconds": 15,
+  "resultSeconds": 2.2,
+  "lineupSeconds": 120,
+  "idlePickSeconds": 60,
+  "kickSeconds": 10,
+  "aiAfterSeconds": 15,
+  "forfeitSeconds": 90,
+  "aiPresnapSeconds": 3,
+  "presnapExtraSeconds": 1,
+  "inputDelayTicks": 2,
+  "maxPredictTicks": 12,
+  "fillMs": 350,
+  "codeLength": 5,
+  "maxMsgsPerSecond": 120
+}

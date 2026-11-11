@@ -337,3 +337,11 @@ export const PoolFileSchema = z.object({
   _doc: z.string(), source: z.string(), hash: z.string(),
   players: z.array(PlayerCardSchema),
 });
+
+// ---------------------------------------------------------------- online (M8)
+export const OnlineConfigSchema = z.object({
+  _doc: z.string().optional(),
+  callSeconds: z.number(), defenseSeconds: z.number(), resultSeconds: z.number(), lineupSeconds: z.number(), idlePickSeconds: z.number(),
+  kickSeconds: z.number(), aiAfterSeconds: z.number(), forfeitSeconds: z.number(), aiPresnapSeconds: z.number(), presnapExtraSeconds: z.number(),
+  inputDelayTicks: z.number().int(), maxPredictTicks: z.number().int(), fillMs: z.number(), codeLength: z.number().int(), maxMsgsPerSecond: z.number(),
+});
